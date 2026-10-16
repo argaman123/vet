@@ -18,20 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let state = ShellState()
     private var main: MainWindowController!
-    private var dock: DockCoordinator!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMenu()
-        let content = ContentView(
-            state: state,
-            onOpenClaude: { [weak self] in self?.dock.openClaude() },
-            onGrantPermission: { [weak self] in self?.dock.grantPermission() })
-        main = MainWindowController(state: state, content: content,
-                                    onSelect: { [weak self] tab in self?.dock.select(tab) })
-        dock = DockCoordinator(state: state, main: main)
+        main = MainWindowController(content: ContentView(state: state))
         main.show()
         NSApp.activate()
-        dock.start()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

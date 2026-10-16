@@ -1,8 +1,9 @@
 import SwiftUI
 import VetCore
 
-/// The Liquid Glass icon rail: Claude, Review, Files, Browser, and Run at the bottom.
+/// The Liquid Glass icon rail: Review, Files, Browser, and Run at the bottom.
 struct RailView: View {
+    static let width: CGFloat = 56
     let state: ShellState
     let onSelect: (RailTab) -> Void
 

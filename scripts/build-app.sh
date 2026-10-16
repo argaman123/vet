@@ -3,6 +3,8 @@
 # Signs with the "Vet Local Development" identity when present so macOS keeps
 # the Accessibility permission across rebuilds (see setup-signing.sh).
 set -euo pipefail
+# Command Line Tools work without accepting the Xcode license; override by exporting DEVELOPER_DIR.
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
 swift build -c "$CONFIG" --product Vet
