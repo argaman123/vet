@@ -32,12 +32,15 @@ public enum DockAction: Equatable, Sendable {
 
 /// Gives up auto-launching Claude after this many tries and shows "Open Claude" instead.
 public let maxClaudeLaunchAttempts = 3
+/// Gives up waiting for Claude's window (about 5 s at 0.5 s per wait) and shows "Open Claude".
+public let maxWindowWaits = 10
 
 /// Decides the next docking step. `target` is in Accessibility coordinates.
-public func dockAction(claude: ClaudeSnapshot, permission: PermissionState, target: CGRect, launchAttempts: Int) -> DockAction {
+public func dockAction(claude: ClaudeSnapshot, permission: PermissionState, target: CGRect,
+                       launchAttempts: Int, windowWaits: Int = 0) -> DockAction {
     guard permission == .granted else { return .none }
     guard claude.isRunning else { return launchAttempts < maxClaudeLaunchAttempts ? .launchClaude : .none }
-    guard claude.hasWindow else { return .waitForWindow }
+    guard claude.hasWindow else { return windowWaits < maxWindowWaits ? .waitForWindow : .none }
     if claude.isMinimized { return .unminimize }
     if claude.isFullScreen { return .none } // the user chose full screen; Vet mirrors it instead of undoing it
     if let frame = claude.frame, DockGeometry.isDocked(claudeFrame: frame, target: target) { return .none }

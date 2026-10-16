@@ -10,6 +10,8 @@ final class DockCoordinator {
     private var claude: ClaudeWindow?
     private var permission: PermissionState = .unknown
     private var launchAttempts = 0
+    /// How long we've waited for Claude (running) to show a window; reset once it has one.
+    private var windowWaits = 0
     private var permissionTimer: Timer?
     private var retry: Task<Void, Never>?
     /// The tab to show when Vet is brought forward some other way than the rail (Stage Manager strip, Cmd-Tab, Dock).
@@ -77,8 +79,16 @@ final class DockCoordinator {
 
     func openClaude() {
         launchAttempts = 0
+        windowWaits = 0
         state.dockMessage = nil
+        if ClaudeWindow.runningApp() != nil { reopenClaude() }
         redock()
+    }
+
+    private func reopenClaude() {
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = state.selected == .claude
+        NSWorkspace.shared.openApplication(at: ClaudeWindow.appURL, configuration: config) { _, _ in }
     }
 
     func grantPermission() {
@@ -110,7 +120,9 @@ final class DockCoordinator {
         let target = DockGeometry.axRect(fromCocoa: DockGeometry.claudeTargetFrame(mainWindowFrame: main.window.frame),
                                          primaryScreenHeight: NSScreen.screens[0].frame.height)
 
-        switch dockAction(claude: snapshot, permission: permission, target: target, launchAttempts: launchAttempts) {
+        if claude != nil { windowWaits = 0 }
+        switch dockAction(claude: snapshot, permission: permission, target: target,
+                          launchAttempts: launchAttempts, windowWaits: windowWaits) {
         case .launchClaude:
             launchAttempts += 1
             let config = NSWorkspace.OpenConfiguration()
@@ -118,6 +130,9 @@ final class DockCoordinator {
             NSWorkspace.shared.openApplication(at: ClaudeWindow.appURL, configuration: config) { _, _ in }
             scheduleRedock(after: 1.5)
         case .waitForWindow:
+            // Claude is running but its window is closed: ask it to reopen one (a Dock click does the same).
+            if windowWaits == 0 { reopenClaude() }
+            windowWaits += 1
             scheduleRedock(after: 0.5)
         case .unminimize:
             claude?.unminimize()
@@ -126,7 +141,7 @@ final class DockCoordinator {
             claude?.setAXFrame(frame)
             state.dockMessage = nil
         case .none:
-            state.dockMessage = running ? nil : .claudeMissing
+            state.dockMessage = (running && claude != nil) ? nil : (permission == .granted ? .claudeMissing : state.dockMessage)
         }
     }
 
@@ -156,7 +171,8 @@ final class DockCoordinator {
         let claudeFrame = DockGeometry.cocoaRect(fromAX: ax, primaryScreenHeight: NSScreen.screens[0].frame.height)
         let target = DockGeometry.claudeTargetFrame(mainWindowFrame: main.window.frame)
         guard !DockGeometry.isDocked(claudeFrame: claudeFrame, target: target) else { return }
-        main.window.setFrame(DockGeometry.mainWindowFrame(forClaudeFrame: claudeFrame), display: true)
+        let visible = (main.window.screen ?? NSScreen.screens[0]).visibleFrame
+        main.window.setFrame(DockGeometry.mainWindowFrame(forClaudeFrame: claudeFrame, within: visible), display: true)
     }
 
     // MARK: Full screen

@@ -26,8 +26,16 @@ public enum DockGeometry {
     }
 
     /// Where Vet's main window belongs when the user has moved or resized Claude's window (Cocoa coordinates).
-    public static func mainWindowFrame(forClaudeFrame c: CGRect) -> CGRect {
-        CGRect(x: c.minX - railWidth, y: c.minY, width: c.width + railWidth, height: c.height)
+    /// Clamped to `visible` (the screen's visible frame) so the rail never ends up off-screen,
+    /// e.g. when Claude was zoomed to fill the screen.
+    public static func mainWindowFrame(forClaudeFrame c: CGRect, within visible: CGRect) -> CGRect {
+        var f = CGRect(x: c.minX - railWidth, y: c.minY, width: c.width + railWidth, height: c.height)
+        if f.minX < visible.minX {
+            f.size.width -= visible.minX - f.minX
+            f.origin.x = visible.minX
+        }
+        if f.maxX > visible.maxX, f.width > visible.width { f.size.width = visible.maxX - f.minX }
+        return f
     }
 
     /// The rail panel's frame, in Cocoa coordinates: left edge, below the traffic lights.

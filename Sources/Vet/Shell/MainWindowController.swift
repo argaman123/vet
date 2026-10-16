@@ -11,6 +11,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     var onFrameChange: (() -> Void)?
     /// The frame to go back to when "full screen" (filling the screen) is turned off.
     private var restoredFrame: NSRect?
+    private var railFloating = true
 
     init(state: ShellState, content: some View, onSelect: @escaping (RailTab) -> Void) {
         let screen = NSScreen.screens[0]
@@ -45,6 +46,8 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     /// The rail is never hidden. While Vet or Claude is in front it floats above both;
     /// otherwise it sits with Vet's window, so other apps can cover it like any window.
     func setRailFloating(_ floating: Bool) {
+        railFloating = floating
+        guard !window.isMiniaturized else { return }
         if floating {
             rail.level = .floating
             rail.orderFrontRegardless()
@@ -91,6 +94,14 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         layoutRail()
         onFrameChange?()
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        rail.orderOut(nil) // minimizing Vet takes the rail with it
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        setRailFloating(railFloating)
     }
 
     func windowDidMove(_ notification: Notification) {
