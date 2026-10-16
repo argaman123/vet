@@ -24,6 +24,9 @@ public struct DiffLayout: Sendable {
     public let left: [DisplayLine]
     public let right: [DisplayLine]
     public let segments: [Segment]
+    /// The file lines each fold hides, by fold id (HEAD side and working-file side).
+    public let foldHead: [Int: Range<Int>]
+    public let foldWork: [Int: Range<Int>]
 
     /// IntelliJ's defaults: 4 lines of context around each change.
     public static let context = 4
@@ -31,6 +34,7 @@ public struct DiffLayout: Sendable {
 
     public init(headCount: Int, workCount: Int, hunks: [Hunk], folding: Bool, expanded: Set<Int>) {
         var left: [DisplayLine] = [], right: [DisplayLine] = [], segments: [Segment] = []
+        var foldHead: [Int: Range<Int>] = [:], foldWork: [Int: Range<Int>] = [:]
         func same(_ h: Range<Int>, _ w: Range<Int>) {
             guard !h.isEmpty else { return }
             let l = left.count, r = right.count
@@ -64,12 +68,16 @@ public struct DiffLayout: Sendable {
             let l = left.count, r = right.count
             left.append(.fold(id: h.lowerBound, hidden: hidden))
             right.append(.fold(id: h.lowerBound, hidden: hidden))
+            foldHead[h.lowerBound] = (h.lowerBound + keepTop)..<(h.upperBound - keepBottom)
+            foldWork[h.lowerBound] = (w.lowerBound + keepTop)..<(w.upperBound - keepBottom)
             segments.append(Segment(left: l..<(l + 1), right: r..<(r + 1), kind: .fold(id: h.lowerBound)))
             same((h.upperBound - keepBottom)..<h.upperBound, (w.upperBound - keepBottom)..<w.upperBound)
         }
         self.left = left
         self.right = right
         self.segments = segments
+        self.foldHead = foldHead
+        self.foldWork = foldWork
     }
 
     /// Maps a (fractional) display-line position from one side to the other.

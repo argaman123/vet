@@ -58,6 +58,11 @@ struct ReviewView: View {
                     } else {
                         Text(doc.change.path).lineLimit(1).truncationMode(.middle)
                     }
+                    if model.diffDirty {
+                        Circle().fill(.white.opacity(0.7)).frame(width: 7, height: 7).help("Unsaved changes")
+                        Button("Save") { NSApp.sendAction(#selector(CodeTextView.vetSave(_:)), to: nil, from: nil) }.buttonStyle(.borderless)
+                        Button("Discard") { model.revertDiffEdits() }.buttonStyle(.borderless)
+                    }
                     Spacer()
                     iconButton("chevron.up", "Previous change") { model.jumpToChange(forward: false) }
                     iconButton("chevron.down", "Next change") { model.jumpToChange(forward: true) }

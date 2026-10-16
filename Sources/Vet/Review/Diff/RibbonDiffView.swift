@@ -10,12 +10,19 @@ struct RibbonDiffView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> RibbonDiffNSView {
         let v = RibbonDiffNSView()
+        v.onDirtyChange = { [weak model] dirty in model?.diffDirty = dirty }
+        v.onSave = { [weak model] text in model?.saveDiffEdits(text) }
         v.onToggle = { [weak model] id, staged, snapshot in model?.setHunk(id, staged: staged, snapshot: snapshot) }
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
         return v
     }
 
     func updateNSView(_ view: RibbonDiffNSView, context: Context) {
+        if view.revertSerial != model.revertSerial {
+            view.revertSerial = model.revertSerial
+            view.discardEdits()
+            view.shownVersion = -1
+        }
         if view.shownVersion != version {
             view.shownVersion = version
             view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
@@ -28,7 +35,15 @@ struct RibbonDiffView: NSViewRepresentable {
 }
 
 /// HEAD on the left, the working file on the right, joined by the ribbon gutter.
-final class RibbonDiffNSView: NSView {
+final class RibbonDiffNSView: NSView, NSTextViewDelegate {
+    var onDirtyChange: ((Bool) -> Void)?
+    /// Called with the full new file text when you save edits made in the right pane.
+    var onSave: ((String) -> Void)?
+    var revertSerial = 0
+    private(set) var isDirty = false { didSet { if oldValue != isDirty { onDirtyChange?(isDirty) } } }
+    private var rehighlight: DispatchWorkItem?
+    private var shownStaging: SectionStaging?
+    private var shownLanguage: CodeLanguage = .plain
     var onToggle: ((Int, Bool, String) -> Void)?
     var onFoldClick: ((Int) -> Void)?
     var lastJump = 0
@@ -62,6 +77,11 @@ final class RibbonDiffNSView: NSView {
                                                    name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         }
         for tv in [leftText, rightText] { tv.onFoldClick = { [weak self] id in self?.onFoldClick?(id) } }
+        // The working file (right side) can be edited and saved; HEAD (left) can't.
+        rightText.isEditable = true
+        rightText.allowsUndo = true
+        rightText.delegate = self
+        rightText.onSave = { [weak self] in self?.save() }
         gutter.onToggle = { [weak self] id, staged, snapshot in self?.onToggle?(id, staged, snapshot) }
         gutter.onDrag = { [weak self] dx in self?.drag(dx) }
         gutter.onResetSplit = { [weak self] in self?.setSplit(0.5) }
@@ -84,6 +104,12 @@ final class RibbonDiffNSView: NSView {
         }
         messageLabel.isHidden = true
         let samePath = shownPath == doc.change.path
+        // Never replace text you're editing; the header offers Reload instead.
+        if isDirty && samePath { return }
+        isDirty = false
+        shownStaging = staging
+        shownLanguage = doc.language
+        rightText.isEditable = doc.change.kind != .deleted
         let keepLeft = leftScroll.contentView.bounds.origin, keepRight = rightScroll.contentView.bounds.origin
         // Remember what you were reading (a line's text and number), not just a pixel offset,
         // so lines Claude inserts above it don't shift your place.
@@ -182,6 +208,52 @@ final class RibbonDiffNSView: NSView {
         syncGutter()
         displayIfNeeded()
         Timing.diffShown(doc.change.path)
+    }
+
+    // MARK: Editing the working file
+
+    func textDidChange(_ notification: Notification) {
+        isDirty = true
+        rehighlight?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let storage = self.rightText.textStorage else { return }
+            MainActor.assumeIsolated { CodeText.rehighlight(storage, language: self.shownLanguage) }
+        }
+        rehighlight = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    func discardEdits() { isDirty = false }
+
+    /// Rebuilds the whole file from the edited right pane: fold rows become the lines they hide.
+    func save() {
+        guard isDirty, let staging = shownStaging, let layout = diffLayout else { return }
+        let work = staging.work
+        let ending = work.lines.first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
+        let finalNewline = work.lines.last.map { !$0.terminator.isEmpty } ?? true
+        guard let storage = rightText.textStorage else { return }
+        let ns = storage.string as NSString
+        var out: [String] = []
+        var location = 0
+        while location <= ns.length {
+            let lineRange = ns.lineRange(for: NSRange(location: min(location, max(0, ns.length - 1)), length: 0))
+            if location == ns.length {
+                if ns.length == 0 || ns.character(at: ns.length - 1) == 10 { out.append("") }
+                break
+            }
+            var content = ns.substring(with: lineRange)
+            if content.hasSuffix("\n") { content.removeLast() }
+            if let id = storage.attribute(.vetFold, at: lineRange.location, effectiveRange: nil) as? Int, let hidden = layout.foldWork[id] {
+                out += hidden.map { String(work.lines[$0].text) }
+            } else {
+                out.append(content)
+            }
+            location = NSMaxRange(lineRange)
+        }
+        if out.last == "" && out.count > 1 { out.removeLast() }
+        var text = out.joined(separator: ending)
+        if finalNewline && !text.isEmpty { text += ending }
+        onSave?(text)
     }
 
     /// The first file line visible at the top of the main pane, and how far it's scrolled past.

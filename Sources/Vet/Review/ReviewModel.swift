@@ -49,6 +49,10 @@ final class ReviewModel {
     }
     /// Folds the user opened in the current file (by the region's first HEAD line).
     var expandedFolds: Set<Int> = []
+    /// The right pane has unsaved edits.
+    var diffDirty = false
+    /// Bumped to make the diff view throw away unsaved edits.
+    private(set) var revertSerial = 0
     /// Bumped to ask the diff view to jump to the previous/next section.
     private(set) var jump: (serial: Int, forward: Bool) = (0, true)
     /// Folders the user has expanded (repo-relative paths).
@@ -163,6 +167,25 @@ final class ReviewModel {
         guard serial == loadSerial, selectedPath == path else { return } // a newer load or selection won
         guard case .document(let doc) = result else { return }
         diff = doc
+        diffVersion += 1
+    }
+
+    /// Writes edits made in the diff's right pane to the working file (atomically).
+    func saveDiffEdits(_ text: String) {
+        guard let root, let change = diff?.change else { return }
+        do {
+            try Data(text.utf8).write(to: root.appendingPathComponent(change.path), options: .atomic)
+            diffDirty = false
+            revertSerial += 1 // drop the edit buffer; the refresh below shows the saved file
+            Task { await refresh() }
+        } catch {
+            show("Couldn't save: \(error.localizedDescription)")
+        }
+    }
+
+    func revertDiffEdits() {
+        diffDirty = false
+        revertSerial += 1
         diffVersion += 1
     }
 
