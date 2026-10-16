@@ -50,6 +50,9 @@ final class ClaudeLink {
         }
     }
 
+    /// A short message at the bottom of the window.
+    func flash(_ message: String) { show(message) }
+
     private func show(_ message: String) {
         toast = message
         toastSerial += 1
@@ -73,7 +76,7 @@ final class ClaudeLink {
     /// Adds the bridge-mod marketplace and installs vet-bridge with the `claude` command line tool.
     func installMod() async -> String {
         guard let folder = Self.modFolder else { return "Couldn't find the bridge mod folder." }
-        let env = await LoginEnvironment.shared.values()
+        let env = await ShellEnvironment.load()
         func claude(_ args: [String]) -> (Int32, String) {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/bin/zsh")

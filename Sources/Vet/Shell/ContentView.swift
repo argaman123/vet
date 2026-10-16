@@ -25,18 +25,31 @@ struct ContentView: View {
                         state.selected = .files
                     }
                 }
-                case .files: FilesView(model: workspace.files)
+                case .files: FilesView(model: workspace.files) { kind, url, text, line, character in
+                    workspace.navigate(kind, url: url, text: text, line: line, character: character)
+                }
                 case .browser: BrowserView(model: workspace.browser)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if workspace.run.outputVisible { OutputPanel(run: workspace.run) }
             }
+            // Its own view: SwiftUI shows only one .sheet per view, and the run editor has the outer one.
+            .sheet(isPresented: Binding(get: { workspace.navResults != nil }, set: { if !$0 { workspace.navResults = nil } })) {
+                if let results = workspace.navResults {
+                    LocationPicker(title: results.title, locations: results.locations, root: workspace.root) { workspace.open($0) } cancel: { workspace.navResults = nil }
+                }
+            }
         }
         .background(.background)
         .sheet(isPresented: $editingRun) { RunConfigEditor(run: workspace.run, isPresented: $editingRun) }
         .overlay(alignment: .bottom) {
-            if let toast = workspace.link.toast {
+            if let busy = workspace.navBusy {
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(busy).font(.callout) }
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(.bottom, workspace.run.outputVisible ? 258 : 18)
+            } else if let toast = workspace.link.toast {
                 Text(toast)
                     .font(.callout)
                     .padding(.horizontal, 16).padding(.vertical, 9)

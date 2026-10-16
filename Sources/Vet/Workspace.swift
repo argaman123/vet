@@ -9,12 +9,59 @@ final class Workspace {
     let browser = BrowserModel()
     let run = RunModel()
     let link = ClaudeLink()
+    private(set) var navigator: CodeNavigator?
+    /// "Find references" (or several definitions): the list to pick from.
+    var navResults: (title: String, locations: [CodeLocation])?
+    /// Shown while a language server answers ("Finding definition…").
+    private(set) var navBusy: String?
+    /// Switch to the Files tab (set by the app).
+    var onShowFiles: (() -> Void)?
     /// Asked to open another project (Review follows the Claude chat you're working in).
     var onOpenProject: ((URL) -> Void)?
     /// Set when Claude finishes a reply in this project: unreviewed files for the Review badge.
     var onClaudeFinished: ((Int) -> Void)?
     private(set) var root: URL?
     private var watcher: RepoWatcher?
+
+    // MARK: Code navigation
+
+    /// Go to definition / implementation, or find references, from (line, column) in `url`
+    /// (whose current text, unsaved edits included, is `text`).
+    func navigate(_ kind: CodeTextView.Navigation, url: URL, text: String, line: Int, character: Int) {
+        guard let navigator else { return }
+        guard navigator.isSupported(url) else {
+            link.flash("Go to definition works in TypeScript, JavaScript, Python and Kotlin files.")
+            return
+        }
+        let title: String = switch kind {
+        case .definition: "Definition"
+        case .implementation: "Implementations"
+        case .references: "References"
+        }
+        navBusy = "Finding \(title.lowercased())…"
+        Task {
+            let found: [CodeLocation] = switch kind {
+            case .definition: await navigator.definition(of: url, text: text, line: line, character: character)
+            case .implementation: await navigator.implementation(of: url, text: text, line: line, character: character)
+            case .references: await navigator.references(of: url, text: text, line: line, character: character)
+            }
+            navBusy = nil
+            if found.isEmpty {
+                link.flash("No \(title.lowercased()) found.")
+            } else if found.count == 1 && kind != .references {
+                open(found[0])
+            } else {
+                navResults = (title, found)
+            }
+        }
+    }
+
+    /// Opens a location in the Files tab, caret on it.
+    func open(_ location: CodeLocation) {
+        navResults = nil
+        files.show(location.url, line: location.startLine, character: location.startCharacter)
+        onShowFiles?()
+    }
 
     func startLink() {
         review.link = link
@@ -48,6 +95,9 @@ final class Workspace {
             return
         }
         root = folder
+        navigator?.shutdown()
+        navigator = folder.map { CodeNavigator(root: $0) }
+        review.navigator = { [weak self] kind, url, text, line, character in self?.navigate(kind, url: url, text: text, line: line, character: character) }
         review.open(folder)
         files.open(folder)
         browser.open(project: folder)

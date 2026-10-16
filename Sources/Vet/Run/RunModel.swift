@@ -73,7 +73,7 @@ final class RunModel {
         outputVersion += 1
         let cwd = config.cwd.hasPrefix("/") ? config.cwd : root.appendingPathComponent(config.cwd).path
         Task {
-            var env = await LoginEnvironment.shared.values()
+            var env = await ShellEnvironment.load()
             for (k, v) in config.env ?? [:] { env[k] = v }
             env["FORCE_COLOR"] = "0"
             launch(command: config.command, cwd: cwd, env: env)
@@ -207,42 +207,5 @@ final class RunModel {
             return RunConfig(id: (d["id"] as? String) ?? UUID().uuidString, name: (d["name"] as? String) ?? command,
                              command: command, cwd: (d["cwd"] as? String) ?? ".", env: d["env"] as? [String: String])
         }
-    }
-}
-
-/// The environment your login shell sets up (PATH from nvm, Homebrew, etc.), captured once — the
-/// way VS Code resolves the shell environment — because an app opened from Finder doesn't get it.
-actor LoginEnvironment {
-    static let shared = LoginEnvironment()
-    private var cached: [String: String]?
-
-    func values() async -> [String: String] {
-        if let cached { return cached }
-        let env = await Task.detached { Self.capture() }.value
-        cached = env
-        return env
-    }
-
-    private nonisolated static func capture() -> [String: String] {
-        var result = ProcessInfo.processInfo.environment
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        p.arguments = ["-ilc", "printf '__VET_ENV__'; env -0"]
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return result }
-        let deadline = DispatchTime.now() + 8
-        let done = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var data = Data()
-        DispatchQueue.global().async { data = out.fileHandleForReading.readDataToEndOfFile(); done.signal() }
-        if done.wait(timeout: deadline) == .timedOut { p.terminate(); return result }
-        guard let marker = data.range(of: Data("__VET_ENV__".utf8)) else { return result }
-        for entry in data[marker.upperBound...].split(separator: 0) {
-            let s = String(decoding: entry, as: UTF8.self)
-            if let eq = s.firstIndex(of: "=") { result[String(s[..<eq])] = String(s[s.index(after: eq)...]) }
-        }
-        return result
     }
 }

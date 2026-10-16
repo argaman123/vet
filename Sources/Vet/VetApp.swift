@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         main.show()
         NSApp.activate()
         workspace.onOpenProject = { [weak self] url in self?.projects.open(url) }
+        workspace.onShowFiles = { [weak self] in self?.state.selected = .files }
+        Task { _ = await ShellEnvironment.load() } // warm up: Run and the language servers need it
         workspace.startLink()
         workspace.onClaudeFinished = { [weak self] count in
             guard let self, self.state.selected != .review else { return }
@@ -51,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         workspace.run.stop() // don't leave your dev server running after Vet quits
+        workspace.navigator?.shutdown()
         workspace.link.stop()
     }
 
