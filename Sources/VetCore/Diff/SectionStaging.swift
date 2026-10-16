@@ -30,8 +30,10 @@ public struct SectionStaging: Sendable {
         self.index = index
         self.work = work
         hunks = LineDiff.hunks(head: head, work: work)
-        headToIndex = LineDiff.hunks(head: head, work: index, wordChanges: false)
-        indexToWork = LineDiff.hunks(head: index, work: work, wordChanges: false)
+        // Staging slices same-size changes line by line, which needs the minimal line alignment:
+        // a displayed hunk joined across a short unchanged gap doesn't pair up line by line.
+        headToIndex = LineDiff.lineChanges(head: head, work: index)
+        indexToWork = LineDiff.lineChanges(head: index, work: work)
         snapshotID = Self.snapshot(head: head.joined(), index: index.joined(), work: work.joined())
     }
 

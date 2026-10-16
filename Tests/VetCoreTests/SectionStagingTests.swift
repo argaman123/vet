@@ -89,7 +89,7 @@ private func text(_ d: Data) -> String { String(decoding: d, as: UTF8.self) }
 
 @Test func wordChangesFound() {
     let h = LineDiff.hunks(head: lines("let x = 1\n"), work: lines("let y = 1\n"))
-    #expect(h.first?.wordChanges.first?.workCols == [4..<5])
+    #expect(h.first?.workCols == [0: [4..<5]])
 }
 
 @Test func composedAndDecomposedAreDifferentBytes() {
