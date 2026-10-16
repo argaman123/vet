@@ -63,13 +63,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspace.files.goForward()
     }
 
+    private var quitting = false
+
+    /// Asks about unsaved edits, then stops your running app and the language servers before
+    /// quitting (at most 5 s), so nothing Vet started is left behind.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        workspace.confirmLeave() ? .terminateNow : .terminateCancel
+        if quitting { return .terminateLater }
+        guard workspace.confirmLeave() else { return .terminateCancel }
+        quitting = true
+        var replied = false
+        func reply() {
+            guard !replied else { return }
+            replied = true
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        let run = workspace.run, navigator = workspace.navigator
+        Task {
+            async let stopped: Void = run.stopAndWait()
+            async let servers: Void = navigator?.shutdownAndWait() ?? ()
+            _ = await (stopped, servers)
+            reply()
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            reply()
+        }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        workspace.run.stop() // don't leave your dev server running after Vet quits
-        workspace.navigator?.shutdown()
         workspace.link.stop()
     }
 

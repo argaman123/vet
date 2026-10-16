@@ -64,7 +64,7 @@ struct OutputPanel: View {
             .padding(.horizontal, 12)
             .frame(height: 28)
             .background(Color(nsColor: DiffTheme.foldBand))
-            OutputText(text: run.output, version: run.outputVersion)
+            OutputText(text: run.output, version: run.outputVersion, epoch: run.outputEpoch)
         }
         .frame(height: 240)
     }
@@ -73,8 +73,13 @@ struct OutputPanel: View {
 struct OutputText: NSViewRepresentable {
     let text: String
     let version: Int
+    let epoch: Int
 
-    final class Coordinator { var shown = -1 }
+    final class Coordinator {
+        var shown = -1
+        var shownEpoch = -1
+        var shownBytes = 0
+    }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -91,9 +96,19 @@ struct OutputText: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard context.coordinator.shown != version, let tv = scroll.documentView as? NSTextView else { return }
-        context.coordinator.shown = version
+        let c = context.coordinator
+        c.shown = version
         let atBottom = scroll.contentView.bounds.maxY >= (tv.frame.height - 30)
-        tv.string = text
+        let bytes = text.utf8
+        if c.shownEpoch == epoch, c.shownBytes <= bytes.count, let storage = tv.textStorage {
+            // Only the new output: appending keeps a chatty dev server cheap.
+            let added = String(text[bytes.index(bytes.startIndex, offsetBy: c.shownBytes)...])
+            storage.append(NSAttributedString(string: added, attributes: [.font: tv.font as Any, .foregroundColor: DiffTheme.text]))
+        } else {
+            tv.string = text
+            c.shownEpoch = epoch
+        }
+        c.shownBytes = bytes.count
         if atBottom { tv.scrollToEndOfDocument(nil) } // follow new output unless you scrolled up
     }
 }

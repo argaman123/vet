@@ -21,6 +21,9 @@ final class RunModel {
     private(set) var crashed = false
     private(set) var output = ""
     private(set) var outputVersion = 0
+    /// Changes when `output` is replaced rather than appended to (a new run, Clear, trimming),
+    /// so the panel knows when it can just append.
+    private(set) var outputEpoch = 0
     var outputVisible = false
     /// Called once per run with the first local URL the app prints (opens it in the Browser tab).
     var onLocalURL: ((URL) -> Void)?
@@ -31,6 +34,10 @@ final class RunModel {
     private var exitSource: DispatchSourceProcess?
     private var reader: FileHandle?
     private var sawURL = false
+    /// Bumped by every start and by stopping or switching projects while a start is still
+    /// loading the environment, so a stale start never launches.
+    private var launchGeneration = 0
+    private var leaderStatus: Int32 = 0
     private static let maxOutput = 1_000_000
 
     var selected: RunConfig? { configs.first { $0.id == selectedID } ?? configs.first }
@@ -69,11 +76,16 @@ final class RunModel {
         crashed = false
         sawURL = false
         stopping = false
+        isRunning = true // Stop shows right away; `pid` stays 0 until the process exists
         output = "$ \(config.command)\n"
+        outputEpoch += 1
         outputVersion += 1
+        launchGeneration += 1
+        let generation = launchGeneration
         let cwd = config.cwd.hasPrefix("/") ? config.cwd : root.appendingPathComponent(config.cwd).path
         Task {
             var env = await ShellEnvironment.load()
+            guard generation == launchGeneration else { return } // stopped or switched projects meanwhile
             for (k, v) in config.env ?? [:] { env[k] = v }
             env["FORCE_COLOR"] = "0"
             launch(command: config.command, cwd: cwd, env: env)
@@ -82,18 +94,37 @@ final class RunModel {
 
     /// Stops the whole process group (so `npm run start` takes its dev server with it).
     func stop() {
-        guard isRunning, pid > 0 else { return }
+        guard isRunning else { return }
+        guard pid > 0 else { // still starting
+            launchGeneration += 1
+            isRunning = false
+            append("\n[stopped]\n")
+            return
+        }
         stopping = true
         let group = pid
         kill(-group, SIGTERM)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            guard let self, self.isRunning, self.pid == group else { return }
-            kill(-group, SIGKILL)
+        // Whatever ignores SIGTERM, including children that outlive the shell, gets SIGKILL.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            if kill(-group, 0) == 0 { kill(-group, SIGKILL) }
+        }
+    }
+
+    /// Stops the run and waits (at most about 4 s) until all of its processes are gone.
+    func stopAndWait() async {
+        let group = pid
+        stop()
+        guard group > 0 else { return }
+        for tick in 0..<40 {
+            if kill(-group, 0) != 0 { return }
+            if tick == 30 { kill(-group, SIGKILL) }
+            try? await Task.sleep(for: .milliseconds(100))
         }
     }
 
     func clearOutput() {
         output = ""
+        outputEpoch += 1
         outputVersion += 1
     }
 
@@ -101,8 +132,15 @@ final class RunModel {
         let pipe = Pipe()
         var attr: posix_spawnattr_t?
         posix_spawnattr_init(&attr)
-        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETPGROUP))
-        posix_spawnattr_setpgroup(&attr, 0) // its own process group, so Stop reaches its children
+        // Its own process group, so Stop reaches its children; only stdin/out/err inherited; signals
+        // as a fresh process expects them (Vet ignores SIGPIPE, which a dev server must not).
+        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
+        posix_spawnattr_setpgroup(&attr, 0)
+        var allSignals = sigset_t(), noSignals = sigset_t()
+        sigfillset(&allSignals)
+        sigemptyset(&noSignals)
+        posix_spawnattr_setsigdefault(&attr, &allSignals)
+        posix_spawnattr_setsigmask(&attr, &noSignals)
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
         posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
@@ -124,10 +162,10 @@ final class RunModel {
         guard rc == 0 else {
             append("Couldn't start: \(String(cString: strerror(rc)))\n")
             crashed = true
+            isRunning = false
             return
         }
         pid = child
-        isRunning = true
         reader = pipe.fileHandleForReading
         reader?.readabilityHandler = { [weak self] h in
             let data = h.availableData
@@ -148,8 +186,24 @@ final class RunModel {
     private func exited(status: Int32) {
         exitSource?.cancel()
         exitSource = nil
+        leaderStatus = status
+        waitForGroup()
+    }
+
+    /// The shell has exited; the run is over once every process it started has too (a dev
+    /// server can outlive its shell), so Stop stays available until then.
+    private func waitForGroup() {
+        let group = pid
+        if group > 0, kill(-group, 0) == 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, self.pid == group else { return }
+                self.waitForGroup()
+            }
+            return
+        }
         isRunning = false
         pid = 0
+        let status = leaderStatus
         let code = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
         if !stopping && code != 0 { crashed = true }
         append(stopping ? "\n[stopped]\n" : "\n[exited with code \(code)]\n")
@@ -157,7 +211,14 @@ final class RunModel {
 
     private func append(_ text: String) {
         output += Self.stripANSI(text)
-        if output.utf8.count > Self.maxOutput { output = String(output.suffix(Self.maxOutput / 2)) }
+        if output.utf8.count > Self.maxOutput {
+            // Keep the newest half, starting at a line.
+            let utf8 = output.utf8
+            let cut = utf8.index(utf8.startIndex, offsetBy: utf8.count - Self.maxOutput / 2)
+            let start = utf8[cut...].firstIndex(of: 10).map { utf8.index(after: $0) } ?? utf8.endIndex
+            output = String(output[start...])
+            outputEpoch += 1
+        }
         outputVersion += 1
         if !sawURL, let url = Self.localURL(in: text) {
             sawURL = true

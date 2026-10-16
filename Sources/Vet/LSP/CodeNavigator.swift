@@ -61,6 +61,15 @@ extension CodeLocation {
         }
     }
 
+    /// Stops every server and waits for them (used when Vet quits).
+    func shutdownAndWait() async {
+        let running = Array(servers.values)
+        servers = [:]
+        await withTaskGroup(of: Void.self) { group in
+            for task in running { group.addTask { await task.value?.stop() } }
+        }
+    }
+
     // MARK: Private
 
     private static let log = Logger(subsystem: "Vet", category: "CodeNavigator")
