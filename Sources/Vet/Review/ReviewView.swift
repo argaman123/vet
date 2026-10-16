@@ -8,6 +8,7 @@ struct ReviewView: View {
     let link: ClaudeLink
     var openInFiles: ((String) -> Void)?
     @State private var installMessage: String?
+    @State private var editingRules = false
     @State private var installing = false
 
     var body: some View {
@@ -30,6 +31,7 @@ struct ReviewView: View {
                 Spacer()
                 iconButton("arrow.down.circle", "Next unreviewed file") { model.nextUnreviewed() }
                 iconButton("arrow.clockwise", "Refresh") { Task { await model.refresh() } }
+                iconButton("line.3.horizontal.decrease.circle", "Unimportant rules") { editingRules = true }
                 iconButton("arrow.down.right.and.arrow.up.left", "Collapse all folders") { model.collapseAll() }
                 iconButton("arrow.up.left.and.arrow.down.right", "Expand all folders") { model.expandAll() }
             }
@@ -74,6 +76,7 @@ struct ReviewView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
+        .sheet(isPresented: $editingRules) { RulesDialog(model: model, isPresented: $editingRules) }
         .alert("Claude link", isPresented: Binding(get: { installMessage != nil }, set: { if !$0 { installMessage = nil } })) {
             Button("OK") { installMessage = nil }
         } message: { Text(installMessage ?? "") }

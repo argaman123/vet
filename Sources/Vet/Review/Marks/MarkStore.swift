@@ -54,6 +54,14 @@ final class MarkStore {
         save()
     }
 
+    /// Replaces the whole list of marks and rules (from the rules dialog).
+    func setRules(marks: [String], rules: [String]) {
+        data.marks = Array(Set(marks.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })).sorted()
+        data.rules = Array(rules.map { String($0.trimmingCharacters(in: .whitespaces).prefix(GlobRule.maxLength)) }.filter { !$0.isEmpty }.prefix(GlobRule.maxRules))
+        self.rules = data.rules.map(GlobRule.init)
+        save()
+    }
+
     func hold(_ path: String, hash: String) {
         data.holds[path] = hash
         save()

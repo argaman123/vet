@@ -351,6 +351,15 @@ final class ReviewModel {
     func isMarked(_ path: String) -> Bool { marks?.isMarked(path) ?? false }
     func isDirectlyMarked(_ path: String) -> Bool { marks?.isDirectlyMarked(path) ?? false }
 
+    /// The rules dialog: every mark and rule as editable text.
+    var markRules: (marks: [String], rules: [String]) { (marks?.data.marks ?? [], marks?.data.rules ?? []) }
+
+    func setMarkRules(marks: [String], rules: [String]) {
+        self.marks?.setRules(marks: marks, rules: rules)
+        version += 1
+        Task { await autoStageUnimportant() }
+    }
+
     func toggleMark(_ node: FileTreeNode) {
         guard let marks else { return }
         if marks.isDirectlyMarked(node.path) {
