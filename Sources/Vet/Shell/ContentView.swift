@@ -16,7 +16,7 @@ struct ContentView: View {
                 switch state.selected {
                 case .review: ReviewView(model: workspace.review, projects: projects)
                 case .files: FilesView(model: workspace.files)
-                case .browser: placeholder("Browser", "A bare browser will show here.")
+                case .browser: BrowserView(model: workspace.browser)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

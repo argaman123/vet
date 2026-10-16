@@ -6,6 +6,7 @@ import Observation
 final class Workspace {
     let review = ReviewModel()
     let files = FilesModel()
+    let browser = BrowserModel()
     private(set) var root: URL?
     private var watcher: RepoWatcher?
 
@@ -17,6 +18,7 @@ final class Workspace {
         root = folder
         review.open(folder)
         files.open(folder)
+        browser.open(project: folder)
         // Claude edits files and stages/commits while you review: follow along.
         watcher = folder.map { f in
             RepoWatcher(root: f, gitDir: GitRepo.gitDir(of: f)) { [weak self] in
