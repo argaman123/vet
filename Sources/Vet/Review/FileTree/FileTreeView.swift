@@ -147,13 +147,16 @@ struct FileTreeView: NSViewRepresentable {
 
         func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
-            guard let outline, outline.clickedRow >= 0, let node = outline.item(atRow: outline.clickedRow) as? FileTreeNode else { return }
+            guard let outline else { return }
+            let row = outline.clickedRow >= 0 ? outline.clickedRow : outline.selectedRow // keyboard/accessibility open the menu on the selection
+            guard row >= 0, let node = outline.item(atRow: row) as? FileTreeNode else { return }
             let ask = NSMenuItem(title: node.isFolder ? "Ask Claude about this folder" : "Ask Claude about this file", action: nil, keyEquivalent: "")
             ask.toolTip = "Needs the Claude bridge (coming soon)"
             ask.isEnabled = false
             menu.addItem(ask)
             menu.addItem(.separator())
-            menu.addItem(item("Mark as unimportant", node, #selector(markUnimportant(_:)), enabled: false))
+            menu.addItem(item(model.isDirectlyMarked(node.path) ? "Remove unimportant mark" : "Mark as unimportant", node, #selector(markUnimportant(_:)),
+                              enabled: model.isDirectlyMarked(node.path) || !model.isMarked(node.path)))
             menu.addItem(item("Unstage", node, #selector(unstage(_:)), enabled: model.stage(of: node) != .unstaged))
             menu.addItem(.separator())
             menu.addItem(item("Open plain diff", node, #selector(openPlain(_:)), enabled: !node.isFolder))
@@ -169,7 +172,21 @@ struct FileTreeView: NSViewRepresentable {
             return i
         }
 
-        @objc func markUnimportant(_ sender: NSMenuItem) {}
+        @objc func markUnimportant(_ sender: NSMenuItem) {
+            guard let node = sender.representedObject as? FileTreeNode else { return }
+            model.toggleMark(node)
+        }
+
+        // Unimportant rows get a faint tint; neighbouring marked rows join into one rounded block.
+        func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+            let row = MarkedRowView()
+            row.isMarked = { [weak self, weak outlineView] r in
+                guard let self, let outlineView, r >= 0, r < outlineView.numberOfRows,
+                      let node = outlineView.item(atRow: r) as? FileTreeNode else { return false }
+                return self.model.isMarked(node.path)
+            }
+            return row
+        }
 
         @objc func unstage(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? FileTreeNode else { return }
@@ -192,6 +209,37 @@ struct FileTreeView: NSViewRepresentable {
             NSPasteboard.general.setString(node.path, forType: .string)
         }
     }
+}
+
+/// Draws the unimportant tint, rounding only the ends of each run of marked rows.
+final class MarkedRowView: NSTableRowView {
+    var isMarked: (Int) -> Bool = { _ in false }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        super.drawBackground(in: dirtyRect)
+        guard let outline = superview as? NSOutlineView else { return }
+        let row = outline.row(for: self)
+        guard row >= 0, isMarked(row) else { return }
+        let joinsAbove = isMarked(row - 1), joinsBelow = isMarked(row + 1)
+        let r = bounds.insetBy(dx: 6, dy: 0)
+        let radius: CGFloat = 6
+        let path = NSBezierPath()
+        let top = r.minY, bottom = r.maxY // flipped
+        path.move(to: NSPoint(x: r.minX, y: joinsAbove ? top : top + radius))
+        if joinsAbove { path.line(to: NSPoint(x: r.maxX, y: top)) } else {
+            path.appendArc(withCenter: NSPoint(x: r.minX + radius, y: top + radius), radius: radius, startAngle: 180, endAngle: 270)
+            path.appendArc(withCenter: NSPoint(x: r.maxX - radius, y: top + radius), radius: radius, startAngle: 270, endAngle: 360)
+        }
+        if joinsBelow { path.line(to: NSPoint(x: r.maxX, y: bottom)); path.line(to: NSPoint(x: r.minX, y: bottom)) } else {
+            path.appendArc(withCenter: NSPoint(x: r.maxX - radius, y: bottom - radius), radius: radius, startAngle: 0, endAngle: 90)
+            path.appendArc(withCenter: NSPoint(x: r.minX + radius, y: bottom - radius), radius: radius, startAngle: 90, endAngle: 180)
+        }
+        path.close()
+        NSColor.labelColor.withAlphaComponent(0.06).setFill()
+        path.fill()
+    }
+
+    override var isFlipped: Bool { true }
 }
 
 /// Space toggles the selected row's checkbox; Return opens/expands it.

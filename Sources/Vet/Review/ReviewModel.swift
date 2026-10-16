@@ -56,6 +56,8 @@ final class ReviewModel {
     private(set) var error: String?
     private(set) var isGitRepo = true
     private var watcher: RepoWatcher?
+    private(set) var marks: MarkStore?
+    private var autoStaging = false
     /// Paths staged/unstaged optimistically while git runs.
     private var pending: [String: StageState] = [:]
 
@@ -70,6 +72,7 @@ final class ReviewModel {
         guard let folder else { repo = nil; return }
         isGitRepo = GitRepo.root(containing: folder) != nil
         repo = isGitRepo ? GitRepo(root: folder) : nil
+        marks = isGitRepo ? MarkStore(root: folder) : nil
         // Claude edits files and stages/commits while you review: follow along.
         watcher = isGitRepo ? RepoWatcher(root: folder) { [weak self] in Task { await self?.refresh() } } : nil
         Task { await refresh() }
@@ -83,12 +86,14 @@ final class ReviewModel {
             changes = fresh
             pending = [:]
             tree = FileTreeNode.build(fresh)
-            // New files open their folders, even if they appeared while Vet was closed.
-            for c in fresh where !known.contains(c.path) { expandAncestors(of: c.path) }
+            // New files open their folders, even if they appeared while Vet was closed;
+            // unimportant ones don't.
+            for c in fresh where !known.contains(c.path) && !(marks?.isMarked(c.path) ?? false) { expandAncestors(of: c.path) }
             if let sel = selectedPath, !fresh.contains(where: { $0.path == sel }) { selectedPath = nil }
             error = nil
             version += 1
             await loadDiff()
+            await autoStageUnimportant()
         } catch {
             self.error = "\(error)"
         }
@@ -106,7 +111,11 @@ final class ReviewModel {
     /// Stages (or unstages) every file at or under `node`. The checkbox flips at once; git runs in order.
     func setStaged(_ node: FileTreeNode, _ staged: Bool) {
         let targets = node.fileChanges.filter { staged ? stage(of: $0) != .staged : stage(of: $0) != .unstaged }
-        guard let repo, !targets.isEmpty else { return }
+        guard let repo, let root, !targets.isEmpty else { return }
+        // Unchecking an unimportant file holds it unstaged until it changes again.
+        for c in targets where marks?.isMarked(c.path) ?? false {
+            if staged { marks?.releaseHold(c.path) } else { marks?.hold(c.path, hash: MarkStore.contentHash(root: root, path: c.path)) }
+        }
         for c in targets { pending[c.path] = staged ? .staged : .unstaged }
         version += 1
         Task {
@@ -171,6 +180,45 @@ final class ReviewModel {
             return FileManager.default.isExecutableFile(atPath: root.appendingPathComponent(change.path).path) ? "100755" : "100644"
         }
         return change.modeIndex
+    }
+
+    // MARK: Unimportant
+
+    func isMarked(_ path: String) -> Bool { marks?.isMarked(path) ?? false }
+    func isDirectlyMarked(_ path: String) -> Bool { marks?.isDirectlyMarked(path) ?? false }
+
+    func toggleMark(_ node: FileTreeNode) {
+        guard let marks else { return }
+        if marks.isDirectlyMarked(node.path) {
+            marks.unmark(node.path)
+        } else {
+            marks.mark(node.path)
+            if node.isFolder { expanded = expanded.filter { $0 != node.path && !$0.hasPrefix(node.path + "/") } } // marked folders fold away
+        }
+        version += 1
+        Task { await autoStageUnimportant() }
+    }
+
+    /// Stages saved changes to unimportant files, except ones you unchecked that haven't changed since.
+    private func autoStageUnimportant() async {
+        guard !autoStaging, let repo, let root, let marks else { return }
+        let due = changes.filter { c in
+            guard c.kind != .conflicted, marks.isMarked(c.path), c.stage != .staged else { return false }
+            if let held = marks.heldHash(c.path) {
+                if held == MarkStore.contentHash(root: root, path: c.path) { return false }
+                marks.releaseHold(c.path) // it changed since you unchecked it
+            }
+            return true
+        }
+        guard !due.isEmpty else { return }
+        autoStaging = true
+        defer { autoStaging = false }
+        do {
+            for c in due { try await repo.stageFile(c) }
+        } catch {
+            self.error = "Couldn't auto-stage an unimportant file: \(error)"
+        }
+        await refresh()
     }
 
     func nextUnreviewed() {
