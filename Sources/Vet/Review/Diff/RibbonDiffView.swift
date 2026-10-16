@@ -16,8 +16,10 @@ struct RibbonDiffView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: RibbonDiffNSView, context: Context) {
-        _ = version
-        view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
+        if view.shownVersion != version {
+            view.shownVersion = version
+            view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
+        }
         if jumpSerial != view.lastJump {
             view.lastJump = jumpSerial
             view.jump(forward: model.jump.forward)
@@ -30,6 +32,7 @@ final class RibbonDiffNSView: NSView {
     var onToggle: ((Int, Bool) -> Void)?
     var onFoldClick: ((Int) -> Void)?
     var lastJump = 0
+    var shownVersion = -1
 
     private let (leftScroll, leftText) = CodeTextView.make()
     private let (rightScroll, rightText) = CodeTextView.make()
@@ -140,11 +143,21 @@ final class RibbonDiffNSView: NSView {
         gutter.rightNumbers = layout.right.map { if case .code(let l) = $0 { l } else { nil } }
         gutter.reload()
 
+        // Every line is 18 pt, so the exact document height is known now; setting it up front
+        // means restoring the scroll position isn't clamped by a half-laid-out text view.
+        for (scroll, tv, count) in [(leftScroll, leftText, layout.left.count), (rightScroll, rightText, layout.right.count)] {
+            let height = DiffTheme.inset.height * 2 + CGFloat(count) * DiffTheme.lineHeight
+            tv.minSize = NSSize(width: 0, height: height)
+            tv.setFrameSize(NSSize(width: max(tv.frame.width, scroll.contentSize.width), height: max(height, scroll.contentSize.height)))
+        }
         leftScroll.isHidden = mode == .rightOnly
         rightScroll.isHidden = mode == .leftOnly
         gutter.isHidden = false
         needsLayout = true
         layoutSubtreeIfNeeded()
+        // Restore (same file) or pick (new file) the position without the panes' scroll
+        // notifications fighting each other, then line the left pane up with the right.
+        syncing = true
         if samePath {
             leftScroll.contentView.scroll(to: keepLeft)
             rightScroll.contentView.scroll(to: keepRight)
@@ -155,6 +168,10 @@ final class RibbonDiffNSView: NSView {
                 scrollRight(toLine: max(0, first.right.lowerBound - 4))
             }
         }
+        leftScroll.reflectScrolledClipView(leftScroll.contentView)
+        rightScroll.reflectScrolledClipView(rightScroll.contentView)
+        syncing = false
+        if !samePath, mode == .split { align(from: rightScroll) }
         syncGutter()
         displayIfNeeded()
         Timing.diffShown(doc.change.path)
@@ -261,12 +278,18 @@ final class RibbonDiffNSView: NSView {
     // MARK: Linked scrolling (by section anchors, so unequal sections line up)
 
     @objc private func scrolled(_ note: Notification) {
-        guard !syncing, let layout = diffLayout, mode == .split, let clip = note.object as? NSClipView else {
+        guard !syncing, mode == .split, let clip = note.object as? NSClipView else {
             syncGutter()
             return
         }
-        let fromLeft = clip === leftScroll.contentView
-        let (src, dst) = fromLeft ? (leftScroll, rightScroll) : (rightScroll, leftScroll)
+        align(from: clip === leftScroll.contentView ? leftScroll : rightScroll)
+    }
+
+    /// Scrolls the other pane so the same place in the file sits in the middle of both.
+    private func align(from src: NSScrollView) {
+        guard let layout = diffLayout else { return }
+        let fromLeft = src === leftScroll
+        let dst = fromLeft ? rightScroll : leftScroll
         let centre = (src.contentView.bounds.midY - DiffTheme.inset.height) / DiffTheme.lineHeight
         let mapped = layout.map(Double(centre), fromLeft: fromLeft)
         let targetY = DiffTheme.inset.height + CGFloat(mapped) * DiffTheme.lineHeight - dst.contentView.bounds.height / 2

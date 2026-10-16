@@ -7,6 +7,12 @@ import VetCore
 @MainActor enum Timing {
     static var selectionStarted: Date?
     static let enabled = UserDefaults.standard.bool(forKey: "logTiming")
+    static func note(_ text: String) {
+        guard enabled else { return }
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("vet-timing.log")
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data((text + "\n").utf8)); try? h.close() }
+    }
+
     static func diffShown(_ path: String) {
         guard enabled, let start = selectionStarted else { return }
         let line = String(format: "diff %@ %.0f ms\n", path, Date().timeIntervalSince(start) * 1000)
@@ -49,6 +55,7 @@ final class ReviewModel {
     var expanded: Set<String> = []
     private(set) var error: String?
     private(set) var isGitRepo = true
+    private var watcher: RepoWatcher?
     /// Paths staged/unstaged optimistically while git runs.
     private var pending: [String: StageState] = [:]
 
@@ -63,6 +70,8 @@ final class ReviewModel {
         guard let folder else { repo = nil; return }
         isGitRepo = GitRepo.root(containing: folder) != nil
         repo = isGitRepo ? GitRepo(root: folder) : nil
+        // Claude edits files and stages/commits while you review: follow along.
+        watcher = isGitRepo ? RepoWatcher(root: folder) { [weak self] in Task { await self?.refresh() } } : nil
         Task { await refresh() }
     }
 
