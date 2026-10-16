@@ -71,6 +71,7 @@ struct CodeEditorRepresentable: NSViewRepresentable {
         let v = CodeEditorView()
         v.onSave = { [weak model] text in model?.save(text) }
         v.onDirtyChange = { [weak model] dirty in model?.isDirty = dirty }
+        model.editorText = { [weak v] in v?.fileText() }
         return v
     }
 

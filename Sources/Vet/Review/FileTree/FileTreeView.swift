@@ -121,15 +121,21 @@ struct FileTreeView: NSViewRepresentable {
             guard row >= 0, let node = sender.item(atRow: row) as? FileTreeNode else { return }
             if node.isFolder {
                 if sender.isItemExpanded(node) { sender.collapseItem(node) } else { sender.expandItem(node) }
-            } else {
-                model.selectedPath = node.path
+            } else if !selectionHandledClick {
+                model.select(node.path)
             }
+            selectionHandledClick = false
         }
+
+        /// A click that changed the selection already went through `select` (which may have asked
+        /// about unsaved edits); the click action that follows mustn't ask again.
+        private var selectionHandledClick = false
 
         func outlineViewSelectionDidChange(_ notification: Notification) {
             guard let outline, !restoring, outline.selectedRow >= 0,
                   let node = outline.item(atRow: outline.selectedRow) as? FileTreeNode, !node.isFolder else { return }
-            if model.selectedPath != node.path { model.selectedPath = node.path }
+            selectionHandledClick = true
+            if model.selectedPath != node.path { model.select(node.path) }
         }
 
         func toggleSelected() {
@@ -197,7 +203,7 @@ struct FileTreeView: NSViewRepresentable {
 
         @objc func openPlain(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? FileTreeNode else { return }
-            model.selectedPath = node.path
+            model.select(node.path)
         }
 
         @objc func showInFinder(_ sender: NSMenuItem) {

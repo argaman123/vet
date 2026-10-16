@@ -7,6 +7,8 @@ final class ProjectStore {
     private(set) var current: URL?
     private(set) var recent: [URL] = []
     private let defaults = UserDefaults.standard
+    /// Asked before switching away from the current project (unsaved edits). False means stay.
+    @ObservationIgnored var mayLeave: () -> Bool = { true }
 
     init() {
         recent = (defaults.stringArray(forKey: "recentProjects") ?? []).map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -15,6 +17,7 @@ final class ProjectStore {
 
     func open(_ url: URL) {
         let folder = GitRepo.root(containing: url) ?? url
+        if folder.standardizedFileURL != current?.standardizedFileURL { guard mayLeave() else { return } }
         current = folder
         recent.removeAll { $0.standardizedFileURL == folder.standardizedFileURL }
         recent.insert(folder, at: 0)

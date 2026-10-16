@@ -104,6 +104,12 @@ final class Workspace {
         return a == b || a.hasPrefix(b + "/")
     }
 
+    /// Unsaved edits anywhere in this project (Files or the diff).
+    var hasUnsavedEdits: Bool { files.isDirty || review.diffDirty }
+
+    /// Before switching projects or quitting: asks about unsaved edits. False means stay.
+    func confirmLeave() -> Bool { files.confirmLeave() && review.confirmLeaveDiff() }
+
     func open(_ folder: URL?) {
         guard folder?.standardizedFileURL != root?.standardizedFileURL else {
             Task { await review.refresh() }

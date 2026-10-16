@@ -129,8 +129,28 @@ final class FilesModel {
         return result
     }
 
+    /// The editor's text as file contents (set by the editor view), for save prompts.
+    var editorText: (() -> String?)?
+
+    /// Saves the editor's unsaved edits, if any.
+    func saveEditor() {
+        guard isDirty, let text = editorText?() else { return }
+        save(text)
+    }
+
+    /// Before leaving the open file: asks to save unsaved edits. False means stay.
+    func confirmLeave() -> Bool {
+        guard isDirty, let name = openURL?.lastPathComponent else { return true }
+        switch Alerts.unsaved(name) {
+        case .save: return editorText?().map { save($0) } ?? false
+        case .discard: isDirty = false; return true
+        case .cancel: return false
+        }
+    }
+
     /// Opens a file (from the tree, a definition jump, or history).
     func show(_ url: URL, line: Int = 0, character: Int = 0, record: Bool = true) {
+        if url != openURL { guard confirmLeave() else { return } }
         if record, let current = openURL, current != url || currentLine != line {
             back.append(Location(url: current, line: currentLine))
             forward = []
@@ -143,13 +163,17 @@ final class FilesModel {
     }
 
     func goBack() {
-        guard let last = back.popLast(), let current = openURL else { return }
+        guard let last = back.last, let current = openURL else { return }
+        if last.url != current { guard confirmLeave() else { return } }
+        back.removeLast()
         forward.append(Location(url: current, line: currentLine))
         show(last.url, line: last.line, record: false)
     }
 
     func goForward() {
-        guard let next = forward.popLast(), let current = openURL else { return }
+        guard let next = forward.last, let current = openURL else { return }
+        if next.url != current { guard confirmLeave() else { return } }
+        forward.removeLast()
         back.append(Location(url: current, line: currentLine))
         show(next.url, line: next.line, record: false)
     }
@@ -180,9 +204,16 @@ final class FilesModel {
         docVersion += 1
     }
 
-    /// Writes the editor's text to the open file (atomically) and reloads it.
-    func save(_ contents: String) {
-        guard let url = openURL else { return }
+    /// Writes the editor's text to the open file (atomically) and reloads it. If the file changed
+    /// on disk since it was loaded, asks before overwriting. Returns whether it was saved.
+    @discardableResult
+    func save(_ contents: String) -> Bool {
+        guard let url = openURL else { return false }
+        if let loaded = text?.joined(), let disk = try? Data(contentsOf: url), disk != loaded,
+           !Alerts.changedOnDisk(url.lastPathComponent) {
+            changedOnDisk = true
+            return false
+        }
         do {
             try Data(contents.utf8).write(to: url, options: .atomic)
             isDirty = false
@@ -190,8 +221,10 @@ final class FilesModel {
             load(url)
             target = nil
             docVersion += 1
+            return true
         } catch {
             self.error = "Couldn't save: \(error.localizedDescription)"
+            return false
         }
     }
 

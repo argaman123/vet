@@ -134,16 +134,28 @@ struct FileListTreeView: NSViewRepresentable {
             guard row >= 0, let node = sender.item(atRow: row) as? FileListNode else { return }
             if node.isFolder {
                 if sender.isItemExpanded(node) { sender.collapseItem(node) } else { sender.expandItem(node) }
-            } else if let url = model.url(for: node.path), url != model.openURL {
-                model.show(url)
+            } else if !selectionHandledClick, let url = model.url(for: node.path), url != model.openURL {
+                open(url)
             }
+            selectionHandledClick = false
         }
+
+        /// A click that changed the selection already opened the file (or asked about unsaved
+        /// edits); the click action that follows mustn't ask again.
+        private var selectionHandledClick = false
 
         func outlineViewSelectionDidChange(_ notification: Notification) {
             guard let outline, !restoring, outline.selectedRow >= 0,
                   let node = outline.item(atRow: outline.selectedRow) as? FileListNode, !node.isFolder,
                   let url = model.url(for: node.path), url != model.openURL else { return }
+            selectionHandledClick = true
+            open(url)
+        }
+
+        /// Opens `url`; if you chose to stay on the open file, puts the selection back on it.
+        private func open(_ url: URL) {
             model.show(url)
+            if model.openURL != url { reload(selected: model.openURL.flatMap(model.relative)) }
         }
 
         // Right-click: Show in Finder, Copy path.

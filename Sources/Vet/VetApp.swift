@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         main.show()
         NSApp.activate()
         workspace.onOpenProject = { [weak self] url in self?.projects.open(url) }
+        projects.mayLeave = { [weak self] in self?.workspace.confirmLeave() ?? true }
+        main.mayClose = { [weak self] in self?.workspace.confirmLeave() ?? true }
         workspace.onShowFiles = { [weak self] in self?.state.selected = .files }
         Task { _ = await ShellEnvironment.load() } // warm up: Run and the language servers need it
         workspace.startLink()
@@ -41,6 +43,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         projects.showOpenPanel()
     }
 
+    /// ⌘S when no code pane has focus (say you just clicked the file tree): saves the open
+    /// file of the tab you're looking at.
+    @objc func vetSave(_ sender: Any?) {
+        switch state.selected {
+        case .files: workspace.files.saveEditor()
+        case .review: workspace.review.diffSave?()
+        default: NSSound.beep()
+        }
+    }
+
     @objc func goBack(_ sender: Any?) {
         state.selected = .files
         workspace.files.goBack()
@@ -49,6 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func goForward(_ sender: Any?) {
         state.selected = .files
         workspace.files.goForward()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        workspace.confirmLeave() ? .terminateNow : .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -74,13 +90,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let open = NSMenuItem(title: "Open Folder…", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
         file.addItem(open)
         file.addItem(.separator())
-        // Routed to the focused code pane (CodeTextView.vetSave).
+        // Routed to the focused code pane (CodeTextView.vetSave), else to AppDelegate.vetSave.
         file.addItem(withTitle: "Save", action: #selector(CodeTextView.vetSave(_:)), keyEquivalent: "s")
         fileItem.submenu = file
         menu.addItem(fileItem)
 
         let editItem = NSMenuItem()
         let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(redo)
+        edit.addItem(.separator())
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")

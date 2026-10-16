@@ -25,5 +25,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         window.setFrameAutosaveName("VetMain")
     }
 
+    /// Asked before the window closes (closing it quits Vet). False keeps it open.
+    var mayClose: () -> Bool = { true }
+
     func show() { window.makeKeyAndOrderFront(nil) }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool { mayClose() }
 }

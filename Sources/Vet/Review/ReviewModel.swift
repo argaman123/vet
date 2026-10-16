@@ -106,7 +106,8 @@ final class ReviewModel {
             // New files open their folders, even if they appeared while Vet was closed;
             // unimportant ones don't.
             for c in fresh where !known.contains(c.path) && !(marks?.isMarked(c.path) ?? false) { expandAncestors(of: c.path) }
-            if let sel = selectedPath, !fresh.contains(where: { $0.path == sel }) { selectedPath = nil }
+            // A file that left the list (say Claude committed it) closes, unless you're editing it.
+            if let sel = selectedPath, !fresh.contains(where: { $0.path == sel }), !diffDirty { selectedPath = nil }
             version += 1
             await loadDiff()
             await autoStageUnimportant()
@@ -165,7 +166,7 @@ final class ReviewModel {
         loadSerial += 1
         let serial = loadSerial
         guard let repo, let path = selectedPath, let change = changes.first(where: { $0.path == path }) else {
-            if diff != nil { diff = nil; diffVersion += 1 }
+            if diff != nil && !diffDirty { diff = nil; diffVersion += 1 }
             return
         }
         // Same file and same bytes as what's on screen: nothing to redo.
@@ -180,16 +181,50 @@ final class ReviewModel {
     /// The edited right pane's text as file contents (set by the diff view), for save prompts.
     var diffEditedText: (() -> String?)?
 
-    /// Writes edits made in the diff's right pane to `path` (atomically).
-    func saveDiffEdits(_ text: String, path: String) {
-        guard let root, !path.isEmpty else { return }
+    /// Saves the diff's unsaved edits (set by the diff view).
+    var diffSave: (() -> Void)?
+
+    /// The bytes the diff's edit buffer was built from (to detect changes on disk meanwhile).
+    var diffEditBase: (() -> Data?)?
+
+    /// Before leaving the diff's file: asks to save unsaved edits. False means stay.
+    func confirmLeaveDiff() -> Bool {
+        guard diffDirty, let name = diff?.change.path else { return true }
+        switch Alerts.unsaved((name as NSString).lastPathComponent) {
+        case .save: return diffEditedText?().map { saveDiffEdits($0, path: name) } ?? false
+        case .discard: revertDiffEdits(); return true
+        case .cancel: return false
+        }
+    }
+
+    /// Selects a file in the tree (asking about unsaved edits first). False means it stayed.
+    @discardableResult
+    func select(_ path: String?) -> Bool {
+        guard path != selectedPath else { return true }
+        guard confirmLeaveDiff() else { version += 1; return false } // puts the tree selection back
+        selectedPath = path
+        return true
+    }
+
+    /// Writes edits made in the diff's right pane to `path` (atomically), asking first if the
+    /// file changed on disk since editing began. Returns whether it was saved.
+    @discardableResult
+    func saveDiffEdits(_ text: String, path: String) -> Bool {
+        guard let root, !path.isEmpty else { return false }
+        let url = root.appendingPathComponent(path)
+        if let base = diffEditBase?(), let disk = try? Data(contentsOf: url), disk != base,
+           !Alerts.changedOnDisk((path as NSString).lastPathComponent) {
+            return false
+        }
         do {
             try Data(text.utf8).write(to: root.appendingPathComponent(path), options: .atomic)
             diffDirty = false
             revertSerial += 1 // drop the edit buffer; the refresh below shows the saved file
             Task { await refresh() }
+            return true
         } catch {
             show("Couldn't save: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -404,9 +439,8 @@ final class ReviewModel {
         guard !files.isEmpty else { return }
         let start = files.firstIndex { $0.path == selectedPath }.map { $0 + 1 } ?? 0
         let ordered = files[start...] + files[..<start]
-        if let next = ordered.first(where: { stage(of: $0) != .staged }) {
+        if let next = ordered.first(where: { stage(of: $0) != .staged }), select(next.path) {
             expandAncestors(of: next.path)
-            selectedPath = next.path
             version += 1
         }
     }

@@ -14,6 +14,8 @@ struct RibbonDiffView: NSViewRepresentable {
         v.onSave = { [weak model] text, path in model?.saveDiffEdits(text, path: path) }
         v.onSaveRefused = { [weak model] in model?.show("A folded region was changed, so nothing was saved. Discard and try again.") }
         model.diffEditedText = { [weak v] in v?.editedFileText() }
+        model.diffEditBase = { [weak v] in v?.editBase }
+        model.diffSave = { [weak v] in v?.save() }
         v.onToggle = { [weak model] id, staged, snapshot in model?.setHunk(id, staged: staged, snapshot: snapshot) }
         v.noteActions = .init(save: { [weak model] id, text in model?.saveNote(id, text: text) },
                               cancel: { [weak model] id in model?.cancelNote(id) },
@@ -75,6 +77,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private(set) var isDirty = false { didSet { if oldValue != isDirty { onDirtyChange?(isDirty) } } }
     private var rehighlight: DispatchWorkItem?
     private var shownStaging: SectionStaging?
+    /// The working-file bytes the right pane was built from.
+    var editBase: Data? { shownStaging?.work.joined() }
     private var shownLanguage: CodeLanguage = .plain
     var onToggle: ((Int, Bool, String) -> Void)?
     var onFoldClick: ((Int) -> Void)?
