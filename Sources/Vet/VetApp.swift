@@ -18,11 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let state = ShellState()
     let projects = ProjectStore()
+    let review = ReviewModel()
     private var main: MainWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMenu()
-        main = MainWindowController(content: ContentView(state: state, review: AnyView(StatusDebugView(projects: projects))))
+        main = MainWindowController(content: ContentView(state: state, review: AnyView(ReviewView(model: review, projects: projects))))
         main.show()
         NSApp.activate()
     }
