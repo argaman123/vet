@@ -34,6 +34,20 @@ enum DiffTheme {
         }
     }
 
+    /// An opaque color: `color` at `alpha` over the code background. WebStorm uses one opaque
+    /// color for a change's lines and its ribbon, so touching sections don't darken.
+    static func solid(_ color: NSColor, _ alpha: CGFloat) -> NSColor {
+        let c = color.usingColorSpace(.sRGB) ?? color, b = background.usingColorSpace(.sRGB) ?? background
+        return NSColor(srgbRed: b.redComponent + (c.redComponent - b.redComponent) * alpha,
+                       green: b.greenComponent + (c.greenComponent - b.greenComponent) * alpha,
+                       blue: b.blueComponent + (c.blueComponent - b.blueComponent) * alpha, alpha: 1)
+    }
+
+    /// Fill for a section's lines and ribbon: strong while it needs review, faded once staged.
+    static func fill(head: Range<Int>, work: Range<Int>, staged: Bool) -> NSColor {
+        solid(color(head: head, work: work), staged ? 0.08 : 0.2)
+    }
+
     /// Ribbon/line color for a section: replaced = orange, only added = green, only removed = red.
     static func color(head: Range<Int>, work: Range<Int>) -> NSColor {
         head.isEmpty ? added : work.isEmpty ? removed : modified

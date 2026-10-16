@@ -25,8 +25,9 @@ public struct DiffLayout: Sendable {
     public let right: [DisplayLine]
     public let segments: [Segment]
 
-    public static let context = 3
-    public static let minimumFold = 8
+    /// IntelliJ's defaults: 4 lines of context around each change.
+    public static let context = 4
+    public static let minimumFold = 4
 
     public init(headCount: Int, workCount: Int, hunks: [Hunk], folding: Bool, expanded: Set<Int>) {
         var left: [DisplayLine] = [], right: [DisplayLine] = [], segments: [Segment] = []

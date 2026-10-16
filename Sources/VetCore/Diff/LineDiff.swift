@@ -4,7 +4,15 @@ public enum LineDiff {
     static let maxWordDiffLineLength = 2_000
 
     public static func hunks(head: TextLines, work: TextLines, wordChanges: Bool = true) -> [Hunk] {
-        let a = head.lines.map(\.key), b = work.lines.map(\.key)
+        // Intern each distinct line (by bytes) to an integer, so the diff compares ints.
+        var ids: [[UInt8]: Int] = [:]
+        func id(_ line: Line) -> Int {
+            let k = line.key
+            if let v = ids[k] { return v }
+            ids[k] = ids.count
+            return ids.count - 1
+        }
+        let a = head.lines.map(id), b = work.lines.map(id)
         let diff = b.difference(from: a)
         var removed = [Bool](repeating: false, count: a.count)
         var inserted = [Bool](repeating: false, count: b.count)

@@ -91,3 +91,14 @@ private func text(_ d: Data) -> String { String(decoding: d, as: UTF8.self) }
     let h = LineDiff.hunks(head: lines("let x = 1\n"), work: lines("let y = 1\n"))
     #expect(h.first?.wordChanges.first?.workCols == [4..<5])
 }
+
+@Test func composedAndDecomposedAreDifferentBytes() {
+    // "é" as one scalar vs "e" + combining accent: equal as Swift Strings, different bytes.
+    let head = TextLines("caf\u{00E9}\n"), work = TextLines("cafe\u{0301}\n")
+    let s = SectionStaging(head: head, index: head, work: work)
+    #expect(s.hunks.count == 1)
+    #expect(s.state(of: s.hunks[0]) == .unstaged)
+    #expect(s.indexText(setting: s.hunks[0], staged: true) == work.joined())
+    // A combining mark right after a newline must not glue two lines together.
+    #expect(TextLines("a\n\u{0301}b\n").count == 2)
+}

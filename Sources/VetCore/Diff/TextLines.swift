@@ -4,9 +4,11 @@ import Foundation
 public struct Line: Sendable, Hashable {
     public let text: Substring
     public let terminator: String
-    /// What diffs compare: the text plus its terminator, so a missing final newline or a
-    /// line-ending change counts as a change (as git does).
-    var key: String { String(text) + terminator }
+    /// What diffs compare: the exact bytes of the text plus its terminator. Bytes, not Swift
+    /// string equality, which treats composed and decomposed "é" as equal and would hide a real
+    /// change. Including the terminator makes a missing final newline or a line-ending change
+    /// count as a change (as git does).
+    var key: [UInt8] { Array(text.utf8) + Array(terminator.utf8) }
 }
 
 /// A file split into lines, keeping every line's own terminator so `joined()` is byte-exact.
@@ -16,20 +18,23 @@ public struct TextLines: Sendable {
     public init(lines: [Line]) { self.lines = lines }
 
     public init(_ data: Data) {
+        // Split on newline bytes, not Characters: a combining mark right after "\n" would
+        // otherwise glue two lines into one grapheme.
         let s = String(decoding: data, as: UTF8.self)
+        let u = s.utf8
         var lines: [Line] = []
-        var start = s.startIndex
-        var i = s.startIndex
-        while i < s.endIndex {
-            let c = s[i]
-            let next = s.index(after: i)
-            if c == "\n" || c == "\r\n" {
-                lines.append(Line(text: s[start..<i], terminator: c == "\n" ? "\n" : "\r\n"))
-                start = next
+        var start = u.startIndex
+        var i = u.startIndex
+        while i < u.endIndex {
+            if u[i] == 0x0A {
+                var textEnd = i
+                if textEnd > start, u[u.index(before: textEnd)] == 0x0D { textEnd = u.index(before: textEnd) }
+                lines.append(Line(text: s[start..<textEnd], terminator: textEnd == i ? "\n" : "\r\n"))
+                start = u.index(after: i)
             }
-            i = next
+            i = u.index(after: i)
         }
-        if start < s.endIndex { lines.append(Line(text: s[start...], terminator: "")) }
+        if start < u.endIndex { lines.append(Line(text: s[start..<u.endIndex], terminator: "")) }
         self.lines = lines
     }
 

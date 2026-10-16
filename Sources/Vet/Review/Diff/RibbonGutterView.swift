@@ -22,6 +22,8 @@ final class RibbonGutterView: NSView {
     var onDrag: ((CGFloat) -> Void)?
     var onResetSplit: (() -> Void)?
     private var boxes: [Int: NSButton] = [:]
+    /// Section id → its display segment, so drawing doesn't scan every segment per section.
+    private var segments: [Int: DiffLayout.Segment] = [:]
     private var dragStart: CGFloat?
 
     override var isFlipped: Bool { true }
@@ -33,6 +35,8 @@ final class RibbonGutterView: NSView {
     func reload() {
         for b in boxes.values { b.removeFromSuperview() }
         boxes = [:]
+        segments = [:]
+        for seg in diffLayout?.segments ?? [] { if case .hunk(let id) = seg.kind { segments[id] = seg } }
         for h in hunks {
             let b = NSButton(checkboxWithTitle: "", target: self, action: #selector(toggled(_:)))
             b.allowsMixedState = true
@@ -61,9 +65,7 @@ final class RibbonGutterView: NSView {
         DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - (left ? leftOffset : rightOffset)
     }
 
-    private func segment(for id: Int) -> DiffLayout.Segment? {
-        diffLayout?.segments.first { $0.kind == .hunk(id: id) }
-    }
+    private func segment(for id: Int) -> DiffLayout.Segment? { segments[id] }
 
     private var ribbonX: (CGFloat, CGFloat) {
         switch mode {
@@ -100,26 +102,29 @@ final class RibbonGutterView: NSView {
             let (x0, x1) = ribbonX
             for h in hunks {
                 guard let s = segment(for: h.id) else { continue }
-                let color = DiffTheme.color(head: h.head, work: h.work)
+                let l0 = y(s.left.lowerBound, left: true), l1 = max(y(s.left.upperBound, left: true), l0 + 1.5)
+                let r0 = y(s.right.lowerBound, left: false), r1 = max(y(s.right.upperBound, left: false), r0 + 1.5)
+                if max(l1, r1) < dirtyRect.minY || min(l0, r0) > dirtyRect.maxY { continue } // off screen
                 let staged = states[h.id] == .staged
-                let l0 = y(s.left.lowerBound, left: true), l1 = y(s.left.upperBound, left: true)
-                let r0 = y(s.right.lowerBound, left: false), r1 = y(s.right.upperBound, left: false)
+                // WebStorm's curve: control points at 30% and 70% across the ribbon.
                 let path = NSBezierPath()
-                let mid = (x0 + x1) / 2
+                let c1 = x0 + (x1 - x0) * 0.3, c2 = x0 + (x1 - x0) * 0.7
                 path.move(to: NSPoint(x: 0, y: l0))
                 path.line(to: NSPoint(x: x0, y: l0))
-                path.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: mid, y: l0), controlPoint2: NSPoint(x: mid, y: r0))
+                path.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: c1, y: l0), controlPoint2: NSPoint(x: c2, y: r0))
                 path.line(to: NSPoint(x: bounds.width, y: r0))
-                path.line(to: NSPoint(x: bounds.width, y: max(r1, r0 + 1.5)))
-                path.line(to: NSPoint(x: x1, y: max(r1, r0 + 1.5)))
-                path.curve(to: NSPoint(x: x0, y: max(l1, l0 + 1.5)), controlPoint1: NSPoint(x: mid, y: max(r1, r0 + 1.5)), controlPoint2: NSPoint(x: mid, y: max(l1, l0 + 1.5)))
-                path.line(to: NSPoint(x: 0, y: max(l1, l0 + 1.5)))
+                path.line(to: NSPoint(x: bounds.width, y: r1))
+                path.line(to: NSPoint(x: x1, y: r1))
+                path.curve(to: NSPoint(x: x0, y: l1), controlPoint1: NSPoint(x: c2, y: r1), controlPoint2: NSPoint(x: c1, y: l1))
+                path.line(to: NSPoint(x: 0, y: l1))
                 path.close()
-                color.withAlphaComponent(staged ? 0.08 : 0.2).setFill()
+                DiffTheme.fill(head: h.head, work: h.work, staged: staged).setFill()
                 path.fill()
-                color.withAlphaComponent(staged ? 0.3 : 0.65).setStroke()
-                path.lineWidth = 1
-                path.stroke()
+                if staged { // a reviewed section gets an outline instead of a strong fill
+                    DiffTheme.color(head: h.head, work: h.work).withAlphaComponent(0.45).setStroke()
+                    path.lineWidth = 1
+                    path.stroke()
+                }
             }
         }
         // Line numbers.

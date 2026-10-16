@@ -119,11 +119,11 @@ final class RibbonDiffNSView: NSView {
             case .hunk(let id):
                 guard let h = staging.hunks.first(where: { $0.id == id }) else { continue }
                 let color = DiffTheme.color(head: h.head, work: h.work)
-                let alpha: CGFloat = states[id] == .staged ? 0.07 : 0.16
+                let fill = DiffTheme.fill(head: h.head, work: h.work, staged: states[id] == .staged)
                 if s.left.isEmpty { leftMarkers.append((s.left.lowerBound, color)) }
-                else { leftBands.append(.init(lines: s.left, color: (h.work.isEmpty ? DiffTheme.removed : color).withAlphaComponent(alpha))) }
+                else { leftBands.append(.init(lines: s.left, color: fill)) }
                 if s.right.isEmpty { rightMarkers.append((s.right.lowerBound, color)) }
-                else { rightBands.append(.init(lines: s.right, color: (h.head.isEmpty ? DiffTheme.added : color).withAlphaComponent(alpha))) }
+                else { rightBands.append(.init(lines: s.right, color: fill)) }
             case .fold(let id):
                 leftBands.append(.init(lines: s.left, color: DiffTheme.foldBand))
                 rightBands.append(.init(lines: s.right, color: DiffTheme.foldBand))
@@ -342,9 +342,10 @@ final class RibbonDiffNSView: NSView {
         guard let layout = diffLayout else { return }
         let fromLeft = src === leftScroll
         let dst = fromLeft ? rightScroll : leftScroll
-        let centre = (src.contentView.bounds.midY - DiffTheme.inset.height) / DiffTheme.lineHeight
-        let mapped = layout.map(Double(centre), fromLeft: fromLeft)
-        let targetY = DiffTheme.inset.height + CGFloat(mapped) * DiffTheme.lineHeight - dst.contentView.bounds.height / 2
+        // Like WebStorm: line up whatever sits a third of the way down the view.
+        let anchor = src.contentView.bounds.minY + src.contentView.bounds.height / 3
+        let mapped = layout.map(Double((anchor - DiffTheme.inset.height) / DiffTheme.lineHeight), fromLeft: fromLeft)
+        let targetY = DiffTheme.inset.height + CGFloat(mapped) * DiffTheme.lineHeight - dst.contentView.bounds.height / 3
         syncing = true
         let maxY = max(0, (dst.documentView?.frame.height ?? 0) - dst.contentView.bounds.height)
         dst.contentView.scroll(to: NSPoint(x: src.contentView.bounds.origin.x, y: min(max(0, targetY), maxY)))
