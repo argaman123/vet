@@ -103,10 +103,8 @@ final class RibbonDiffNSView: NSView {
 
         var leftWords: [Int: [Range<Int>]] = [:], rightWords: [Int: [Range<Int>]] = [:]
         for h in staging.hunks {
-            for w in h.wordChanges {
-                leftWords[w.headLine] = w.headCols
-                rightWords[w.workLine] = w.workCols
-            }
+            leftWords.merge(h.headCols) { $1 }
+            rightWords.merge(h.workCols) { $1 }
         }
         leftText.textStorage?.setAttributedString(Self.text(staging.head, layout.left, doc.language, words: leftWords, color: DiffTheme.removed))
         rightText.textStorage?.setAttributedString(Self.text(staging.work, layout.right, doc.language, words: rightWords, color: DiffTheme.added))
