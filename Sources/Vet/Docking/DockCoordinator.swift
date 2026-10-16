@@ -17,6 +17,8 @@ final class DockCoordinator {
     /// Ignore Claude's window movement while Stage Manager animates a stage switch.
     private var ignoreClaudeMovesUntil = Date.distantPast
     private var claudeWasFullScreen = false
+    /// Vet's own activation at launch shouldn't count as "came forward some other way".
+    private var ignoreVetActivationUntil = Date.distantPast
 
     init(state: ShellState, main: MainWindowController) {
         self.state = state
@@ -24,8 +26,8 @@ final class DockCoordinator {
     }
 
     func start() {
+        ignoreVetActivationUntil = Date().addingTimeInterval(2)
         main.onFrameChange = { [weak self] in self?.redock() }
-        main.onFullScreenChange = { [weak self] full in self?.vetFullScreenChanged(full) }
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard Self.isClaude(note) else { return }
@@ -41,16 +43,13 @@ final class DockCoordinator {
                 guard let self else { return }
                 let isVet = bundleID == Bundle.main.bundleIdentifier
                 let isClaude = bundleID == ClaudeWindow.bundleID
-                self.main.setRailVisible(isVet || isClaude)
-                if isVet || isClaude {
-                    self.ignoreClaudeMovesUntil = Date().addingTimeInterval(0.8)
-                    self.updateRail()
-                }
+                self.main.setRailFloating(isVet || isClaude)
+                if isVet || isClaude { self.ignoreClaudeMovesUntil = Date().addingTimeInterval(0.8) }
                 if isClaude {
                     // Cmd-Tab, Stage Manager or a click that brings Claude forward means the Claude tab is showing.
                     self.state.selected = .claude
                     self.scheduleRedock(after: 0.35) // Stage Manager may re-place the window while switching stages
-                } else if isVet, self.state.selected == .claude {
+                } else if isVet, self.state.selected == .claude, Date() >= self.ignoreVetActivationUntil {
                     // Vet came forward some other way than the rail: show Vet, don't bounce back to Claude.
                     self.state.selected = self.lastNonClaudeTab
                 }
@@ -63,8 +62,6 @@ final class DockCoordinator {
         state.selected = tab
         if tab != .claude { lastNonClaudeTab = tab }
         if tab == .claude {
-            // Full screen is mirrored lazily: Claude takes Vet's full-screen state as you switch to it.
-            if let claude, claude.isFullScreen != main.isFullScreen { claude.setFullScreen(main.isFullScreen) }
             redock()
             claude?.raise()
         } else {
@@ -75,18 +72,6 @@ final class DockCoordinator {
             NSApp.activate()
             main.window.makeKeyAndOrderFront(nil)
             main.window.orderFrontRegardless()
-            // ...and Vet takes Claude's full-screen state.
-            if let claude, claude.isFullScreen != main.isFullScreen { main.window.toggleFullScreen(nil) }
-        }
-        updateRail()
-    }
-
-    /// Rail sits on Claude's full-screen window while Claude is full screen and showing, else on Vet's window.
-    private func updateRail() {
-        if state.selected == .claude, let claude, claude.isFullScreen, let ax = claude.axFrame {
-            main.layoutRail(anchor: DockGeometry.cocoaRect(fromAX: ax, primaryScreenHeight: NSScreen.screens[0].frame.height))
-        } else {
-            main.layoutRail()
         }
     }
 
@@ -112,6 +97,10 @@ final class DockCoordinator {
         if claude == nil, let found = ClaudeWindow.find() {
             claude = found
             found.observeMoves { [weak self] in self?.claudeMoved() }
+            if found.isFullScreen {
+                claudeWasFullScreen = true
+                claudeFullScreenChanged(true, atLaunch: true)
+            }
         }
         let running = ClaudeWindow.runningApp() != nil
         let snapshot = ClaudeSnapshot(isRunning: running, hasWindow: claude != nil,
@@ -160,7 +149,7 @@ final class DockCoordinator {
             claudeFullScreenChanged(full)
             return
         }
-        guard !full, !main.isFullScreen, Date() >= ignoreClaudeMovesUntil else { return }
+        guard !full, Date() >= ignoreClaudeMovesUntil else { return }
         // Only the user's own drags: Claude must be in front, and not a Stage Manager thumbnail.
         guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ClaudeWindow.bundleID,
               let ax = claude.axFrame, ax.width > 300, ax.height > 200 else { return }
@@ -172,16 +161,28 @@ final class DockCoordinator {
 
     // MARK: Full screen
 
-    private func claudeFullScreenChanged(_ full: Bool) {
-        // Vet follows the next time you switch to it (see select); now just move the rail.
+    /// Claude's own green button puts it in macOS full screen (a separate Space). Undo that and
+    /// toggle Vet's "fill the screen" instead, so both stay together on the desktop.
+    /// `atLaunch`: Claude was already full screen when Vet started, so just fill.
+    private func claudeFullScreenChanged(_ full: Bool, atLaunch: Bool = false) {
+        guard full, claude != nil else { return } // leaving full screen is us undoing it
+        ignoreClaudeMovesUntil = Date().addingTimeInterval(5)
         Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(800)) // let the full-screen animation settle
-            self?.updateRail()
+            // AX ignores the change while the enter animation runs, so keep asking until it takes.
+            for _ in 0..<12 {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let claude = self?.claude else { return }
+                if !claude.isFullScreen { break }
+                claude.setFullScreen(false)
+            }
+            try? await Task.sleep(for: .milliseconds(900)) // let the exit animation finish
+            guard let self else { return }
+            self.claudeWasFullScreen = false
+            if atLaunch { self.main.fill() } else { self.main.toggleFill() }
+            self.ignoreClaudeMovesUntil = Date().addingTimeInterval(0.5)
+            self.redock()
+            if self.state.selected == .claude { self.claude?.raise() }
         }
-    }
-
-    private func vetFullScreenChanged(_ full: Bool) {
-        updateRail()
     }
 
     private func claudeQuit() {
