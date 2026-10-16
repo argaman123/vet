@@ -43,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspace.files.goForward()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        workspace.run.stop() // don't leave your dev server running after Vet quits
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     private static func makeMenu() -> NSMenu {

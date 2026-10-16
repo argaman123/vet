@@ -7,6 +7,7 @@ final class Workspace {
     let review = ReviewModel()
     let files = FilesModel()
     let browser = BrowserModel()
+    let run = RunModel()
     private(set) var root: URL?
     private var watcher: RepoWatcher?
 
@@ -19,6 +20,8 @@ final class Workspace {
         review.open(folder)
         files.open(folder)
         browser.open(project: folder)
+        run.open(folder)
+        run.onLocalURL = { [weak self] url in self?.browser.openIfIdle(url) }
         // Claude edits files and stages/commits while you review: follow along.
         watcher = folder.map { f in
             RepoWatcher(root: f, gitDir: GitRepo.gitDir(of: f)) { [weak self] in

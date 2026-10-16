@@ -5,6 +5,8 @@ import VetCore
 struct RailView: View {
     static let width: CGFloat = 56
     let state: ShellState
+    let run: RunModel
+    @Binding var editingRun: Bool
     let onSelect: (RailTab) -> Void
 
     var body: some View {
@@ -16,12 +18,7 @@ struct RailView: View {
                     }
                 }
                 Spacer()
-                Image(systemName: "play.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 38, height: 38)
-                    .glassEffect(.regular, in: .circle)
-                    .help("Run (coming soon)")
+                RunControls(run: run, editing: $editingRun)
             }
             .padding(.vertical, 10)
         }

@@ -6,12 +6,14 @@ struct ContentView: View {
     @Bindable var state: ShellState
     let projects: ProjectStore
     let workspace: Workspace
+    @State private var editingRun = false
 
     var body: some View {
         HStack(spacing: 0) {
-            RailView(state: state) { state.selected = $0 }
+            RailView(state: state, run: workspace.run, editingRun: $editingRun) { state.selected = $0 }
                 .frame(width: RailView.width)
                 .padding(.top, 34) // room for the window's close/minimize/zoom buttons
+            VStack(spacing: 0) {
             Group {
                 switch state.selected {
                 case .review: ReviewView(model: workspace.review, projects: projects)
@@ -20,8 +22,11 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if workspace.run.outputVisible { OutputPanel(run: workspace.run) }
+            }
         }
         .background(.background)
+        .sheet(isPresented: $editingRun) { RunConfigEditor(run: workspace.run, isPresented: $editingRun) }
         .ignoresSafeArea()
         .task(id: projects.current) { workspace.open(projects.current) }
     }
