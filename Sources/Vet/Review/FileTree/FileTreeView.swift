@@ -298,6 +298,10 @@ final class FileRowView: NSTableCellView {
     func configure(node: FileTreeNode, stage: StageState, onToggle: @escaping (Bool) -> Void) {
         self.onToggle = onToggle
         checkbox.state = switch stage { case .staged: .on; case .unstaged: .off; case .partial: .mixed }
+        // Staging a conflicted file would mark the conflict resolved; resolve it first (as Working Tree does).
+        let conflicted = node.fileChanges.contains { $0.kind == .conflicted }
+        checkbox.isEnabled = !conflicted
+        checkbox.toolTip = conflicted ? "Resolve the merge conflict before staging" : nil
         name.stringValue = node.name
         if let change = node.change {
             icon.image = NSWorkspace.shared.icon(for: UTType(filenameExtension: (node.name as NSString).pathExtension) ?? .plainText)

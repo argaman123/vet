@@ -110,7 +110,9 @@ final class ReviewModel {
 
     /// Stages (or unstages) every file at or under `node`. The checkbox flips at once; git runs in order.
     func setStaged(_ node: FileTreeNode, _ staged: Bool) {
-        let targets = node.fileChanges.filter { staged ? stage(of: $0) != .staged : stage(of: $0) != .unstaged }
+        let targets = node.fileChanges.filter {
+            $0.kind != .conflicted && (staged ? stage(of: $0) != .staged : stage(of: $0) != .unstaged)
+        }
         guard let repo, let root, !targets.isEmpty else { return }
         // Unchecking an unimportant file holds it unstaged until it changes again.
         for c in targets where marks?.isMarked(c.path) ?? false {

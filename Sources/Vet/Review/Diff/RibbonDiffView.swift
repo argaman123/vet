@@ -49,8 +49,6 @@ final class RibbonDiffNSView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        wantsLayer = true
-        layer?.backgroundColor = DiffTheme.background.cgColor
         for v in [leftScroll, rightScroll, gutter, messageLabel] as [NSView] { addSubview(v) }
         messageLabel.textColor = .secondaryLabelColor
         messageLabel.font = .systemFont(ofSize: 14)
@@ -262,6 +260,13 @@ final class RibbonDiffNSView: NSView {
     }
 
     override var isFlipped: Bool { true }
+
+    // Drawn rather than layer-backed: a layer-backed container makes every tall pane keep a
+    // full-size bitmap in memory.
+    override func draw(_ dirtyRect: NSRect) {
+        DiffTheme.background.setFill()
+        dirtyRect.fill()
+    }
 
     private func drag(_ dx: CGFloat) {
         let usable = bounds.width - RibbonGutterView.width(for: mode)
