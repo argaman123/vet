@@ -26,7 +26,6 @@ public enum DockAction: Equatable, Sendable {
     case launchClaude
     case waitForWindow
     case unminimize
-    case exitFullScreen
     case setFrame(CGRect)
     case none
 }
@@ -40,7 +39,7 @@ public func dockAction(claude: ClaudeSnapshot, permission: PermissionState, targ
     guard claude.isRunning else { return launchAttempts < maxClaudeLaunchAttempts ? .launchClaude : .none }
     guard claude.hasWindow else { return .waitForWindow }
     if claude.isMinimized { return .unminimize }
-    if claude.isFullScreen { return .exitFullScreen }
+    if claude.isFullScreen { return .none } // the user chose full screen; Vet mirrors it instead of undoing it
     if let frame = claude.frame, DockGeometry.isDocked(claudeFrame: frame, target: target) { return .none }
     return .setFrame(target)
 }

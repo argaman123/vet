@@ -58,7 +58,9 @@ final class ClaudeWindow {
     func unminimize() { AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse) }
 
     var isFullScreen: Bool { (Self.attribute(element, "AXFullScreen") as Bool?) ?? false }
-    func exitFullScreen() { AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, kCFBooleanFalse) }
+    func setFullScreen(_ on: Bool) {
+        AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, on ? kCFBooleanTrue : kCFBooleanFalse)
+    }
 
     /// Brings Claude's window to the front, handing activation over from Vet.
     func raise() {

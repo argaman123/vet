@@ -9,6 +9,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     let rail: RailPanel
     /// Called (at most ~60×/s) whenever the window moves or resizes, so Claude can follow.
     var onFrameChange: (() -> Void)?
+    /// Called after Vet's window enters (true) or leaves (false) native full screen.
+    var onFullScreenChange: ((Bool) -> Void)?
+
+    var isFullScreen: Bool { window.styleMask.contains(.fullScreen) }
 
     init(state: ShellState, content: some View, onSelect: @escaping (RailTab) -> Void) {
         let screen = NSScreen.screens[0]
@@ -21,8 +25,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         window.title = "Vet"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.collectionBehavior = [.fullScreenNone]
-        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.collectionBehavior = [.fullScreenPrimary]
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: content)
         host.sizingOptions = [] // the window stays maximized; SwiftUI content must never resize it
@@ -43,13 +46,25 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         if visible { rail.orderFrontRegardless() } else { rail.orderOut(nil) }
     }
 
-    func layoutRail() {
-        rail.setFrame(DockGeometry.railFrame(mainWindowFrame: window.frame), display: true)
+    /// Puts the rail on the left edge of `anchor` (Cocoa coordinates), or of Vet's window by default.
+    /// When Claude is in full screen, the anchor is Claude's full-screen window.
+    func layoutRail(anchor: CGRect? = nil) {
+        rail.setFrame(DockGeometry.railFrame(mainWindowFrame: anchor ?? window.frame), display: true)
     }
 
     func windowDidResize(_ notification: Notification) {
         layoutRail()
         onFrameChange?()
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        layoutRail()
+        onFullScreenChange?(true)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        layoutRail()
+        onFullScreenChange?(false)
     }
 
     func windowDidMove(_ notification: Notification) {

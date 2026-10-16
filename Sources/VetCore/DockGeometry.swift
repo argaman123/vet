@@ -25,6 +25,11 @@ public enum DockGeometry {
         CGRect(x: f.minX + railWidth, y: f.minY, width: f.width - railWidth, height: f.height)
     }
 
+    /// Where Vet's main window belongs when the user has moved or resized Claude's window (Cocoa coordinates).
+    public static func mainWindowFrame(forClaudeFrame c: CGRect) -> CGRect {
+        CGRect(x: c.minX - railWidth, y: c.minY, width: c.width + railWidth, height: c.height)
+    }
+
     /// The rail panel's frame, in Cocoa coordinates: left edge, below the traffic lights.
     public static func railFrame(mainWindowFrame f: CGRect) -> CGRect {
         CGRect(x: f.minX, y: f.minY, width: railWidth, height: f.height - titlebarGap)
