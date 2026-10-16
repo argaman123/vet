@@ -20,17 +20,20 @@ public enum LineDiff {
         guard var diffs = al.diffs else { return [al.whole] }
         diffs = DiffHeuristics.removeVeryShortMatchingLinesBetweenDiffs(al.s1, diffs)
 
+        // Each section is one joined line change, exactly as staging aligns lines: what you see
+        // is what a checkbox stages (VS Code further splits by character changes, which can pair
+        // repeated lines differently from the line alignment). Character changes only choose the
+        // highlighted columns.
         var hunks: [Hunk] = []
         for d in diffs {
-            let refined = CharDiff.refine(d, al.t1, al.t2, timeout: al.timeout)
-            for p in pieces(d, refined?.mappings, al.a, al.b, al.t1, al.t2) {
-                var hunk = Hunk(id: hunks.count, head: p.head, work: p.work)
-                if wordChanges, refined?.gaveUp == false, !p.head.isEmpty, !p.work.isEmpty {
-                    hunk.headCols = columns(p.inner, lines: p.head, \.orig, al.t1)
-                    hunk.workCols = columns(p.inner, lines: p.work, \.mod, al.t2)
-                }
-                hunks.append(hunk)
+            let h = d.a.clamped(toCount: al.a.count), w = d.b.clamped(toCount: al.b.count)
+            if h.isEmpty && w.isEmpty { continue }
+            var hunk = Hunk(id: hunks.count, head: h, work: w)
+            if wordChanges, !h.isEmpty, !w.isEmpty, let refined = CharDiff.refine(d, al.t1, al.t2, timeout: al.timeout), !refined.gaveUp {
+                hunk.headCols = columns(refined.mappings, lines: h, \.orig, al.t1)
+                hunk.workCols = columns(refined.mappings, lines: w, \.mod, al.t2)
             }
+            hunks.append(hunk)
         }
         return hunks
     }

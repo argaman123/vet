@@ -177,11 +177,14 @@ final class ReviewModel {
         diffVersion += 1
     }
 
-    /// Writes edits made in the diff's right pane to the working file (atomically).
-    func saveDiffEdits(_ text: String) {
-        guard let root, let change = diff?.change else { return }
+    /// The edited right pane's text as file contents (set by the diff view), for save prompts.
+    var diffEditedText: (() -> String?)?
+
+    /// Writes edits made in the diff's right pane to `path` (atomically).
+    func saveDiffEdits(_ text: String, path: String) {
+        guard let root, !path.isEmpty else { return }
         do {
-            try Data(text.utf8).write(to: root.appendingPathComponent(change.path), options: .atomic)
+            try Data(text.utf8).write(to: root.appendingPathComponent(path), options: .atomic)
             diffDirty = false
             revertSerial += 1 // drop the edit buffer; the refresh below shows the saved file
             Task { await refresh() }

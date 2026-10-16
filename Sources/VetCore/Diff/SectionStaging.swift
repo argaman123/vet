@@ -29,12 +29,62 @@ public struct SectionStaging: Sendable {
         self.head = head
         self.index = index
         self.work = work
-        hunks = LineDiff.hunks(head: head, work: work)
         // Staging slices same-size changes line by line, which needs the minimal line alignment:
         // a displayed hunk joined across a short unchanged gap doesn't pair up line by line.
         headToIndex = LineDiff.lineChanges(head: head, work: index)
         indexToWork = LineDiff.lineChanges(head: index, work: work)
+        // The displayed sections come from the nicer-looking diff. A HEAD→work change from the
+        // minimal alignment must never straddle two sections (staging one would then pull in a
+        // line the other shows): merge any sections such a change spans.
+        hunks = Self.merge(LineDiff.hunks(head: head, work: work), covering: LineDiff.lineChanges(head: head, work: work))
         snapshotID = Self.snapshot(head: head.joined(), index: index.joined(), work: work.joined())
+    }
+
+    /// Merges display sections so every alignment change lies inside exactly one section
+    /// (repeated until stable: a section grown to cover one change may then overlap the next).
+    static func merge(_ display: [Hunk], covering blocks: [Hunk]) -> [Hunk] {
+        guard !display.isEmpty else { return display }
+        var groups: [[Hunk]] = display.map { [$0] }
+        var spans: [(head: Range<Int>, work: Range<Int>)] = display.map { ($0.head, $0.work) }
+        func union(_ a: Range<Int>, _ b: Range<Int>) -> Range<Int> { min(a.lowerBound, b.lowerBound)..<max(a.upperBound, b.upperBound) }
+        func join(_ first: Int, _ last: Int, plus extra: (head: Range<Int>, work: Range<Int>)? = nil) {
+            var head = spans[first].head, work = spans[first].work
+            for k in first...last { head = union(head, spans[k].head); work = union(work, spans[k].work) }
+            if let extra { head = union(head, extra.head); work = union(work, extra.work) }
+            let members = groups[first...last].flatMap { $0 }
+            groups.replaceSubrange(first...last, with: [members])
+            spans.replaceSubrange(first...last, with: [(head, work)])
+        }
+        var changed = true
+        while changed {
+            changed = false
+            for block in blocks {
+                let hit = spans.indices.filter { touches(spans[$0].head, block.head) || touches(spans[$0].work, block.work) }
+                guard let first = hit.first, let last = hit.last else { continue }
+                let grownHead = union(spans[first].head, block.head), grownWork = union(spans[first].work, block.work)
+                if first != last || grownHead != spans[first].head || grownWork != spans[first].work {
+                    join(first, last, plus: (block.head, block.work))
+                    changed = true
+                }
+            }
+            var k = 0
+            while k + 1 < spans.count {
+                if spans[k].head.upperBound > spans[k + 1].head.lowerBound || spans[k].work.upperBound > spans[k + 1].work.lowerBound {
+                    join(k, k + 1)
+                    changed = true
+                } else {
+                    k += 1
+                }
+            }
+        }
+        return zip(groups, spans).enumerated().map { id, pair in
+            var h = Hunk(id: id, head: pair.1.head, work: pair.1.work)
+            for m in pair.0 {
+                h.headCols.merge(m.headCols) { $1 }
+                h.workCols.merge(m.workCols) { $1 }
+            }
+            return h
+        }
     }
 
     /// Identifies one combination of HEAD, index and working-file bytes.

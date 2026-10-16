@@ -159,20 +159,28 @@ final class CodeTextView: NSTextView {
         return NSRange(location: min(location + character, NSMaxRange(lineEnd)), length: 0)
     }
 
-    /// Fold rows stand for hidden lines; they can't be edited.
-    override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
-        guard let storage = textStorage else { return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString) }
-        var touchesFold = false
-        let probe = NSRange(location: max(0, affectedCharRange.location - (affectedCharRange.length == 0 ? 1 : 0)),
-                            length: max(1, affectedCharRange.length))
-        if NSMaxRange(probe) <= storage.length {
-            for key in [NSAttributedString.Key.vetFold, .vetNote] {
-                storage.enumerateAttribute(key, in: probe) { value, _, stop in if value != nil { touchesFold = true; stop.pointee = true } }
-            }
+    /// Fold rows stand for hidden lines and note rows hold a card; neither can be edited, and
+    /// neither can be merged into a neighbouring line (Backspace at a fold row's start, Delete at
+    /// the end of the line above it).
+    override func shouldChangeText(in range: NSRange, replacementString: String?) -> Bool {
+        guard let storage = textStorage else { return super.shouldChangeText(in: range, replacementString: replacementString) }
+        func protected(_ i: Int) -> Bool {
+            guard i >= 0, i < storage.length else { return false }
+            return storage.attribute(.vetFold, at: i, effectiveRange: nil) != nil || storage.attribute(.vetNote, at: i, effectiveRange: nil) != nil
         }
-        if touchesFold { NSSound.beep(); return false }
-        return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
+        var refuse = false
+        if range.length == 0 {
+            refuse = protected(range.location) // typing into a fold or note row
+        } else {
+            for i in range.location..<NSMaxRange(range) where protected(i) { refuse = true; break }
+            // Deleting a newline would pull the next line up: refuse if that line is protected.
+            let removed = (string as NSString).substring(with: range)
+            if !refuse && removed.contains("\n") && protected(NSMaxRange(range)) { refuse = true }
+        }
+        if refuse { NSSound.beep(); return false }
+        return super.shouldChangeText(in: range, replacementString: replacementString)
     }
+
 
     override func resetCursorRects() {
         super.resetCursorRects()

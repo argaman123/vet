@@ -54,6 +54,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         self.language = language
         let display = (0..<text.count).map { DiffLayout.DisplayLine.code($0) }
         textView.textStorage?.setAttributedString(CodeText.attributed(text, display, language))
+        textView.undoManager?.removeAllActions(withTarget: textView.textStorage as Any)
         gutter.numbers = (0..<max(1, text.count)).map { $0 }
         sizeDocument(lineCount: max(1, text.count))
         scroll.contentView.scroll(to: keep)
@@ -84,13 +85,11 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
 
     func markSaved() { isDirty = false }
 
-    /// The editor's text as file bytes: the file's own line ending and final-newline choice.
-    private func fileText() -> String {
-        let ending = lines.lines.first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
-        let finalNewline = lines.lines.last.map { !$0.terminator.isEmpty } ?? true
-        var body = textView.string.replacingOccurrences(of: "\n", with: ending)
-        if finalNewline && !body.isEmpty { body += ending }
-        return body
+    /// The editor's text as file bytes: unchanged lines keep their own endings, the final newline
+    /// stays as it was.
+    func fileText() -> String {
+        let rows = textView.string.components(separatedBy: "\n").map { EditedText.Row.text($0) }
+        return String(decoding: EditedText.rebuild(rows: rows, original: lines), as: UTF8.self)
     }
 
     private func sizeDocument(lineCount: Int) {

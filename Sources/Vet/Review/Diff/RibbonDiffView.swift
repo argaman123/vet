@@ -11,7 +11,9 @@ struct RibbonDiffView: NSViewRepresentable {
     func makeNSView(context: Context) -> RibbonDiffNSView {
         let v = RibbonDiffNSView()
         v.onDirtyChange = { [weak model] dirty in model?.diffDirty = dirty }
-        v.onSave = { [weak model] text in model?.saveDiffEdits(text) }
+        v.onSave = { [weak model] text, path in model?.saveDiffEdits(text, path: path) }
+        v.onSaveRefused = { [weak model] in model?.show("A folded region was changed, so nothing was saved. Discard and try again.") }
+        model.diffEditedText = { [weak v] in v?.editedFileText() }
         v.onToggle = { [weak model] id, staged, snapshot in model?.setHunk(id, staged: staged, snapshot: snapshot) }
         v.noteActions = .init(save: { [weak model] id, text in model?.saveNote(id, text: text) },
                               cancel: { [weak model] id in model?.cancelNote(id) },
@@ -50,8 +52,9 @@ struct RibbonDiffView: NSViewRepresentable {
 /// HEAD on the left, the working file on the right, joined by the ribbon gutter.
 final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     var onDirtyChange: ((Bool) -> Void)?
-    /// Called with the full new file text when you save edits made in the right pane.
-    var onSave: ((String) -> Void)?
+    /// Called with the full new file text (and its path) when you save edits made in the right pane.
+    var onSave: ((String, String) -> Void)?
+    var onSaveRefused: (() -> Void)?
     var revertSerial = 0
     struct NoteActions {
         let save: (String, String) -> Void
@@ -169,6 +172,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             rightWords.merge(h.workCols) { $1 }
         }
         leftText.textStorage?.setAttributedString(Self.text(staging.head, layout.left, doc.language, words: leftWords, color: DiffTheme.removed))
+        defer { rightText.undoManager?.removeAllActions(withTarget: rightText.textStorage as Any) }
         rightText.textStorage?.setAttributedString(Self.text(staging.work, layout.right, doc.language, words: rightWords, color: DiffTheme.added))
 
         var leftBands: [CodeTextView.Band] = [], rightBands: [CodeTextView.Band] = []
@@ -351,35 +355,47 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     func discardEdits() { isDirty = false }
 
-    /// Rebuilds the whole file from the edited right pane: fold rows become the lines they hide.
-    func save() {
-        guard isDirty, let staging = shownStaging, let layout = diffLayout else { return }
-        let work = staging.work
-        let ending = work.lines.first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
-        let finalNewline = work.lines.last.map { !$0.terminator.isEmpty } ?? true
-        guard let storage = rightText.textStorage else { return }
+    /// The whole file rebuilt from the edited right pane: fold rows become exactly the lines they
+    /// hide, note rows are left out, unchanged lines keep their own endings. Nil (and a message)
+    /// if a fold row was damaged, so nothing is written.
+    func editedFileText() -> String? {
+        guard let staging = shownStaging, let layout = diffLayout, let storage = rightText.textStorage else { return nil }
         let ns = storage.string as NSString
-        var out: [String] = []
+        var rows: [EditedText.Row] = []
         var location = 0
-        while location <= ns.length {
-            let lineRange = ns.lineRange(for: NSRange(location: min(location, max(0, ns.length - 1)), length: 0))
-            if location == ns.length {
-                if ns.length == 0 || ns.character(at: ns.length - 1) == 10 { out.append("") }
-                break
+        for line in storage.string.components(separatedBy: "\n") {
+            let length = (line as NSString).length
+            let range = NSRange(location: location, length: min(length + 1, ns.length - location))
+            var fold: Int?, note = false, foldElsewhere = false
+            if range.length > 0 {
+                storage.enumerateAttribute(.vetFold, in: range) { value, r, _ in
+                    guard let id = value as? Int else { return }
+                    if r.location == location { fold = id } else { foldElsewhere = true }
+                }
+                storage.enumerateAttribute(.vetNote, in: range) { value, _, _ in if value != nil { note = true } }
             }
-            var content = ns.substring(with: lineRange)
-            if content.hasSuffix("\n") { content.removeLast() }
-            if let id = storage.attribute(.vetFold, at: lineRange.location, effectiveRange: nil) as? Int, let hidden = layout.foldWork[id] {
-                out += hidden.map { String(work.lines[$0].text) }
+            if foldElsewhere { return nil }
+            if let fold {
+                guard let hidden = layout.foldWork[fold], line.contains("unchanged lines") else { return nil }
+                rows.append(.original(hidden))
+            } else if note {
+                rows.append(.skip)
             } else {
-                out.append(content)
+                rows.append(.text(line))
             }
-            location = NSMaxRange(lineRange)
+            location += length + 1
         }
-        if out.last == "" && out.count > 1 { out.removeLast() }
-        var text = out.joined(separator: ending)
-        if finalNewline && !text.isEmpty { text += ending }
-        onSave?(text)
+        return String(decoding: EditedText.rebuild(rows: rows, original: staging.work), as: UTF8.self)
+    }
+
+    func save() {
+        guard isDirty else { return }
+        guard let text = editedFileText() else {
+            NSSound.beep()
+            onSaveRefused?()
+            return
+        }
+        onSave?(text, shownPath ?? "")
     }
 
     /// The first file line visible at the top of the main pane, and how far it's scrolled past.

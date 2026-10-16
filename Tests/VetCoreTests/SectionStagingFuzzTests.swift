@@ -83,3 +83,88 @@ private func check(head: [String], index: [String], work: [String], fail: (Strin
     }
     #expect(problems.isEmpty, "\(problems.first ?? "")")
 }
+
+// MARK: Repeated lines, long files, whole-file round trips (review of round 3)
+
+private let alphabet = ["}", "{", "", "  }", "foo()", "  x = 1", "a", "b", "return", "  return x"]
+
+private func randomLines(_ n: Int, _ r: inout XorShift) -> [String] {
+    (0..<n).map { _ in alphabet[Int.random(in: 0..<alphabet.count, using: &r)] }
+}
+
+/// Block edits that reuse the same small alphabet, so lines repeat.
+private func mutateRepeating(_ base: [String], _ r: inout XorShift) -> [String] {
+    var out: [String] = []
+    for x in base {
+        switch Int.random(in: 0..<10, using: &r) {
+        case 0: out.append(alphabet[Int.random(in: 0..<alphabet.count, using: &r)])
+        case 1: break
+        case 2: out += randomLines(Int.random(in: 1..<4, using: &r), &r); out.append(x)
+        default: out.append(x)
+        }
+    }
+    if Int.random(in: 0..<5, using: &r) == 0 { out += randomLines(2, &r) }
+    return out
+}
+
+/// Stages (or unstages) every section one at a time, in a shuffled order, re-reading in between.
+private func applyAll(head: [String], start: [String], work: [String], staged: Bool, _ r: inout XorShift) -> [String] {
+    var index = start
+    let targets = SectionStaging(head: L(head), index: L(index), work: L(work)).hunks.map { ($0.head, $0.work) }.shuffled(using: &r)
+    for t in targets {
+        let s = SectionStaging(head: L(head), index: L(index), work: L(work))
+        guard let h = s.hunks.first(where: { $0.head.overlaps(t.0) || $0.work.overlaps(t.1) || ($0.head == t.0 && $0.work == t.1) }) else { continue }
+        index = S(s.indexText(setting: h, staged: staged))
+    }
+    return index
+}
+
+@Test func reviewerDuplicationCase() {
+    let head = ["}", "foo()", "a", "", "{", "  }", "}", "foo()", "foo()", "  x = 1"]
+    let work = ["}", "  }", "  }", "  }", "foo()", "{", "  x = 1"]
+    var r = XorShift(s: 1)
+    #expect(applyAll(head: head, start: head, work: work, staged: true, &r) == work)
+    #expect(applyAll(head: head, start: work, work: work, staged: false, &r) == head)
+}
+
+@Test func stagingEverySectionGivesTheFile() {
+    var r = XorShift(s: 0xD1B5_4A32_D192_ED03)
+    var problems: [String] = []
+    for n in 0..<1_200 where problems.isEmpty {
+        let long = n == 0 || n == 600 // twice a file long enough for the Myers path
+        let head = randomLines(long ? 1_800 : Int.random(in: 0..<40, using: &r), &r)
+        let work = mutateRepeating(head, &r)
+        let staged = applyAll(head: head, start: head, work: work, staged: true, &r)
+        if staged != work { problems.append("stage all ≠ work\n head=\(head.prefix(40))\n work=\(work.prefix(40))") }
+        let unstaged = applyAll(head: head, start: work, work: work, staged: false, &r)
+        if unstaged != head { problems.append("unstage all ≠ head\n head=\(head.prefix(40))\n work=\(work.prefix(40))") }
+        // Stage selected lines over the whole file stages everything.
+        let all = SectionStaging(head: L(head), index: L(head), work: L(work)).indexText(stagingWorkLines: 0..<max(1, work.count))
+        if !work.isEmpty && S(all) != work { problems.append("stage all lines ≠ work\n head=\(head.prefix(40))\n work=\(work.prefix(40))") }
+    }
+    #expect(problems.isEmpty, "\(problems.first ?? "")")
+}
+
+/// What you see is what gets staged: ticking one section (index = HEAD) gives exactly HEAD with
+/// that displayed section swapped for the working-file lines; unticking (index = work) the reverse.
+@Test func stagingASectionIsExactlyWhatItShows() {
+    var r = XorShift(s: 0x5851_F42D_4C95_7F2D)
+    var problems: [String] = []
+    for _ in 0..<3_000 where problems.isEmpty {
+        let head = randomLines(Int.random(in: 0..<40, using: &r), &r)
+        let work = mutateRepeating(head, &r)
+        let fromHead = SectionStaging(head: L(head), index: L(head), work: L(work))
+        for h in fromHead.hunks {
+            let want = Array(head[..<h.head.lowerBound]) + Array(work[h.work]) + Array(head[h.head.upperBound...])
+            let got = S(fromHead.indexText(setting: h, staged: true))
+            if got != want { problems.append("stage \(h.head)->\(h.work)\n head=\(head)\n work=\(work)\n got=\(got)\n want=\(want)"); break }
+        }
+        let fromWork = SectionStaging(head: L(head), index: L(work), work: L(work))
+        for h in fromWork.hunks {
+            let want = Array(work[..<h.work.lowerBound]) + Array(head[h.head]) + Array(work[h.work.upperBound...])
+            let got = S(fromWork.indexText(setting: h, staged: false))
+            if got != want { problems.append("unstage \(h.head)->\(h.work)\n head=\(head)\n work=\(work)\n got=\(got)\n want=\(want)"); break }
+        }
+    }
+    #expect(problems.isEmpty, "\(problems.first ?? "")")
+}

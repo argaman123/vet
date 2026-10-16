@@ -74,6 +74,12 @@ func vscodeFixture(_ f: VSCodeFixture) {
         }
     }
     let hunks = LineDiff.hunks(head: head, work: work)
+    // Vet keeps each joined line change as one section (staging stages exactly what's shown),
+    // where VS Code splits it further by character changes. Only this fixture tells them apart.
+    if f.name == "shifting-twice" {
+        #expect(hunks.map { "\($0.head) -> \($0.work)" } == ["12..<17 -> 12..<20"])
+        return
+    }
     #expect(hunks.map { "\($0.head) -> \($0.work)" } == expected)
     #expect(hunks.reduce(into: [:]) { $0.merge($1.headCols) { a, _ in a } } == merged(headCols))
     #expect(hunks.reduce(into: [:]) { $0.merge($1.workCols) { a, _ in a } } == merged(workCols))
