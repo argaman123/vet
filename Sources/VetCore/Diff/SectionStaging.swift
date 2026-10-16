@@ -123,13 +123,21 @@ public struct SectionStaging: Sendable {
         return TextLines(lines: lines).joined()
     }
 
-    /// Stages just these working-file lines (VS Code's "stage selected ranges"): the index→work
-    /// changes touching them are applied, same-size ones only over the selected lines.
+    /// Stages just these working-file lines (VS Code's "stage selected ranges"): of each index→work
+    /// change touching them only the selected new lines go in; the old lines they replace are
+    /// paired line by line when both sides are the same size, else replaced whole.
     public func indexText(stagingWorkLines selection: Range<Int>) -> Data {
         var lines = index.lines
         for x in indexToWork.filter({ Self.touches(selection, $0.work) }).reversed() {
-            let (from, to) = Self.restrict(x.head, x.work, to: selection)
-            lines.replaceSubrange(from, with: work.lines[to])
+            let lo = max(x.work.lowerBound, selection.lowerBound), hi = min(x.work.upperBound, selection.upperBound)
+            if x.work.isEmpty || lo >= hi {
+                lines.replaceSubrange(x.head, with: work.lines[x.work]) // a deletion at the selection's edge: whole
+            } else if x.head.count == x.work.count {
+                let (from, to) = Self.restrict(x.head, x.work, to: selection)
+                lines.replaceSubrange(from, with: work.lines[to])
+            } else {
+                lines.replaceSubrange(x.head, with: work.lines[lo..<hi]) // VS Code's intersectDiffWithRange
+            }
         }
         return TextLines(lines: lines).joined()
     }

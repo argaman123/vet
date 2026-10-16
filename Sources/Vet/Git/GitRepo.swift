@@ -51,7 +51,8 @@ actor GitRepo {
         let gitDir = Self.gitDir(of: root)
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("vet-index-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: temp) }
-        try FileManager.default.copyItem(at: gitDir.appendingPathComponent("index"), to: temp)
+        // Copied by reading, not cloning: a clone shows up as an event on the real index.
+        try Data(contentsOf: gitDir.appendingPathComponent("index")).write(to: temp)
         let env = ["GIT_INDEX_FILE": temp.path]
         _ = try run(["add", "--intent-to-add", "--"] + untracked.map(\.path), env: env)
         let scratch = StatusParser.parse(try run(["status", "--porcelain=v2", "-z", "--untracked-files=no", "--find-renames"], env: env))
@@ -173,10 +174,25 @@ actor GitRepo {
     /// Stages just some working-file lines (re-reads and refuses if anything changed since drawing).
     func stageLines(_ change: FileChange, lines: Range<Int>, expectedSnapshot: String) throws -> SectionOutcome {
         guard case .document(let doc) = loadDiff(change), let now = doc.staging, now.snapshotID == expectedSnapshot else { return .stale }
-        let mode = change.kind == .untracked ? "100644" : change.modeIndex
-        guard mode == "100644" || mode == "100755", change.kind != .deleted else { return .stale }
+        guard change.kind != .deleted, FileManager.default.fileExists(atPath: root.appendingPathComponent(change.path).path) else { return .stale }
+        if change.kind == .renamed && (try? indexText(change.path)) == nil {
+            // As with sections: an unstaged rename is staged whole first (the old path's
+            // removal has to go in with it), then by lines.
+            try stageFiles([change])
+            return .done
+        }
+        guard let mode = indexMode(change) else { return .stale }
         try writeIndex(path: change.path, text: now.indexText(stagingWorkLines: lines), mode: mode)
         return .done
+    }
+
+    /// The mode a partly staged file gets in the index: an untracked file's from the disk
+    /// (executable or not), else the index's own. Nil for symlinks and submodules.
+    private func indexMode(_ change: FileChange) -> String? {
+        let mode = change.kind == .untracked
+            ? (FileManager.default.isExecutableFile(atPath: root.appendingPathComponent(change.path).path) ? "100755" : "100644")
+            : change.modeIndex
+        return mode == "100644" || mode == "100755" ? mode : nil
     }
 
     /// Stages or unstages one section, re-reading everything and refusing if HEAD, the index or
@@ -193,10 +209,7 @@ actor GitRepo {
             if staged { try stageFiles([change]) } else { try unstageFiles([change]) }
             return .done
         }
-        let mode = change.kind == .untracked
-            ? (FileManager.default.isExecutableFile(atPath: root.appendingPathComponent(change.path).path) ? "100755" : "100644")
-            : change.modeIndex
-        guard mode == "100644" || mode == "100755" else { return .stale }
+        guard let mode = indexMode(change) else { return .stale }
         try writeIndex(path: change.path, text: now.indexText(setting: hunk, staged: staged), mode: mode)
         return .done
     }

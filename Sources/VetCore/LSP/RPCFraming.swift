@@ -60,7 +60,9 @@ public struct RPCFrameDecoder: Sendable {
     }
 
     private static func contentLength(in header: String) throws -> Int {
-        for line in header.split(separator: "\r\n") {
+        // Lines split on any newline: a server that prints a stray log line to stdout puts it in
+        // front of the next header, and that mustn't cost the whole connection.
+        for line in header.split(whereSeparator: \.isNewline) {
             guard let colon = line.firstIndex(of: ":") else { continue }
             let name = line[..<colon].trimmingCharacters(in: .whitespaces)
             if name.caseInsensitiveCompare("Content-Length") == .orderedSame,

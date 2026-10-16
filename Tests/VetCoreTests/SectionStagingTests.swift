@@ -102,3 +102,15 @@ private func text(_ d: Data) -> String { String(decoding: d, as: UTF8.self) }
     // A combining mark right after a newline must not glue two lines together.
     #expect(TextLines("a\n\u{0301}b\n").count == 2)
 }
+
+@Test func stagingSelectedLinesTakesOnlyTheSelectedNewLines() {
+    // VS Code's intersectDiffWithRange: the new side is cut to the selection; the old side is
+    // paired line by line when both sides are the same size, else replaced whole.
+    let head = lines("a\nb\n"), added = lines("a\nx\ny\nz\nb\n")
+    let s = SectionStaging(head: head, index: head, work: added)
+    #expect(text(s.indexText(stagingWorkLines: 1..<3)) == "a\nx\ny\nb\n")
+
+    let replaced = lines("a\nX\nY\nZ\nb\n"), before = lines("a\nold\nb\n")
+    let r = SectionStaging(head: before, index: before, work: replaced)
+    #expect(text(r.indexText(stagingWorkLines: 2..<3)) == "a\nY\nb\n")
+}

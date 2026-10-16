@@ -133,10 +133,16 @@ final class CodeTextView: NSTextView {
     /// Display lines covered by a character range (the selection).
     func displayLines(of range: NSRange) -> ClosedRange<Int> {
         let ns = string as NSString
+        // The display line holding `index`: the newlines before it (the panes' rows are split on
+        // "\n" only). Line enumeration can't do this: it reports a partly covered last line too.
         func lineOf(_ index: Int) -> Int {
-            var n = 0
-            ns.enumerateSubstrings(in: NSRange(location: 0, length: min(index, ns.length)), options: [.byLines, .substringNotRequired]) { _, _, enclosing, _ in
-                if NSMaxRange(enclosing) <= index { n += 1 }
+            var n = 0, from = 0
+            let end = min(index, ns.length)
+            while from < end {
+                let r = ns.range(of: "\n", options: .literal, range: NSRange(location: from, length: end - from))
+                if r.location == NSNotFound { break }
+                n += 1
+                from = NSMaxRange(r)
             }
             return n
         }

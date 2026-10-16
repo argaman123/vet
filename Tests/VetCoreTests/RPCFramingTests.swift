@@ -31,6 +31,10 @@ private func frame(_ json: String) -> Data { RPCFraming.encode(Data(json.utf8)) 
     let raw = "content-length: 2\r\nContent-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n{}"
     #expect(try decoder.append(Data(raw.utf8)) == [Data("{}".utf8)])
 
+    // A server's stray log line on stdout lands in front of the next header.
+    var noisy = RPCFrameDecoder()
+    #expect(try noisy.append(Data("Indexing: started\nContent-Length: 2\r\n\r\n{}".utf8)) == [Data("{}".utf8)])
+
     var broken = RPCFrameDecoder()
     #expect(throws: RPCFraming.MalformedHeader.self) { try broken.append(Data("Content-Type: x\r\n\r\n{}".utf8)) }
 }

@@ -12,22 +12,33 @@ final class RepoWatcher {
     private let onChange: @MainActor () -> Void
     private let gitDir: String
     private var pending: DispatchWorkItem?
+    /// FSEvents reports real paths (`/private/tmp/…` for `/tmp/…`), so ours must be real too.
+    private static func realPath(_ url: URL) -> String {
+        guard let p = realpath(url.path, nil) else { return url.standardizedFileURL.path }
+        defer { free(p) }
+        return String(cString: p)
+    }
+    /// Events that change a file's contents or existence. Inside the git directory only these
+    /// count: git also clones the index (Vet's own rename pairing does) and refreshes object
+    /// times, and neither is a change.
     private var burstStart: Date?
 
     init(root: URL, gitDir: URL, onChange: @escaping @MainActor () -> Void) {
         self.onChange = onChange
-        self.gitDir = gitDir.standardizedFileURL.path
+        self.gitDir = Self.realPath(gitDir)
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
                                            retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
             guard let info else { return }
             let watcher = Unmanaged<RepoWatcher>.fromOpaque(info).takeUnretainedValue()
             let list = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
-            MainActor.assumeIsolated { watcher.received(Array(list.prefix(count))) }
+            let events = (0..<min(count, list.count)).map { (list[$0], flags[$0]) }
+            MainActor.assumeIsolated { watcher.received(events) }
         }
         let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
-        var paths = [root.path]
-        if !self.gitDir.hasPrefix(root.standardizedFileURL.path + "/") { paths.append(self.gitDir) }
+        let rootPath = Self.realPath(root)
+        var paths = [rootPath]
+        if !self.gitDir.hasPrefix(rootPath + "/") { paths.append(self.gitDir) }
         stream = FSEventStreamCreate(nil, callback, &context, paths as CFArray,
                                      FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.05, flags)
         if let stream {
@@ -44,9 +55,16 @@ final class RepoWatcher {
         }
     }
 
-    private func received(_ paths: [String]) {
-        let relevant = paths.contains { p in
+    private static let contentFlags = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved
+        | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemModified)
+    private static let itemFlags = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile | kFSEventStreamEventFlagItemIsDir
+        | kFSEventStreamEventFlagItemIsSymlink)
+
+    private func received(_ events: [(path: String, flags: FSEventStreamEventFlags)]) {
+        let relevant = events.contains { p, flags in
             guard p.hasPrefix(gitDir + "/") else { return !p.contains("/node_modules/") } // .gitignore, .github/ are ordinary files
+            // A rescan request names no item: count it. A file event must change contents.
+            if flags & Self.itemFlags != 0 && flags & Self.contentFlags == 0 { return false }
             let rest = p.dropFirst(gitDir.count)
             return rest == "/index" || rest == "/HEAD" || rest == "/logs/HEAD" || rest.hasPrefix("/refs/") || rest == "/packed-refs"
         }

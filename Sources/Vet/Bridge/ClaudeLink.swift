@@ -86,10 +86,15 @@ final class ClaudeLink {
         return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.appendingPathComponent(".claude-plugin/marketplace.json").path) }
     }
 
-    /// Adds the bridge-mod marketplace and installs vet-bridge with the `claude` command line tool.
+    /// Adds the bridge-mod marketplace and installs vet-bridge with the `claude` command line tool
+    /// (off the main thread: it takes a few seconds).
     func installMod() async -> String {
         guard let folder = Self.modFolder else { return "Couldn't find the bridge mod folder." }
         let env = await ShellEnvironment.load()
+        return await Task.detached { Self.install(from: folder, env: env) }.value
+    }
+
+    nonisolated private static func install(from folder: URL, env: [String: String]) -> String {
         func claude(_ args: [String]) -> (Int32, String) {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/bin/zsh")

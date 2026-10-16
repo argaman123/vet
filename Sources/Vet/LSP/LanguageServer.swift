@@ -181,6 +181,17 @@ actor LanguageServer {
         }
     }
 
+    /// Closes every document but `url`'s, so the server reads them from disk again: an open
+    /// document's text wins over the file, and Claude may have changed the file since. One stays
+    /// open so the server keeps its project loaded (tsserver drops a project with no open file).
+    private func closeOthers(than url: URL) throws {
+        let keep = LSPURI.string(for: url)
+        for uri in documents.keys where uri != keep {
+            try send(.notification(method: "textDocument/didClose", params: ["textDocument": ["uri": .string(uri)]]))
+            documents[uri] = nil
+        }
+    }
+
     /// Syncs the document, then runs a definition/implementation/references request at a position.
     func locations(_ method: String, url: URL, text: String, line: Int, character: Int,
                    includeDeclaration: Bool? = nil) async throws -> [LSPLocation] {
@@ -188,6 +199,7 @@ actor LanguageServer {
         if let provider = Self.providers[method], !supports(provider) { return [] } // e.g. pyright has no implementation
         if launch.waitsForIndexing { try await waitForIndexing() }
         try sync(url, text: text)
+        try closeOthers(than: url)
         let params = LSPProtocol.positionParams(uri: LSPURI.string(for: url), line: line, character: character,
                                                 includeDeclaration: includeDeclaration)
         let begunBefore = progressBegun
@@ -339,6 +351,7 @@ actor LanguageServer {
     private static func logFile(named name: String, header: String) -> FileHandle {
         let url = logDirectory.appendingPathComponent("\(name).log")
         try? FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
+        rotateIfLarge(url)
         if !FileManager.default.fileExists(atPath: url.path) {
             FileManager.default.createFile(atPath: url.path, contents: nil)
         }
@@ -348,9 +361,19 @@ actor LanguageServer {
         return handle
     }
 
+    /// Logs are kept under about 5 MB: a bigger one becomes `<name>.old.log`, replacing the last.
+    private static func rotateIfLarge(_ url: URL) {
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        guard size > 5_000_000 else { return }
+        let old = url.deletingPathExtension().appendingPathExtension("old.log")
+        try? FileManager.default.removeItem(at: old)
+        try? FileManager.default.moveItem(at: url, to: old)
+    }
+
     static func append(_ line: String, toLog name: String) {
         let url = logDirectory.appendingPathComponent("\(name).log")
         try? FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
+        rotateIfLarge(url)
         if !FileManager.default.fileExists(atPath: url.path) {
             FileManager.default.createFile(atPath: url.path, contents: nil)
         }
