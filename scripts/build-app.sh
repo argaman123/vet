@@ -5,10 +5,14 @@
 set -euo pipefail
 # Command Line Tools work without accepting the Xcode license; override by exporting DEVELOPER_DIR.
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+# The Command Line Tools lack SwiftUI's macro plugin (@State, @Entry); borrow Xcode's when it's installed.
+SWIFTUI_PLUGINS=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins
+EXTRA=()
+[[ -d "$SWIFTUI_PLUGINS" ]] && EXTRA=(-Xswiftc -plugin-path -Xswiftc "$SWIFTUI_PLUGINS")
 cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
-swift build -c "$CONFIG" --product Vet
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/Vet"
+swift build -c "$CONFIG" --product Vet "${EXTRA[@]}"
+BIN="$(swift build -c "$CONFIG" "${EXTRA[@]}" --show-bin-path)/Vet"
 APP=build/Vet.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

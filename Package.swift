@@ -8,5 +8,6 @@ let package = Package(
     targets: [
         .target(name: "VetCore"),
         .executableTarget(name: "Vet", dependencies: ["VetCore"]),
+        .testTarget(name: "VetCoreTests", dependencies: ["VetCore"]),
     ]
 )

@@ -17,13 +17,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     let state = ShellState()
+    let projects = ProjectStore()
     private var main: MainWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMenu()
-        main = MainWindowController(content: ContentView(state: state))
+        main = MainWindowController(content: ContentView(state: state, review: AnyView(StatusDebugView(projects: projects))))
         main.show()
         NSApp.activate()
+    }
+
+    @objc func openFolder(_ sender: Any?) {
+        projects.showOpenPanel()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -37,6 +42,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "Quit Vet", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         menu.addItem(appItem)
+
+        let fileItem = NSMenuItem()
+        let file = NSMenu(title: "File")
+        let open = NSMenuItem(title: "Open Folder…", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
+        file.addItem(open)
+        fileItem.submenu = file
+        menu.addItem(fileItem)
 
         let editItem = NSMenuItem()
         let edit = NSMenu(title: "Edit")
