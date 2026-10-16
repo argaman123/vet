@@ -40,10 +40,15 @@ final class Workspace {
         }
         navBusy = "Finding \(title.lowercased())…"
         Task {
-            let found: [CodeLocation] = switch kind {
+            var found: [CodeLocation] = switch kind {
             case .definition: await navigator.definition(of: url, text: text, line: line, character: character)
             case .implementation: await navigator.implementation(of: url, text: text, line: line, character: character)
             case .references: await navigator.references(of: url, text: text, line: line, character: character)
+            }
+            // Like VS Code: a definition that lands on an import of the symbol follows it to the
+            // real declaration (the TypeScript server sometimes answers with the alias).
+            if kind == .definition, found.count == 1, let hop = await followImport(found[0], navigator: navigator) {
+                found = hop
             }
             navBusy = nil
             if found.isEmpty {
@@ -54,6 +59,16 @@ final class Workspace {
                 navResults = (title, found)
             }
         }
+    }
+
+    private func followImport(_ loc: CodeLocation, navigator: CodeNavigator) async -> [CodeLocation]? {
+        guard let text = try? String(contentsOf: loc.url, encoding: .utf8) else { return nil }
+        let lines = text.components(separatedBy: "\n")
+        guard loc.startLine < lines.count else { return nil }
+        let line = lines[loc.startLine].trimmingCharacters(in: .whitespaces)
+        guard line.hasPrefix("import ") || line.hasPrefix("export {") || line.hasPrefix("from ") else { return nil }
+        let next = await navigator.definition(of: loc.url, text: text, line: loc.startLine, character: loc.startCharacter)
+        return next.isEmpty || next == [loc] ? nil : next
     }
 
     /// Opens a location in the Files tab, caret on it.
