@@ -11,6 +11,9 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     private(set) var isDirty = false { didSet { if oldValue != isDirty { onDirtyChange?(isDirty) } } }
     var onDirtyChange: ((Bool) -> Void)?
     var onSave: ((String) -> Void)?
+    /// The model versions this view last showed (it outlives its SwiftUI host).
+    var shownVersion = -1
+    var shownJump = -1
     /// ⌘-click or the right-click menu asked to navigate from this position.
     var onNavigate: ((CodeTextView.Navigation, Int, Int) -> Void)?
     var contextItems: ((Int, Int) -> [NSMenuItem])? {

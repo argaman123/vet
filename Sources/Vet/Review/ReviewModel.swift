@@ -184,6 +184,10 @@ final class ReviewModel {
     /// Saves the diff's unsaved edits (set by the diff view).
     var diffSave: (() -> Void)?
 
+    /// The diff view lives as long as the model (as the Browser's web view does): switching tabs
+    /// must not throw away the text you're editing in it, or its scroll position.
+    @ObservationIgnored lazy var diffView = RibbonDiffNSView()
+
     /// The bytes the diff's edit buffer was built from (to detect changes on disk meanwhile).
     var diffEditBase: (() -> Data?)?
 
@@ -212,14 +216,16 @@ final class ReviewModel {
     func saveDiffEdits(_ text: String, path: String) -> Bool {
         guard let root, !path.isEmpty else { return false }
         let url = root.appendingPathComponent(path)
-        if let base = diffEditBase?(), let disk = try? Data(contentsOf: url), disk != base,
+        if let base = diffEditBase?(), (try? Data(contentsOf: url)) != base, // changed, or moved away
            !Alerts.changedOnDisk((path as NSString).lastPathComponent) {
             return false
         }
         do {
-            try Data(text.utf8).write(to: root.appendingPathComponent(path), options: .atomic)
-            diffDirty = false
-            revertSerial += 1 // drop the edit buffer; the refresh below shows the saved file
+            let bytes = Data(text.utf8)
+            try bytes.write(to: url, options: .atomic)
+            // The pane already shows what was saved: keep it (you may go on typing before the
+            // refresh lands) and compare the next save against these bytes.
+            diffView.markSaved(bytes)
             Task { await refresh() }
             return true
         } catch {

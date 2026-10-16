@@ -9,7 +9,7 @@ struct RibbonDiffView: NSViewRepresentable {
     let jumpSerial: Int
 
     func makeNSView(context: Context) -> RibbonDiffNSView {
-        let v = RibbonDiffNSView()
+        let v = model.diffView // kept by the model across tab switches
         v.onDirtyChange = { [weak model] dirty in model?.diffDirty = dirty }
         v.onSave = { [weak model] text, path in model?.saveDiffEdits(text, path: path) }
         v.onSaveRefused = { [weak model] in model?.show("A folded region was changed, so nothing was saved. Discard and try again.") }
@@ -77,8 +77,10 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private(set) var isDirty = false { didSet { if oldValue != isDirty { onDirtyChange?(isDirty) } } }
     private var rehighlight: DispatchWorkItem?
     private var shownStaging: SectionStaging?
-    /// The working-file bytes the right pane was built from.
-    var editBase: Data? { shownStaging?.work.joined() }
+    /// The working-file bytes the right pane was built from (or last saved).
+    var editBase: Data? { savedBase ?? shownStaging?.work.joined() }
+    /// What the last save wrote, until the diff is redrawn from the saved file.
+    private var savedBase: Data?
     private var shownLanguage: CodeLanguage = .plain
     var onToggle: ((Int, Bool, String) -> Void)?
     var onFoldClick: ((Int) -> Void)?
@@ -148,6 +150,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         // Never replace text you're editing; the header offers Reload instead.
         if isDirty && samePath { return }
         isDirty = false
+        savedBase = nil
         shownStaging = staging
         shownLanguage = doc.language
         rightText.isEditable = doc.change.kind != .deleted
@@ -358,6 +361,12 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     func discardEdits() { isDirty = false }
+
+    /// The right pane's text was just written to disk.
+    func markSaved(_ bytes: Data) {
+        savedBase = bytes
+        isDirty = false
+    }
 
     /// The whole file rebuilt from the edited right pane: fold rows become exactly the lines they
     /// hide, note rows are left out, unchanged lines keep their own endings. Nil (and a message)

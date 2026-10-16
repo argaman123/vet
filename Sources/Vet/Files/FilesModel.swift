@@ -132,6 +132,11 @@ final class FilesModel {
     /// The editor's text as file contents (set by the editor view), for save prompts.
     var editorText: (() -> String?)?
 
+    /// The editor lives as long as the model, so switching tabs keeps your unsaved text.
+    @ObservationIgnored lazy var editorView = CodeEditorView()
+    /// Bumped to move within the open file without reloading it (and losing your edits).
+    private(set) var jumpSerial = 0
+
     /// Saves the editor's unsaved edits, if any.
     func saveEditor() {
         guard isDirty, let text = editorText?() else { return }
@@ -143,7 +148,10 @@ final class FilesModel {
         guard isDirty, let name = openURL?.lastPathComponent else { return true }
         switch Alerts.unsaved(name) {
         case .save: return editorText?().map { save($0) } ?? false
-        case .discard: isDirty = false; return true
+        case .discard:
+            if let url = openURL { load(url) } // the file as it is on disk now
+            docVersion += 1
+            return true
         case .cancel: return false
         }
     }
@@ -156,9 +164,10 @@ final class FilesModel {
             forward = []
         }
         if let rel = relative(url) { expandAncestors(of: rel) }
-        load(url)
         currentLine = line
         target = (line, character)
+        if url == openURL && text != nil { jumpSerial += 1; return } // same file: keep its text and your edits
+        load(url)
         docVersion += 1
     }
 
@@ -209,7 +218,7 @@ final class FilesModel {
     @discardableResult
     func save(_ contents: String) -> Bool {
         guard let url = openURL else { return false }
-        if let loaded = text?.joined(), let disk = try? Data(contentsOf: url), disk != loaded,
+        if let loaded = text?.joined(), (try? Data(contentsOf: url)) != loaded, // changed, or moved away
            !Alerts.changedOnDisk(url.lastPathComponent) {
             changedOnDisk = true
             return false

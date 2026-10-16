@@ -25,7 +25,7 @@ struct FilesView: View {
                 if let message = model.message {
                     Text(message).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if model.text != nil {
-                    CodeEditorRepresentable(model: model, version: model.docVersion, navigator: navigator)
+                    CodeEditorRepresentable(model: model, version: model.docVersion, jump: model.jumpSerial, navigator: navigator)
                 } else {
                     Text("Choose a file").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -62,13 +62,11 @@ struct FilesView: View {
 struct CodeEditorRepresentable: NSViewRepresentable {
     let model: FilesModel
     let version: Int
+    let jump: Int
     var navigator: ((CodeTextView.Navigation, URL, String, Int, Int) -> Void)?
 
-    final class Coordinator { var shown = -1 }
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
     func makeNSView(context: Context) -> CodeEditorView {
-        let v = CodeEditorView()
+        let v = model.editorView // kept by the model across tab switches
         v.onSave = { [weak model] text in model?.save(text) }
         v.onDirtyChange = { [weak model] dirty in model?.isDirty = dirty }
         model.editorText = { [weak v] in v?.fileText() }
@@ -87,10 +85,15 @@ struct CodeEditorRepresentable: NSViewRepresentable {
                 navigator?(kind, url, view.currentText, line, character)
             }, copyLocation: "\(model.relativePath ?? url.path):\(line + 1)")
         }
-        guard context.coordinator.shown != version, let text = model.text else { return }
-        context.coordinator.shown = version
-        view.load(text, language: model.language, force: true)
-        if let target = model.target { view.scrollTo(line: target.line, character: target.character) }
+        if view.shownVersion != version, let text = model.text {
+            view.shownVersion = version
+            view.shownJump = jump
+            view.load(text, language: model.language, force: true)
+            if let target = model.target { view.scrollTo(line: target.line, character: target.character) }
+        } else if view.shownJump != jump {
+            view.shownJump = jump
+            if let target = model.target { view.scrollTo(line: target.line, character: target.character) }
+        }
     }
 
     /// Go to definition / implementation, Find references, Copy path and line.

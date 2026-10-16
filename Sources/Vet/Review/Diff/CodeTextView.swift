@@ -168,6 +168,27 @@ final class CodeTextView: NSTextView {
     /// Fold rows stand for hidden lines and note rows hold a card; neither can be edited, and
     /// neither can be merged into a neighbouring line (Backspace at a fold row's start, Delete at
     /// the end of the line above it).
+    /// Each pane undoes only its own typing: panes outlive tab switches, and the window's shared
+    /// undo stack would let ⌘Z in one tab change text in another you can't see.
+    private let paneUndoManager = UndoManager()
+    override var undoManager: UndoManager? { paneUndoManager }
+    // NSWindow's own undo:/redo: would use the window's stack, so the pane answers them first.
+    @objc func undo(_ sender: Any?) { paneUndoManager.undo() }
+    @objc func redo(_ sender: Any?) { paneUndoManager.redo() }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case Selector(("undo:")):
+            (item as? NSMenuItem)?.title = paneUndoManager.undoMenuItemTitle
+            return isEditable && paneUndoManager.canUndo
+        case Selector(("redo:")):
+            (item as? NSMenuItem)?.title = paneUndoManager.redoMenuItemTitle
+            return isEditable && paneUndoManager.canRedo
+        default:
+            return super.validateUserInterfaceItem(item)
+        }
+    }
+
     override func shouldChangeText(in range: NSRange, replacementString: String?) -> Bool {
         guard let storage = textStorage else { return super.shouldChangeText(in: range, replacementString: replacementString) }
         func protected(_ i: Int) -> Bool {
@@ -176,7 +197,9 @@ final class CodeTextView: NSTextView {
         }
         var refuse = false
         if range.length == 0 {
-            refuse = protected(range.location) // typing into a fold or note row
+            // Typing into a fold or note row, or onto its end (the last row has no newline after it).
+            let at = range.location
+            refuse = protected(at) || (protected(at - 1) && (string as NSString).character(at: at - 1) != 10)
         } else {
             for i in range.location..<NSMaxRange(range) where protected(i) { refuse = true; break }
             // Deleting a newline would pull the next line up: refuse if that line is protected.
