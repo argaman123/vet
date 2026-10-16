@@ -12,6 +12,14 @@ final class CodeTextView: NSTextView {
     var foldLines: [Int: Int] = [:] // display line → fold id
     var onFoldClick: ((Int) -> Void)?
 
+    enum Navigation { case definition, implementation, references }
+    /// ⌘S while this pane has focus.
+    var onSave: (() -> Void)?
+    /// ⌘-click: go to definition at (display line, UTF-16 column).
+    var onNavigate: ((Navigation, Int, Int) -> Void)?
+    /// The right-click menu's items for (display line, column), above Copy. Nil keeps a minimal menu.
+    var contextItems: ((Int, Int) -> [NSMenuItem])?
+
     static func make() -> (NSScrollView, CodeTextView) {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
@@ -77,7 +85,68 @@ final class CodeTextView: NSTextView {
             onFoldClick?(id)
             return
         }
+        if event.modifierFlags.contains(.command), let onNavigate, let pos = position(at: p) {
+            onNavigate(.definition, pos.line, pos.character)
+            return
+        }
         super.mouseDown(with: event)
+    }
+
+    @objc func vetSave(_ sender: Any?) { onSave?() }
+
+    /// A short, reviewer-only menu instead of the text system's long one.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let p = convert(event.locationInWindow, from: nil)
+        let menu = NSMenu()
+        if let pos = position(at: p) {
+            // Right-clicking outside the selection moves the caret there first, like other editors.
+            let index = characterIndexForInsertion(at: p)
+            if !NSLocationInRange(index, selectedRange()) || selectedRange().length == 0 { setSelectedRange(NSRange(location: index, length: 0)) }
+            for item in contextItems?(pos.line, pos.character) ?? [] { menu.addItem(item) }
+        }
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        return menu
+    }
+
+    /// Display line and UTF-16 column of a point, nil past the end or on a fold row.
+    func position(at point: NSPoint) -> (line: Int, character: Int)? {
+        let index = characterIndexForInsertion(at: point)
+        let ns = string as NSString
+        guard index <= ns.length else { return nil }
+        let lineStart = ns.lineRange(for: NSRange(location: min(index, max(0, ns.length - 1)), length: 0)).location
+        var line = 0
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: lineStart), options: [.byLines, .substringNotRequired]) { _, _, _, _ in line += 1 }
+        if lineStart == ns.length, index == ns.length, ns.length > 0, ns.character(at: ns.length - 1) == 10 { line += 1 }
+        guard foldLines[line] == nil else { return nil }
+        return (line, index - lineStart)
+    }
+
+    /// The text range for (display line, column).
+    func range(line: Int, character: Int) -> NSRange? {
+        let ns = string as NSString
+        var current = 0, location = 0
+        while current < line {
+            let r = ns.range(of: "\n", range: NSRange(location: location, length: ns.length - location))
+            guard r.location != NSNotFound else { return nil }
+            location = r.location + 1
+            current += 1
+        }
+        let lineEnd = ns.lineRange(for: NSRange(location: location, length: 0))
+        return NSRange(location: min(location + character, NSMaxRange(lineEnd)), length: 0)
+    }
+
+    /// Fold rows stand for hidden lines; they can't be edited.
+    override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        guard let storage = textStorage else { return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString) }
+        var touchesFold = false
+        let probe = NSRange(location: max(0, affectedCharRange.location - (affectedCharRange.length == 0 ? 1 : 0)),
+                            length: max(1, affectedCharRange.length))
+        if NSMaxRange(probe) <= storage.length {
+            storage.enumerateAttribute(.vetFold, in: probe) { value, _, stop in if value != nil { touchesFold = true; stop.pointee = true } }
+        }
+        if touchesFold { NSSound.beep(); return false }
+        return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
     }
 
     override func resetCursorRects() {

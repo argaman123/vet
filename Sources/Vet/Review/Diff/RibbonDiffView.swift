@@ -234,53 +234,7 @@ final class RibbonDiffNSView: NSView {
     /// Builds one pane's text: real lines with syntax colors and word highlights, plus fold rows.
     private static func text(_ lines: TextLines, _ display: [DiffLayout.DisplayLine], _ language: CodeLanguage,
                              words: [Int: [Range<Int>]], color: NSColor) -> NSAttributedString {
-        let full = lines.joinedString()
-        let tokens = Highlighter.tokens(full, language: language)
-        var starts: [Int] = []
-        starts.reserveCapacity(lines.count)
-        var offset = 0
-        for l in lines.lines {
-            starts.append(offset)
-            offset += l.text.utf16.count + l.terminator.utf16.count
-        }
-        let base: [NSAttributedString.Key: Any] = [.font: DiffTheme.font, .foregroundColor: DiffTheme.text,
-                                                   .paragraphStyle: CodeTextView.paragraph, .baselineOffset: 2]
-        let out = NSMutableAttributedString()
-        out.beginEditing()
-        for d in display {
-            let at = out.length
-            switch d {
-            case .code(let l):
-                let line = String(lines.lines[l].text)
-                out.append(NSAttributedString(string: line + "\n", attributes: base))
-                let start = starts[l], length = line.utf16.count
-                var k = firstToken(tokens, endingAfter: start)
-                while k < tokens.count, tokens[k].range.location < start + length {
-                    let t = tokens[k]
-                    let lo = max(t.range.location, start), hi = min(t.range.location + t.range.length, start + length)
-                    if hi > lo { out.addAttribute(.foregroundColor, value: DiffTheme.token(t.kind), range: NSRange(location: at + lo - start, length: hi - lo)) }
-                    k += 1
-                }
-                for r in words[l] ?? [] where r.upperBound <= length {
-                    out.addAttribute(.backgroundColor, value: color.withAlphaComponent(0.35), range: NSRange(location: at + r.lowerBound, length: r.count))
-                }
-            case .fold(_, let hidden):
-                var attrs = base
-                attrs[.foregroundColor] = DiffTheme.lineNumber
-                out.append(NSAttributedString(string: "   ⋯   \(hidden) unchanged lines\n", attributes: attrs))
-            }
-        }
-        out.endEditing()
-        return out
-    }
-
-    private static func firstToken(_ tokens: [Highlighter.Token], endingAfter offset: Int) -> Int {
-        var lo = 0, hi = tokens.count
-        while lo < hi {
-            let mid = (lo + hi) / 2
-            if tokens[mid].range.location + tokens[mid].range.length <= offset { lo = mid + 1 } else { hi = mid }
-        }
-        return lo
+        CodeText.attributed(lines, display, language, words: words, color: color)
     }
 
     // MARK: Layout and divider

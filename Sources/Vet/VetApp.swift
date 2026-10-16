@@ -19,18 +19,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let state = ShellState()
     let projects = ProjectStore()
-    let review = ReviewModel()
+    let workspace = Workspace()
     private var main: MainWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMenu()
-        main = MainWindowController(content: ContentView(state: state, review: AnyView(ReviewView(model: review, projects: projects))))
+        main = MainWindowController(content: ContentView(state: state, projects: projects, workspace: workspace))
         main.show()
         NSApp.activate()
     }
 
     @objc func openFolder(_ sender: Any?) {
         projects.showOpenPanel()
+    }
+
+    @objc func goBack(_ sender: Any?) {
+        state.selected = .files
+        workspace.files.goBack()
+    }
+
+    @objc func goForward(_ sender: Any?) {
+        state.selected = .files
+        workspace.files.goForward()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -49,6 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let file = NSMenu(title: "File")
         let open = NSMenuItem(title: "Open Folder…", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
         file.addItem(open)
+        file.addItem(.separator())
+        // Routed to the focused code pane (CodeTextView.vetSave).
+        file.addItem(withTitle: "Save", action: #selector(CodeTextView.vetSave(_:)), keyEquivalent: "s")
         fileItem.submenu = file
         menu.addItem(fileItem)
 
@@ -60,6 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
         menu.addItem(editItem)
+
+        let goItem = NSMenuItem()
+        let go = NSMenu(title: "Go")
+        go.addItem(withTitle: "Back", action: #selector(AppDelegate.goBack(_:)), keyEquivalent: "[")
+        go.addItem(withTitle: "Forward", action: #selector(AppDelegate.goForward(_:)), keyEquivalent: "]")
+        goItem.submenu = go
+        menu.addItem(goItem)
 
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")

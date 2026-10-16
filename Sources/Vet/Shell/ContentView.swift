@@ -4,7 +4,8 @@ import VetCore
 /// The whole window: the glass rail on the left, the selected tab on the right.
 struct ContentView: View {
     @Bindable var state: ShellState
-    var review: AnyView = AnyView(EmptyView())
+    let projects: ProjectStore
+    let workspace: Workspace
 
     var body: some View {
         HStack(spacing: 0) {
@@ -13,8 +14,8 @@ struct ContentView: View {
                 .padding(.top, 34) // room for the window's close/minimize/zoom buttons
             Group {
                 switch state.selected {
-                case .review: review
-                case .files: placeholder("Files", "The whole project will show here.")
+                case .review: ReviewView(model: workspace.review, projects: projects)
+                case .files: FilesView(model: workspace.files)
                 case .browser: placeholder("Browser", "A bare browser will show here.")
                 }
             }
@@ -22,6 +23,7 @@ struct ContentView: View {
         }
         .background(.background)
         .ignoresSafeArea()
+        .task(id: projects.current) { workspace.open(projects.current) }
     }
 
     private func placeholder(_ title: String, _ subtitle: String) -> some View {

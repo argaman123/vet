@@ -59,7 +59,6 @@ final class ReviewModel {
     /// Guards against diff loads landing out of order.
     private var loadSerial = 0
     private(set) var isGitRepo = true
-    private var watcher: RepoWatcher?
     private(set) var marks: MarkStore?
     private var autoStaging = false
     /// Paths staged/unstaged optimistically while git runs.
@@ -82,8 +81,6 @@ final class ReviewModel {
         isGitRepo = GitRepo.root(containing: folder) != nil
         repo = isGitRepo ? GitRepo(root: folder) : nil
         marks = isGitRepo ? MarkStore(root: folder) : nil
-        // Claude edits files and stages/commits while you review: follow along.
-        watcher = isGitRepo ? RepoWatcher(root: folder, gitDir: GitRepo.gitDir(of: folder)) { [weak self] in Task { await self?.refresh() } } : nil
         Task { await refresh() }
     }
 

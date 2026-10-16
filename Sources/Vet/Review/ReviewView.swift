@@ -13,7 +13,6 @@ struct ReviewView: View {
             diffArea
                 .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
         }
-        .task(id: projects.current) { model.open(projects.current) }
     }
 
     private var sidebar: some View {
