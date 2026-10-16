@@ -81,7 +81,8 @@ final class Workspace {
     func startLink() {
         review.link = link
         link.onFolderChanged = { [weak self] cwd in
-            guard let self else { return }
+            // Never pull the project out from under unsaved edits or a running app.
+            guard let self, !self.hasUnsavedEdits, !self.run.isRunning else { return }
             let folder = URL(fileURLWithPath: cwd, isDirectory: true)
             let target = GitRepo.root(containing: folder) ?? folder
             if let root = self.root, Self.same(target.path, root), Self.same(root.path, target) { return }

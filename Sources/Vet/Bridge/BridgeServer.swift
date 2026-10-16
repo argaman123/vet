@@ -51,7 +51,7 @@ final class BridgeServer: @unchecked Sendable {
         var buffer = [UInt8](repeating: 0, count: 8192)
         var tv = timeval(tv_sec: 2, tv_usec: 0)
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        while data.count < 65_536 {
+        while data.count < HTTPRequest.maxBody + 8192 {
             let n = read(client, &buffer, buffer.count)
             if n <= 0 { break }
             data.append(contentsOf: buffer[0..<n])

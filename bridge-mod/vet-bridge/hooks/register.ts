@@ -9,6 +9,7 @@ const SOCKET = '/Library/Application Support/Vet/bridge.sock'
 let socketPath: string | undefined
 let session: { sessionId: string; cwd: string } | undefined
 let polling: { cancel(): void } | undefined
+let busy = false // one poll at a time, so a slow fill can't overlap the next tick
 
 async function who($: any) {
   if (!socketPath) socketPath = (await $.env.get('HOME')) + SOCKET
@@ -31,6 +32,8 @@ async function post($: any, path: string) {
 }
 
 async function poll($: any) {
+  if (busy) return
+  busy = true
   try {
     const s = await who($)
     const r = await $.http.fetch('http://vet/next?session=' + encodeURIComponent(s.sessionId), { socketPath })
@@ -47,6 +50,8 @@ async function poll($: any) {
     }
   } catch {
     // Vet isn't running; try again on the next tick.
+  } finally {
+    busy = false
   }
 }
 

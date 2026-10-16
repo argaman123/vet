@@ -19,7 +19,11 @@ public struct HTTPRequest: Equatable, Sendable {
     public let query: [String: String]
     public let body: Data
 
-    /// Parses a complete request (headers plus Content-Length bytes of body); nil while incomplete.
+    /// The largest body the bridge accepts (drafts are text the user wrote).
+    public static let maxBody = 65_536
+
+    /// Parses a complete request (headers plus Content-Length bytes of body); nil while incomplete
+    /// or malformed.
     public static func parse(_ data: Data) -> HTTPRequest? {
         guard let headerEnd = data.range(of: Data("\r\n\r\n".utf8)) else { return nil }
         let head = String(decoding: data[..<headerEnd.lowerBound], as: UTF8.self)
@@ -28,8 +32,9 @@ public struct HTTPRequest: Equatable, Sendable {
         guard parts.count >= 2 else { return nil }
         var length = 0
         for line in lines.dropFirst() where line.lowercased().hasPrefix("content-length:") {
-            length = Int(line.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)) ?? 0
+            length = Int(line.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)) ?? -1
         }
+        guard (0...maxBody).contains(length) else { return nil } // the server answers 400 once it stops reading
         let bodyStart = headerEnd.upperBound
         guard data.count - bodyStart >= length else { return nil }
         let target = String(parts[1])
@@ -59,8 +64,14 @@ public final class BridgeRouter: @unchecked Sendable {
     private let lock = NSLock()
     private var sessions: [String: (cwd: String, seen: Date, active: Date?)] = [:]
     private var drafts: [Draft] = []
+    /// Drafts handed to the mod and not acknowledged yet: not handed out again until this time,
+    /// so a slow fill doesn't put the same draft in the message box twice.
+    private var leases: [String: Date] = [:]
+    public static let leaseSeconds: TimeInterval = 5
     public var onTurnComplete: (@Sendable (String) -> Void)?
     public var onSessionsChanged: (@Sendable () -> Void)?
+    /// You typed into a Claude chat (it's the one you're looking at).
+    public var onActive: (@Sendable (SessionInfo) -> Void)?
 
     public init() {}
 
@@ -74,8 +85,21 @@ public final class BridgeRouter: @unchecked Sendable {
 
     public var connected: Bool { showingSession() != nil }
 
-    public func enqueue(_ text: String) {
-        lock.lock(); drafts.append(Draft(text: text)); lock.unlock()
+    /// Queues a draft for the chat you're looking at; returns its id.
+    @discardableResult
+    public func enqueue(_ text: String) -> String {
+        let d = Draft(text: text)
+        lock.lock(); drafts.append(d); lock.unlock()
+        return d.id
+    }
+
+    /// Takes back a draft the mod hasn't acknowledged. True if it was still waiting.
+    public func withdraw(_ id: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        leases[id] = nil
+        guard drafts.contains(where: { $0.id == id }) else { return false }
+        drafts.removeAll { $0.id == id }
+        return true
     }
 
     public func handle(_ req: HTTPRequest, now: Date = Date()) -> (Int, Data?) {
@@ -88,6 +112,7 @@ public final class BridgeRouter: @unchecked Sendable {
             sessions[s.sessionId] = (s.cwd, now, req.path == "/active" ? now : old?.active)
             lock.unlock()
             if req.path == "/turn-complete" { onTurnComplete?(s.cwd) }
+            if req.path == "/active" { onActive?(s) }
             if old == nil || req.path == "/active" { onSessionsChanged?() }
             return (200, Data("{}".utf8))
         case ("GET", "/next"):
@@ -97,11 +122,12 @@ public final class BridgeRouter: @unchecked Sendable {
             lock.unlock()
             guard showingSession()?.sessionId == id else { return (204, nil) }
             lock.lock(); defer { lock.unlock() }
-            guard let d = drafts.first else { return (204, nil) }
+            guard let d = drafts.first(where: { (leases[$0.id] ?? .distantPast) <= now }) else { return (204, nil) }
+            leases[d.id] = now.addingTimeInterval(Self.leaseSeconds)
             return (200, try? JSONEncoder().encode(d))
         case ("POST", "/ack"):
             guard let d = try? JSONDecoder().decode([String: String].self, from: req.body), let id = d["id"] else { return (400, nil) }
-            lock.lock(); drafts.removeAll { $0.id == id }; lock.unlock()
+            lock.lock(); drafts.removeAll { $0.id == id }; leases[id] = nil; lock.unlock()
             return (200, Data("{}".utf8))
         default:
             return (404, nil)

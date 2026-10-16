@@ -21,6 +21,7 @@ final class ClaudeLink {
     func start() {
         router.onTurnComplete = { cwd in Task { @MainActor in self.onTurnComplete?(cwd) } }
         router.onSessionsChanged = { Task { @MainActor in self.refreshStatus() } }
+        router.onActive = { s in Task { @MainActor in self.typedInto(s.cwd) } }
         let s = BridgeServer(router: router)
         do { try s.start(); server = s } catch { NSLog("Vet bridge: couldn't start: \(error)") }
         Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in MainActor.assumeIsolated { self.refreshStatus() } }
@@ -29,20 +30,32 @@ final class ClaudeLink {
     func stop() { server?.stop() }
 
     private func refreshStatus() {
-        let s = router.showingSession()
-        connected = s != nil
-        if let cwd = s?.cwd, cwd != claudeFolder {
-            claudeFolder = cwd
-            onFolderChanged?(cwd)
-        }
+        connected = router.showingSession() != nil
+    }
+
+    /// You typed into a Claude chat. Only this moves Vet to its folder: a chat starting or
+    /// going quiet in the background never switches your project.
+    private func typedInto(_ cwd: String) {
+        refreshStatus()
+        guard cwd != claudeFolder else { return }
+        claudeFolder = cwd
+        onFolderChanged?(cwd)
     }
 
     /// Puts `text` into Claude's message box as a draft, or on the clipboard as a fallback.
     func sendDraft(_ text: String) {
         refreshStatus()
         if connected {
-            router.enqueue(text)
+            let id = router.enqueue(text)
             show("Draft is in Claude's message box. Check it and press send.")
+            // The mod polls every 0.7 s; if it hasn't taken the draft by now it won't.
+            Task {
+                try? await Task.sleep(for: .seconds(BridgeRouter.leaseSeconds + 1))
+                guard self.router.withdraw(id) else { return }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                self.show("Claude didn't take the draft, so it's on the clipboard. Paste it into the chat.")
+            }
         } else {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
