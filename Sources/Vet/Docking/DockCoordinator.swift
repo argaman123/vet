@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import VetCore
 
 /// Keeps the real Claude Desktop window docked right of the rail and handles tab switching.
@@ -30,9 +31,18 @@ final class DockCoordinator {
             MainActor.assumeIsolated { self?.claudeQuit() }
         }
         center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
-            guard Self.isClaude(note) else { return }
-            // Cmd-Tab or a click that brings Claude forward means the Claude tab is showing.
-            MainActor.assumeIsolated { self?.state.selected = .claude }
+            let bundleID = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let isVet = bundleID == Bundle.main.bundleIdentifier
+                let isClaude = bundleID == ClaudeWindow.bundleID
+                self.main.setRailVisible(isVet || isClaude)
+                // Cmd-Tab, Stage Manager or a click that brings Claude forward means the Claude tab is showing.
+                if isClaude {
+                    self.state.selected = .claude
+                    self.scheduleRedock(after: 0.35) // Stage Manager may re-place the window while switching stages
+                }
+            }
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -50,6 +60,10 @@ final class DockCoordinator {
             redock()
             claude?.raise()
         } else {
+            // A click on the non-activating rail doesn't count as activating Vet, so macOS's
+            // cooperative activation refuses NSApp.activate(). Setting AXFrontmost on ourselves
+            // through Accessibility (which Vet already has) does bring Vet to the front.
+            AXUIElementSetAttributeValue(AXUIElementCreateApplication(getpid()), kAXFrontmostAttribute as CFString, kCFBooleanTrue)
             NSApp.activate()
             main.window.makeKeyAndOrderFront(nil)
             main.window.orderFrontRegardless()

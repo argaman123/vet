@@ -24,20 +24,26 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         window.collectionBehavior = [.fullScreenNone]
         window.standardWindowButton(.zoomButton)?.isHidden = true
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: content)
+        let host = NSHostingView(rootView: content)
+        host.sizingOptions = [] // the window stays maximized; SwiftUI content must never resize it
+        window.contentView = host
         window.setFrame(screen.visibleFrame, display: false)
         window.delegate = self
 
-        window.addChildWindow(rail, ordered: .above)
         layoutRail()
     }
 
     func show() {
         window.makeKeyAndOrderFront(nil)
-        rail.orderFront(nil)
+        rail.orderFrontRegardless()
     }
 
-    private func layoutRail() {
+    /// The rail shows only while Vet or Claude is the frontmost app.
+    func setRailVisible(_ visible: Bool) {
+        if visible { rail.orderFrontRegardless() } else { rail.orderOut(nil) }
+    }
+
+    func layoutRail() {
         rail.setFrame(DockGeometry.railFrame(mainWindowFrame: window.frame), display: true)
     }
 
@@ -47,6 +53,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidMove(_ notification: Notification) {
+        layoutRail()
         onFrameChange?()
     }
 }
