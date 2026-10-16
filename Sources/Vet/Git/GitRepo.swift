@@ -51,12 +51,25 @@ actor GitRepo {
         try show(":0:\(path)")
     }
 
+    /// The blob as it would look on disk (`--filters` applies line-ending conversion and smudge
+    /// filters), so it compares cleanly with the working file — as VS Code reads it.
     private func show(_ object: String) throws -> Data? {
         do {
-            return try run(["show", object])
-        } catch let e as GitError where e.stderr.contains("does not exist") || e.stderr.contains("exists on disk, but not in")
-            || e.stderr.contains("invalid object name") || e.stderr.contains("Invalid object name") || e.stderr.contains("not in the index") {
+            return try run(["cat-file", "--filters", object])
+        } catch let e as GitError where ["does not exist", "exists on disk, but not in", "invalid object name",
+                                         "Invalid object name", "not a valid object name", "Not a valid object name",
+                                         "not in the index"].contains(where: e.stderr.contains) {
             return nil
+        }
+    }
+
+    /// Files with a clean/smudge filter (e.g. LFS) or a working-tree encoding can't be staged
+    /// section by section safely; they're staged whole from the file list.
+    private func hasFilter(_ path: String) -> Bool {
+        guard let out = try? run(["check-attr", "filter", "working-tree-encoding", "--", path]) else { return false }
+        return String(decoding: out, as: UTF8.self).split(separator: "\n").contains { line in
+            let value = line.split(separator: ":").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+            return !["unspecified", "unset", ""].contains(value)
         }
     }
 
@@ -100,6 +113,9 @@ actor GitRepo {
         }
         if [change.modeIndex, change.modeWork].contains("160000") {
             return .document(.message(change, "Submodule. Stage it from the file list."))
+        }
+        if hasFilter(change.path) {
+            return .document(.message(change, "This file goes through a git filter (like LFS). Stage it from the file list."))
         }
         let head: Data?, index: Data?
         do {
@@ -164,6 +180,7 @@ actor GitRepo {
         // Inherited GIT_DIR / GIT_INDEX_FILE etc. would point git somewhere else entirely.
         var env = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
         env["GIT_OPTIONAL_LOCKS"] = "0" // status must not fight Claude's own git commands for the index lock
+        env["GIT_LITERAL_PATHSPECS"] = "1" // `src/[id]/page.ts` is a path, never a pattern
         env["LC_ALL"] = "C"
         p.environment = env
         let out = Pipe(), err = Pipe(), inPipe = Pipe()
