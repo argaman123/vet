@@ -34,7 +34,9 @@ struct ReviewView: View {
             .padding(.top, 14)
             .padding(.bottom, 8)
             if let error = model.error {
-                Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal, 12).lineLimit(3)
+                Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal, 12).lineLimit(4)
+                    .onTapGesture { model.dismissError() }
+                    .help("Click to dismiss")
             }
             if projects.current == nil {
                 emptyState("Open a project", "File › Open Folder…", action: projects.showOpenPanel)

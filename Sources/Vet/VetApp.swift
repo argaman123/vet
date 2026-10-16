@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static var shared: AppDelegate?
 
     static func main() {
+        signal(SIGPIPE, SIG_IGN) // a git process that exits early must not take Vet down with it
         let app = NSApplication.shared
         let delegate = AppDelegate()
         shared = delegate

@@ -16,7 +16,9 @@ final class RibbonGutterView: NSView {
     var rightNumbers: [Int?] = []
     var leftOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes() } }
     var rightOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes() } }
-    var onToggle: ((Int, Bool) -> Void)?
+    var onToggle: ((Int, Bool, String) -> Void)?
+    /// The snapshot these checkboxes were drawn from; sent with every click.
+    var snapshotID = ""
     var onDrag: ((CGFloat) -> Void)?
     var onResetSplit: (() -> Void)?
     private var boxes: [Int: NSButton] = [:]
@@ -52,7 +54,7 @@ final class RibbonGutterView: NSView {
     }
 
     @objc private func toggled(_ sender: NSButton) {
-        onToggle?(sender.tag, sender.state != .off)
+        onToggle?(sender.tag, sender.state != .off, snapshotID)
     }
 
     private func y(_ line: Int, left: Bool) -> CGFloat {

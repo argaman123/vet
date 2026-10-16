@@ -53,7 +53,11 @@ final class ReviewModel {
     private(set) var jump: (serial: Int, forward: Bool) = (0, true)
     /// Folders the user has expanded (repo-relative paths).
     var expanded: Set<String> = []
+    /// The last problem, shown under the sidebar header until it's dismissed or times out.
     private(set) var error: String?
+    private var errorSerial = 0
+    /// Guards against diff loads landing out of order.
+    private var loadSerial = 0
     private(set) var isGitRepo = true
     private var watcher: RepoWatcher?
     private(set) var marks: MarkStore?
@@ -64,6 +68,11 @@ final class ReviewModel {
     var reviewedCount: Int { changes.filter { stage(of: $0) == .staged }.count }
 
     func open(_ folder: URL?) {
+        // Coming back to the Review tab shouldn't reset your place in the same project.
+        if let folder, folder.standardizedFileURL == root?.standardizedFileURL {
+            Task { await refresh() }
+            return
+        }
         root = folder
         selectedPath = nil
         changes = []
@@ -74,7 +83,7 @@ final class ReviewModel {
         repo = isGitRepo ? GitRepo(root: folder) : nil
         marks = isGitRepo ? MarkStore(root: folder) : nil
         // Claude edits files and stages/commits while you review: follow along.
-        watcher = isGitRepo ? RepoWatcher(root: folder) { [weak self] in Task { await self?.refresh() } } : nil
+        watcher = isGitRepo ? RepoWatcher(root: folder, gitDir: GitRepo.gitDir(of: folder)) { [weak self] in Task { await self?.refresh() } } : nil
         Task { await refresh() }
     }
 
@@ -90,14 +99,26 @@ final class ReviewModel {
             // unimportant ones don't.
             for c in fresh where !known.contains(c.path) && !(marks?.isMarked(c.path) ?? false) { expandAncestors(of: c.path) }
             if let sel = selectedPath, !fresh.contains(where: { $0.path == sel }) { selectedPath = nil }
-            error = nil
             version += 1
             await loadDiff()
             await autoStageUnimportant()
         } catch {
-            self.error = "\(error)"
+            show("Couldn't read git status: \(error)")
         }
     }
+
+    /// Shows a problem for 10 seconds (or until the next one).
+    func show(_ message: String) {
+        error = message
+        errorSerial += 1
+        let serial = errorSerial
+        Task {
+            try? await Task.sleep(for: .seconds(10))
+            if self.errorSerial == serial { self.error = nil }
+        }
+    }
+
+    func dismissError() { error = nil }
 
     func stage(of change: FileChange) -> StageState { pending[change.path] ?? change.stage }
 
@@ -110,6 +131,7 @@ final class ReviewModel {
 
     /// Stages (or unstages) every file at or under `node`. The checkbox flips at once; git runs in order.
     func setStaged(_ node: FileTreeNode, _ staged: Bool) {
+        error = nil
         let targets = node.fileChanges.filter {
             $0.kind != .conflicted && (staged ? stage(of: $0) != .staged : stage(of: $0) != .unstaged)
         }
@@ -122,23 +144,27 @@ final class ReviewModel {
         version += 1
         Task {
             do {
-                for c in targets {
-                    if staged { try await repo.stageFile(c) } else { try await repo.unstageFile(c) }
-                }
+                // One git command for the whole folder: it either applies or it doesn't.
+                if staged { try await repo.stageFiles(targets) } else { try await repo.unstageFiles(targets) }
             } catch {
-                self.error = "Couldn't \(staged ? "stage" : "unstage"): \(error)"
+                show("Couldn't \(staged ? "stage" : "unstage"): \(error)")
             }
             await refresh() // shows git's real state, success or not
         }
     }
 
     func loadDiff() async {
-        guard let repo, let root, let path = selectedPath, let change = changes.first(where: { $0.path == path }) else {
+        loadSerial += 1
+        let serial = loadSerial
+        guard let repo, let path = selectedPath, let change = changes.first(where: { $0.path == path }) else {
             if diff != nil { diff = nil; diffVersion += 1 }
             return
         }
-        let doc = await DiffDocument.load(change, repo: repo, root: root)
-        guard selectedPath == path else { return } // the user moved on meanwhile
+        // Same file and same bytes as what's on screen: nothing to redo.
+        let previous = diff?.change == change ? diff?.staging?.snapshotID : nil
+        let result = await repo.loadDiff(change, previousSnapshot: previous)
+        guard serial == loadSerial, selectedPath == path else { return } // a newer load or selection won
+        guard case .document(let doc) = result else { return }
         diff = doc
         diffVersion += 1
     }
@@ -150,38 +176,24 @@ final class ReviewModel {
 
     func jumpToChange(forward: Bool) { jump = (jump.serial + 1, forward) }
 
-    /// Stages or unstages one section of the open file. Refused if the file, the index or HEAD
-    /// changed since the diff was drawn, so a click never lands on text the user didn't see.
-    func setHunk(_ id: Int, staged: Bool) {
-        guard let repo, let root, let doc = diff, let shown = doc.staging,
-              let hunk = shown.hunks.first(where: { $0.id == id }) else { return }
-        let change = doc.change
+    /// Stages or unstages one section of the open file. `snapshot` is the snapshot the clicked
+    /// checkbox was drawn from; if HEAD, the index or the file changed since, the click is refused.
+    func setHunk(_ id: Int, staged: Bool, snapshot: String) {
+        guard let repo, let root, let change = diff?.change else { return }
+        error = nil
+        // Unchecking part of an unimportant file holds it, just like unchecking the whole file.
+        if isMarked(change.path) {
+            if staged { marks?.releaseHold(change.path) } else { marks?.hold(change.path, hash: MarkStore.contentHash(root: root, path: change.path)) }
+        }
         Task {
             do {
-                let fresh = await DiffDocument.load(change, repo: repo, root: root)
-                guard let now = fresh.staging, now.snapshotID == shown.snapshotID else {
-                    self.error = "The file changed, so the diff was refreshed. Check it and click again."
-                    await refresh()
-                    return
-                }
-                if change.kind == .deleted {
-                    if staged { try await repo.stageFile(change) } else { try await repo.unstageFile(change) }
-                } else {
-                    let text = now.indexText(setting: hunk, staged: staged)
-                    try await repo.writeIndex(path: change.path, text: text, mode: Self.mode(for: change, root: root))
-                }
+                let outcome = try await repo.setSection(change, hunkID: id, staged: staged, expectedSnapshot: snapshot)
+                if outcome == .stale { show("The file changed, so the diff was refreshed. Check it and click again.") }
             } catch {
-                self.error = "Couldn't \(staged ? "stage" : "unstage") the section: \(error)"
+                show("Couldn't \(staged ? "stage" : "unstage") the section: \(error)")
             }
             await refresh()
         }
-    }
-
-    private static func mode(for change: FileChange, root: URL) -> String {
-        if change.kind == .untracked {
-            return FileManager.default.isExecutableFile(atPath: root.appendingPathComponent(change.path).path) ? "100755" : "100644"
-        }
-        return change.modeIndex
     }
 
     // MARK: Unimportant
@@ -215,10 +227,12 @@ final class ReviewModel {
         guard !due.isEmpty else { return }
         autoStaging = true
         defer { autoStaging = false }
+        // Check the holds once more right before staging: you may have unchecked one meanwhile.
+        let stillDue = due.filter { c in marks.heldHash(c.path).map { $0 != MarkStore.contentHash(root: root, path: c.path) } ?? true }
         do {
-            for c in due { try await repo.stageFile(c) }
+            try await repo.stageFiles(stillDue)
         } catch {
-            self.error = "Couldn't auto-stage an unimportant file: \(error)"
+            show("Couldn't auto-stage an unimportant file: \(error)")
         }
         await refresh()
     }

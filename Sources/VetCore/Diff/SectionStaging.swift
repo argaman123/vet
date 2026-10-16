@@ -32,16 +32,17 @@ public struct SectionStaging: Sendable {
         hunks = LineDiff.hunks(head: head, work: work)
         headToIndex = LineDiff.hunks(head: head, work: index, wordChanges: false)
         indexToWork = LineDiff.hunks(head: index, work: work, wordChanges: false)
-        snapshotID = Self.snapshot(head: head, index: index, work: work)
+        snapshotID = Self.snapshot(head: head.joined(), index: index.joined(), work: work.joined())
     }
 
-    public static func snapshot(head: TextLines, index: TextLines, work: TextLines) -> String {
+    /// Identifies one combination of HEAD, index and working-file bytes.
+    public static func snapshot(head: Data, index: Data, work: Data) -> String {
         var hasher = SHA256()
-        hasher.update(data: head.joined())
+        hasher.update(data: head)
         hasher.update(data: Data([0]))
-        hasher.update(data: index.joined())
+        hasher.update(data: index)
         hasher.update(data: Data([0]))
-        hasher.update(data: work.joined())
+        hasher.update(data: work)
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 

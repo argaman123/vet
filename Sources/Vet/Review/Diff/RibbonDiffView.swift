@@ -10,7 +10,7 @@ struct RibbonDiffView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> RibbonDiffNSView {
         let v = RibbonDiffNSView()
-        v.onToggle = { [weak model] id, staged in model?.setHunk(id, staged: staged) }
+        v.onToggle = { [weak model] id, staged, snapshot in model?.setHunk(id, staged: staged, snapshot: snapshot) }
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
         return v
     }
@@ -29,7 +29,7 @@ struct RibbonDiffView: NSViewRepresentable {
 
 /// HEAD on the left, the working file on the right, joined by the ribbon gutter.
 final class RibbonDiffNSView: NSView {
-    var onToggle: ((Int, Bool) -> Void)?
+    var onToggle: ((Int, Bool, String) -> Void)?
     var onFoldClick: ((Int) -> Void)?
     var lastJump = 0
     var shownVersion = -1
@@ -41,6 +41,9 @@ final class RibbonDiffNSView: NSView {
     private var diffLayout: DiffLayout?
     private var mode: RibbonGutterView.Mode = .split
     private var shownPath: String?
+    private var shownLines: (head: TextLines, work: TextLines)?
+
+    private struct Anchor { let left: Bool; let line: Int; let text: Substring; let offset: CGFloat }
     private var syncing = false
     private var split: CGFloat = {
         let v = UserDefaults.standard.double(forKey: "diffSplit")
@@ -59,7 +62,7 @@ final class RibbonDiffNSView: NSView {
                                                    name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         }
         for tv in [leftText, rightText] { tv.onFoldClick = { [weak self] id in self?.onFoldClick?(id) } }
-        gutter.onToggle = { [weak self] id, staged in self?.onToggle?(id, staged) }
+        gutter.onToggle = { [weak self] id, staged, snapshot in self?.onToggle?(id, staged, snapshot) }
         gutter.onDrag = { [weak self] dx in self?.drag(dx) }
         gutter.onResetSplit = { [weak self] in self?.setSplit(0.5) }
     }
@@ -82,6 +85,9 @@ final class RibbonDiffNSView: NSView {
         messageLabel.isHidden = true
         let samePath = shownPath == doc.change.path
         let keepLeft = leftScroll.contentView.bounds.origin, keepRight = rightScroll.contentView.bounds.origin
+        // Remember what you were reading (a line's text and number), not just a pixel offset,
+        // so lines Claude inserts above it don't shift your place.
+        let anchor = samePath ? readingAnchor() : nil
         shownPath = doc.change.path
 
         mode = switch doc.change.kind {
@@ -137,6 +143,7 @@ final class RibbonDiffNSView: NSView {
         gutter.diffLayout = layout
         gutter.hunks = staging.hunks
         gutter.states = states
+        gutter.snapshotID = staging.snapshotID
         gutter.leftNumbers = layout.left.map { if case .code(let l) = $0 { l } else { nil } }
         gutter.rightNumbers = layout.right.map { if case .code(let l) = $0 { l } else { nil } }
         gutter.reload()
@@ -159,6 +166,7 @@ final class RibbonDiffNSView: NSView {
         if samePath {
             leftScroll.contentView.scroll(to: keepLeft)
             rightScroll.contentView.scroll(to: keepRight)
+            if let anchor { restore(anchor, staging: staging, layout: layout) }
         } else {
             leftScroll.contentView.scroll(to: .zero)
             rightScroll.contentView.scroll(to: .zero)
@@ -169,10 +177,49 @@ final class RibbonDiffNSView: NSView {
         leftScroll.reflectScrolledClipView(leftScroll.contentView)
         rightScroll.reflectScrolledClipView(rightScroll.contentView)
         syncing = false
-        if !samePath, mode == .split { align(from: rightScroll) }
+        if mode == .split { align(from: rightScroll) }
+        shownLines = (staging.head, staging.work)
         syncGutter()
         displayIfNeeded()
         Timing.diffShown(doc.change.path)
+    }
+
+    /// The first file line visible at the top of the main pane, and how far it's scrolled past.
+    private func readingAnchor() -> Anchor? {
+        guard let layout = diffLayout, let lines = shownLines else { return nil }
+        let useLeft = mode == .leftOnly
+        let scroll = useLeft ? leftScroll : rightScroll
+        let display = useLeft ? layout.left : layout.right
+        let top = scroll.contentView.bounds.minY
+        let first = max(0, Int((top - DiffTheme.inset.height) / DiffTheme.lineHeight))
+        guard first < display.count else { return nil }
+        for d in first..<display.count {
+            if case .code(let line) = display[d] {
+                let text = (useLeft ? lines.head : lines.work).lines[line].text
+                let y = DiffTheme.inset.height + CGFloat(d) * DiffTheme.lineHeight
+                return Anchor(left: useLeft, line: line, text: text, offset: top - y)
+            }
+        }
+        return nil
+    }
+
+    /// Scrolls so the anchored line (found by its text near its old number) is back where it was.
+    private func restore(_ a: Anchor, staging: SectionStaging, layout: DiffLayout) {
+        let lines = a.left ? staging.head : staging.work
+        let display = a.left ? layout.left : layout.right
+        guard lines.count > 0 else { return }
+        var target = min(a.line, lines.count - 1)
+        if lines.lines[target].text != a.text {
+            for delta in 1...min(2_000, lines.count) {
+                if a.line + delta < lines.count, lines.lines[a.line + delta].text == a.text { target = a.line + delta; break }
+                if a.line - delta >= 0, a.line - delta < lines.count, lines.lines[a.line - delta].text == a.text { target = a.line - delta; break }
+            }
+        }
+        guard let d = display.firstIndex(where: { if case .code(let l) = $0 { l >= target } else { false } }) else { return }
+        let scroll = a.left ? leftScroll : rightScroll
+        let y = DiffTheme.inset.height + CGFloat(d) * DiffTheme.lineHeight + a.offset
+        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
+        scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: min(max(0, y), maxY)))
     }
 
     private func showMessage(_ text: String) {

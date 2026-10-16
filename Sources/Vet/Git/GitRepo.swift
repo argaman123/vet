@@ -27,39 +27,120 @@ actor GitRepo {
         return path.isEmpty ? nil : URL(fileURLWithPath: path, isDirectory: true)
     }
 
+    /// The repository's git directory (outside the folder for worktrees).
+    static func gitDir(of root: URL) -> URL {
+        if let out = try? runSync(["rev-parse", "--absolute-git-dir"], in: root) {
+            let path = String(decoding: out, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !path.isEmpty { return URL(fileURLWithPath: path, isDirectory: true) }
+        }
+        return root.appendingPathComponent(".git", isDirectory: true)
+    }
+
     func status() throws -> [FileChange] {
         StatusParser.parse(try run(["status", "--porcelain=v2", "-z", "--untracked-files=all", "--find-renames"]))
     }
 
-    /// HEAD's version of the file. Renames read their old path. Nil when it isn't in HEAD.
+    /// HEAD's version of the file (renames read their old path). Nil when it isn't in HEAD;
+    /// any other git failure throws.
     func headText(_ change: FileChange) throws -> Data? {
-        try? run(["show", "HEAD:\(change.origPath ?? change.path)"])
+        try show("HEAD:\(change.origPath ?? change.path)")
     }
 
-    /// The index's version of the file, or nil when it isn't in the index.
+    /// The index's version of the file (stage 0), or nil when it isn't in the index.
     func indexText(_ path: String) throws -> Data? {
-        try? run(["show", ":\(path)"])
+        try show(":0:\(path)")
     }
 
-    func stageFile(_ change: FileChange) throws {
-        if change.kind == .deleted {
-            _ = try run(["rm", "--cached", "--quiet", "--", change.path])
-        } else {
-            var paths = [change.path]
-            if let orig = change.origPath { paths.append(orig) } // a rename stages both sides
-            _ = try run(["add", "-A", "--"] + paths)
+    private func show(_ object: String) throws -> Data? {
+        do {
+            return try run(["show", object])
+        } catch let e as GitError where e.stderr.contains("does not exist") || e.stderr.contains("exists on disk, but not in")
+            || e.stderr.contains("invalid object name") || e.stderr.contains("Invalid object name") || e.stderr.contains("not in the index") {
+            return nil
         }
     }
 
-    func unstageFile(_ change: FileChange) throws {
-        var paths = [change.path]
-        if let orig = change.origPath { paths.append(orig) }
+    /// Stages whole files in one git command (deletions, renames and untracked files included).
+    func stageFiles(_ changes: [FileChange]) throws {
+        guard !changes.isEmpty else { return }
+        _ = try run(["add", "-A", "--"] + Self.paths(changes))
+    }
+
+    /// Unstages whole files in one git command, keeping the working files as they are.
+    func unstageFiles(_ changes: [FileChange]) throws {
+        guard !changes.isEmpty else { return }
         // `restore --staged` fails on a repo with no commits yet; `rm --cached` covers that case.
         if (try? run(["rev-parse", "--verify", "-q", "HEAD"])) == nil {
-            _ = try run(["rm", "--cached", "--quiet", "-r", "--"] + paths)
+            _ = try run(["rm", "--cached", "--quiet", "-r", "--ignore-unmatch", "--"] + Self.paths(changes))
         } else {
-            _ = try run(["restore", "--staged", "--"] + paths)
+            _ = try run(["restore", "--staged", "--"] + Self.paths(changes))
         }
+    }
+
+    func stageFile(_ change: FileChange) throws { try stageFiles([change]) }
+    func unstageFile(_ change: FileChange) throws { try unstageFiles([change]) }
+
+    private static func paths(_ changes: [FileChange]) -> [String] {
+        changes.flatMap { [$0.path] + ($0.origPath.map { [$0] } ?? []) } // a rename covers both sides
+    }
+
+    // MARK: Diffs and section staging (one actor call each, so nothing can interleave)
+
+    enum DiffLoad: Sendable {
+        case unchanged
+        case document(DiffDocument)
+    }
+
+    /// Reads HEAD, the index and the working file for `change` and builds its diff.
+    /// Returns `.unchanged` when the bytes match `previousSnapshot`, so nothing is recomputed.
+    func loadDiff(_ change: FileChange, previousSnapshot: String? = nil) -> DiffLoad {
+        if change.kind == .conflicted { return .document(.message(change, "Merge conflict. Resolve it, then review.")) }
+        if [change.modeIndex, change.modeWork].contains("120000") {
+            return .document(.message(change, "Symbolic link. Stage it from the file list."))
+        }
+        if [change.modeIndex, change.modeWork].contains("160000") {
+            return .document(.message(change, "Submodule. Stage it from the file list."))
+        }
+        let head: Data?, index: Data?
+        do {
+            head = try headText(change)
+            index = try indexText(change.path)
+        } catch {
+            return .document(.message(change, "Couldn't read the file from git: \(error)"))
+        }
+        let work = (try? Data(contentsOf: root.appendingPathComponent(change.path))) ?? Data()
+        let all = [head ?? Data(), index ?? Data(), work]
+        let snapshot = SectionStaging.snapshot(head: head ?? Data(), index: index ?? Data(), work: work)
+        if snapshot == previousSnapshot { return .unchanged }
+        if all.contains(where: { $0.count > DiffDocument.maxBytes }) { return .document(.message(change, "File too large to compare (> 5 MB)")) }
+        if all.contains(where: { $0.prefix(8000).contains(0) }) { return .document(.message(change, "Binary file")) }
+        if all.contains(where: { String(data: $0, encoding: .utf8) == nil }) { return .document(.message(change, "Not UTF-8 text")) }
+        let h = TextLines(head ?? Data()), w = TextLines(work)
+        if h.count + w.count > DiffDocument.maxLines { return .document(.message(change, "File too large to compare (over 30,000 lines)")) }
+        let staging = SectionStaging(head: h, index: TextLines(index ?? Data()), work: w)
+        return .document(DiffDocument(change: change, staging: staging, message: nil, language: CodeLanguage(path: change.path)))
+    }
+
+    enum SectionOutcome: Sendable { case done, stale }
+
+    /// Stages or unstages one section, re-reading everything and refusing if HEAD, the index or
+    /// the working file changed since the diff the user clicked was drawn. Runs as one actor
+    /// call, so no other git operation from Vet can slip in between the read and the write.
+    func setSection(_ change: FileChange, hunkID: Int, staged: Bool, expectedSnapshot: String) throws -> SectionOutcome {
+        guard case .document(let doc) = loadDiff(change), let now = doc.staging, now.snapshotID == expectedSnapshot,
+              let hunk = now.hunks.first(where: { $0.id == hunkID }) else { return .stale }
+        let workExists = FileManager.default.fileExists(atPath: root.appendingPathComponent(change.path).path)
+        if change.kind == .deleted || !workExists {
+            // A deleted file (or one renamed and then deleted) is staged as a removal, never as empty text.
+            if staged { try stageFiles([change]) } else { try unstageFiles([change]) }
+            return .done
+        }
+        let mode = change.kind == .untracked
+            ? (FileManager.default.isExecutableFile(atPath: root.appendingPathComponent(change.path).path) ? "100755" : "100644")
+            : change.modeIndex
+        guard mode == "100644" || mode == "100755" else { return .stale }
+        try writeIndex(path: change.path, text: now.indexText(setting: hunk, staged: staged), mode: mode)
+        return .done
     }
 
     /// Replaces the index entry for `path` with `text`. Never touches the working file.
@@ -80,7 +161,8 @@ actor GitRepo {
         p.executableURL = URL(fileURLWithPath: gitPath)
         p.arguments = args
         p.currentDirectoryURL = dir
-        var env = ProcessInfo.processInfo.environment
+        // Inherited GIT_DIR / GIT_INDEX_FILE etc. would point git somewhere else entirely.
+        var env = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
         env["GIT_OPTIONAL_LOCKS"] = "0" // status must not fight Claude's own git commands for the index lock
         env["LC_ALL"] = "C"
         p.environment = env
@@ -90,7 +172,8 @@ actor GitRepo {
         p.standardInput = stdin == nil ? FileHandle.nullDevice : inPipe
         try p.run()
         if let stdin {
-            inPipe.fileHandleForWriting.write(stdin)
+            // SIGPIPE is ignored app-wide, so a git that exits early makes this throw instead of crashing Vet.
+            try? inPipe.fileHandleForWriting.write(contentsOf: stdin)
             try? inPipe.fileHandleForWriting.close()
         }
         // Read stderr concurrently so a chatty command can't block on a full pipe.
