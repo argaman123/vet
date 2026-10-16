@@ -19,7 +19,12 @@ struct ContentView: View {
             VStack(spacing: 0) {
             Group {
                 switch state.selected {
-                case .review: ReviewView(model: workspace.review, projects: projects, link: workspace.link)
+                case .review: ReviewView(model: workspace.review, projects: projects, link: workspace.link) { path in
+                    if let url = workspace.files.url(for: path) {
+                        workspace.files.show(url)
+                        state.selected = .files
+                    }
+                }
                 case .files: FilesView(model: workspace.files)
                 case .browser: BrowserView(model: workspace.browser)
                 }

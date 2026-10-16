@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         main = MainWindowController(content: ContentView(state: state, projects: projects, workspace: workspace))
         main.show()
         NSApp.activate()
+        workspace.onOpenProject = { [weak self] url in self?.projects.open(url) }
         workspace.startLink()
         workspace.onClaudeFinished = { [weak self] count in
             guard let self, self.state.selected != .review else { return }

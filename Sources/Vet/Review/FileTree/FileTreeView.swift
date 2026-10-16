@@ -150,10 +150,7 @@ struct FileTreeView: NSViewRepresentable {
             guard let outline else { return }
             let row = outline.clickedRow >= 0 ? outline.clickedRow : outline.selectedRow // keyboard/accessibility open the menu on the selection
             guard row >= 0, let node = outline.item(atRow: row) as? FileTreeNode else { return }
-            let ask = NSMenuItem(title: node.isFolder ? "Ask Claude about this folder" : "Ask Claude about this file", action: nil, keyEquivalent: "")
-            ask.toolTip = "Needs the Claude bridge (coming soon)"
-            ask.isEnabled = false
-            menu.addItem(ask)
+            menu.addItem(item(node.isFolder ? "Ask Claude about this folder" : "Ask Claude about this file", node, #selector(askClaude(_:))))
             menu.addItem(.separator())
             menu.addItem(item(model.isDirectlyMarked(node.path) ? "Remove unimportant mark" : "Mark as unimportant", node, #selector(markUnimportant(_:)),
                               enabled: model.isDirectlyMarked(node.path) || !model.isMarked(node.path)))
@@ -170,6 +167,11 @@ struct FileTreeView: NSViewRepresentable {
             i.representedObject = node
             i.isEnabled = enabled
             return i
+        }
+
+        @objc func askClaude(_ sender: NSMenuItem) {
+            guard let node = sender.representedObject as? FileTreeNode else { return }
+            model.askClaude(aboutFile: node.path)
         }
 
         @objc func markUnimportant(_ sender: NSMenuItem) {

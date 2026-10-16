@@ -15,6 +15,8 @@ final class ClaudeLink {
     private(set) var toast: String?
     private var toastSerial = 0
     var onTurnComplete: ((String) -> Void)?
+    /// The Claude chat you're working in moved to another folder (you switched chats or projects).
+    var onFolderChanged: ((String) -> Void)?
 
     func start() {
         router.onTurnComplete = { cwd in Task { @MainActor in self.onTurnComplete?(cwd) } }
@@ -29,7 +31,10 @@ final class ClaudeLink {
     private func refreshStatus() {
         let s = router.showingSession()
         connected = s != nil
-        claudeFolder = s?.cwd
+        if let cwd = s?.cwd, cwd != claudeFolder {
+            claudeFolder = cwd
+            onFolderChanged?(cwd)
+        }
     }
 
     /// Puts `text` into Claude's message box as a draft, or on the clipboard as a fallback.

@@ -6,6 +6,7 @@ struct ReviewView: View {
     let model: ReviewModel
     let projects: ProjectStore
     let link: ClaudeLink
+    var openInFiles: ((String) -> Void)?
     @State private var installMessage: String?
     @State private var installing = false
 
@@ -99,6 +100,7 @@ struct ReviewView: View {
                         Button("Discard") { model.revertDiffEdits() }.buttonStyle(.borderless)
                     }
                     Spacer()
+                    iconButton("doc.text", "Open in Files") { openInFiles?(doc.change.path) }
                     iconButton("chevron.up", "Previous change") { model.jumpToChange(forward: false) }
                     iconButton("chevron.down", "Next change") { model.jumpToChange(forward: true) }
                     iconButton(model.folding ? "arrow.up.and.down.text.horizontal" : "rectangle.compress.vertical",

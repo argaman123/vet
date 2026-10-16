@@ -9,6 +9,8 @@ final class Workspace {
     let browser = BrowserModel()
     let run = RunModel()
     let link = ClaudeLink()
+    /// Asked to open another project (Review follows the Claude chat you're working in).
+    var onOpenProject: ((URL) -> Void)?
     /// Set when Claude finishes a reply in this project: unreviewed files for the Review badge.
     var onClaudeFinished: ((Int) -> Void)?
     private(set) var root: URL?
@@ -16,6 +18,13 @@ final class Workspace {
 
     func startLink() {
         review.link = link
+        link.onFolderChanged = { [weak self] cwd in
+            guard let self else { return }
+            let folder = URL(fileURLWithPath: cwd, isDirectory: true)
+            let target = GitRepo.root(containing: folder) ?? folder
+            if let root = self.root, Self.same(target.path, root), Self.same(root.path, target) { return }
+            self.onOpenProject?(target)
+        }
         link.start()
         link.onTurnComplete = { [weak self] cwd in
             guard let self, let root = self.root, Self.same(cwd, root) else { return }
