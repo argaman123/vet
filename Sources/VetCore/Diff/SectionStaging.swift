@@ -71,6 +71,17 @@ public struct SectionStaging: Sendable {
         return TextLines(lines: lines).joined()
     }
 
+    /// Stages just these working-file lines (VS Code's "stage selected ranges"): the index→work
+    /// changes touching them are applied, same-size ones only over the selected lines.
+    public func indexText(stagingWorkLines selection: Range<Int>) -> Data {
+        var lines = index.lines
+        for x in indexToWork.filter({ Self.touches(selection, $0.work) }).reversed() {
+            let (from, to) = Self.restrict(x.head, x.work, to: selection)
+            lines.replaceSubrange(from, with: work.lines[to])
+        }
+        return TextLines(lines: lines).joined()
+    }
+
     /// For a change `target ↔ source` (target is the side being rewritten, source supplies the
     /// new lines), the part that lies within `section` (a range on the source side). Same-size
     /// changes pair line by line; anything else is used whole.

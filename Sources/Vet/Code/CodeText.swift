@@ -41,6 +41,11 @@ enum CodeText {
                 for r in words[l] ?? [] where r.upperBound <= length {
                     out.addAttribute(.backgroundColor, value: color.withAlphaComponent(0.35), range: NSRange(location: at + r.lowerBound, length: r.count))
                 }
+            case .note(let id, _):
+                // Blank space that the note card covers; not part of the file and not editable.
+                var attrs = base
+                attrs[.vetNote] = id
+                out.append(NSAttributedString(string: " " + newline, attributes: attrs))
             case .fold(let id, let hidden):
                 var attrs = base
                 attrs[.foregroundColor] = DiffTheme.lineNumber
@@ -82,4 +87,6 @@ enum CodeText {
 extension NSAttributedString.Key {
     /// Marks a fold row ("⋯ N unchanged lines"); its value is the fold id. Fold rows can't be edited.
     static let vetFold = NSAttributedString.Key("VetFold")
+    /// Marks the rows reserved for a review note card; their value is the note id.
+    static let vetNote = NSAttributedString.Key("VetNote")
 }

@@ -15,6 +15,7 @@ final class Workspace {
     private var watcher: RepoWatcher?
 
     func startLink() {
+        review.link = link
         link.start()
         link.onTurnComplete = { [weak self] cwd in
             guard let self, let root = self.root, Self.same(cwd, root) else { return }

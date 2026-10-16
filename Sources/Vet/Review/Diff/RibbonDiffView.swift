@@ -13,6 +13,17 @@ struct RibbonDiffView: NSViewRepresentable {
         v.onDirtyChange = { [weak model] dirty in model?.diffDirty = dirty }
         v.onSave = { [weak model] text in model?.saveDiffEdits(text) }
         v.onToggle = { [weak model] id, staged, snapshot in model?.setHunk(id, staged: staged, snapshot: snapshot) }
+        v.noteActions = .init(save: { [weak model] id, text in model?.saveNote(id, text: text) },
+                              cancel: { [weak model] id in model?.cancelNote(id) },
+                              edit: { [weak model] id in model?.editNote(id) },
+                              delete: { [weak model] id in model?.deleteNote(id) })
+        v.onAddNote = { [weak model] left, line, text in model?.addNote(left: left, line: line, lineText: text) }
+        v.onAsk = { [weak model] left, lines, code in
+            guard let model, let path = model.diff?.change.path else { return }
+            model.askClaude(path: path, lines: lines, code: code, old: left)
+        }
+        v.onStageLines = { [weak model] lines, snapshot in model?.stageLines(lines, snapshot: snapshot) }
+        v.onNavigate = { [weak model] kind, left, line, character in model?.navigate(kind, left: left, line: line, character: character) }
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
         return v
     }
@@ -25,6 +36,8 @@ struct RibbonDiffView: NSViewRepresentable {
         }
         if view.shownVersion != version {
             view.shownVersion = version
+            view.notes = model.notesForOpenFile()
+            view.editingNoteID = model.editingNoteID
             view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
         }
         if jumpSerial != view.lastJump {
@@ -40,6 +53,22 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// Called with the full new file text when you save edits made in the right pane.
     var onSave: ((String) -> Void)?
     var revertSerial = 0
+    struct NoteActions {
+        let save: (String, String) -> Void
+        let cancel: (String) -> Void
+        let edit: (String) -> Void
+        let delete: (String) -> Void
+    }
+    var notes: [ReviewNote] = []
+    var editingNoteID: String?
+    var noteActions: NoteActions?
+    var onAddNote: ((Bool, Int, String) -> Void)?
+    var onAsk: ((Bool, ClosedRange<Int>, String) -> Void)?
+    var onStageLines: ((Range<Int>, String) -> Void)?
+    var onNavigate: ((CodeTextView.Navigation, Bool, Int, Int) -> Void)?
+    private var cards: [NoteCardView] = []
+    /// Where each card sits in its text view's coordinates; repositioned over the panes on scroll.
+    private var cardPlaces: [(card: NoteCardView, left: Bool, rect: NSRect)] = []
     private(set) var isDirty = false { didSet { if oldValue != isDirty { onDirtyChange?(isDirty) } } }
     private var rehighlight: DispatchWorkItem?
     private var shownStaging: SectionStaging?
@@ -67,6 +96,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        clipsToBounds = true
         for v in [leftScroll, rightScroll, gutter, messageLabel] as [NSView] { addSubview(v) }
         messageLabel.textColor = .secondaryLabelColor
         messageLabel.font = .systemFont(ofSize: 14)
@@ -82,6 +112,10 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         rightText.allowsUndo = true
         rightText.delegate = self
         rightText.onSave = { [weak self] in self?.save() }
+        leftText.contextItems = { [weak self] line, character in self?.menuItems(left: true, displayLine: line, character: character) ?? [] }
+        rightText.contextItems = { [weak self] line, character in self?.menuItems(left: false, displayLine: line, character: character) ?? [] }
+        leftText.onNavigate = { [weak self] kind, line, character in self?.navigate(kind, left: true, displayLine: line, character: character) }
+        rightText.onNavigate = { [weak self] kind, line, character in self?.navigate(kind, left: false, displayLine: line, character: character) }
         gutter.onToggle = { [weak self] id, staged, snapshot in self?.onToggle?(id, staged, snapshot) }
         gutter.onDrag = { [weak self] dx in self?.drag(dx) }
         gutter.onResetSplit = { [weak self] in self?.setSplit(0.5) }
@@ -122,7 +156,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         default: staging.head.count == 0 ? .rightOnly : .split
         }
         let layout = DiffLayout(headCount: staging.head.count, workCount: staging.work.count,
-                                hunks: staging.hunks, folding: folding, expanded: expanded)
+                                hunks: staging.hunks, folding: folding, expanded: expanded,
+                                notes: notes.map { .init(id: $0.id, left: $0.left, line: $0.line,
+                                                         rows: NoteCardView.rows(for: $0.text, editing: $0.id == editingNoteID)) })
         diffLayout = layout
         var states: [Int: StageState] = [:]
         for h in staging.hunks { states[h.id] = staging.state(of: h) }
@@ -155,13 +191,14 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
                 rightBands.append(.init(lines: s.right, color: DiffTheme.foldBand))
                 leftFolds[s.left.lowerBound] = id
                 rightFolds[s.right.lowerBound] = id
-            case .same: break
+            case .same, .note: break
             }
         }
         leftText.bands = leftBands; rightText.bands = rightBands
         leftText.markers = leftMarkers.map { (line: $0.0, color: $0.1) }
         rightText.markers = rightMarkers.map { (line: $0.0, color: $0.1) }
         leftText.foldLines = leftFolds; rightText.foldLines = rightFolds
+        placeCards(layout)
         leftText.window?.invalidateCursorRects(for: leftText)
         rightText.window?.invalidateCursorRects(for: rightText)
 
@@ -208,6 +245,97 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         syncGutter()
         displayIfNeeded()
         Timing.diffShown(doc.change.path)
+    }
+
+    // MARK: Notes and the right-click menu
+
+    private func placeCards(_ layout: DiffLayout) {
+        cards.forEach { $0.removeFromSuperview() }
+        cards = []
+        cardPlaces = []
+        for seg in layout.segments {
+            guard case .note(let id) = seg.kind, let note = notes.first(where: { $0.id == id }) else { continue }
+            let tv = note.left ? leftText : rightText
+            if (note.left && mode == .rightOnly) || (!note.left && mode == .leftOnly) { continue } // that side isn't shown
+            let rows = note.left ? seg.left : seg.right
+            let editing = id == editingNoteID
+            let card = NoteCardView(title: "Note on line \(note.line + 1)", text: note.text, editing: editing, sent: note.sent)
+            card.onSave = { [weak self] text in self?.noteActions?.save(id, text) }
+            card.onCancel = { [weak self] in self?.noteActions?.cancel(id) }
+            card.onEdit = { [weak self] in self?.noteActions?.edit(id) }
+            card.onDelete = { [weak self] in self?.noteActions?.delete(id) }
+            let width = max(260, ((note.left ? leftScroll : rightScroll).contentSize.width) - 28)
+            // An overlay above both panes (TextKit 2's own views would cover a text view's subviews,
+            // and the clip view routes clicks to its document); repositioned whenever a pane scrolls.
+            addSubview(card)
+            cards.append(card)
+            cardPlaces.append((card, note.left, NSRect(x: 14, y: tv.y(ofLine: rows.lowerBound) + 3, width: min(width, 760),
+                                                       height: CGFloat(rows.count) * DiffTheme.lineHeight - 6)))
+            if editing { DispatchQueue.main.async { card.focus() } }
+        }
+    }
+
+    private func positionCards() {
+        for place in cardPlaces {
+            let tv = place.left ? leftText : rightText, scroll = place.left ? leftScroll : rightScroll
+            let frame = convert(place.rect, from: tv)
+            place.card.frame = frame
+            place.card.isHidden = scroll.isHidden || !frame.intersects(convert(scroll.contentView.bounds, from: scroll.contentView))
+        }
+    }
+
+    private func fileLine(left: Bool, displayLine d: Int) -> Int? {
+        guard let layout = diffLayout else { return nil }
+        let display = left ? layout.left : layout.right
+        guard d >= 0, d < display.count, case .code(let l) = display[d] else { return nil }
+        return l
+    }
+
+    private func navigate(_ kind: CodeTextView.Navigation, left: Bool, displayLine: Int, character: Int) {
+        guard let line = fileLine(left: left, displayLine: displayLine) else { return }
+        onNavigate?(kind, left, line, character)
+    }
+
+    /// The diff's right-click menu, exactly as designed (spec §2.3).
+    private func menuItems(left: Bool, displayLine: Int, character: Int) -> [NSMenuItem] {
+        guard let staging = shownStaging, let line = fileLine(left: left, displayLine: displayLine) else { return [] }
+        let tv = left ? leftText : rightText
+        let lines = left ? staging.head : staging.work
+        let selection = tv.displayLines(of: tv.selectedRange())
+        let fileLines = selection.compactMap { fileLine(left: left, displayLine: $0) }
+        let span = (fileLines.min() ?? line)...(fileLines.max() ?? line)
+        let code = span.map { String(lines.lines[$0].text) }.joined(separator: "\n")
+        let path = shownPath ?? ""
+        let hunk = staging.hunks.first { (left ? $0.head : $0.work).contains(line) }
+        func item(_ title: String, _ key: String = "", enabled: Bool = true, _ action: @escaping () -> Void) -> NSMenuItem {
+            let i = ClosureMenuItem(title: title, keyEquivalent: key, action: action)
+            i.isEnabled = enabled
+            if !enabled { i.action = nil }
+            return i
+        }
+        var items: [NSMenuItem] = [
+            item("Add note") { [weak self] in self?.onAddNote?(left, line, String(lines.lines[line].text)) },
+            item("Ask Claude about this") { [weak self] in self?.onAsk?(left, span, code) },
+            .separator(),
+            item("Go to definition") { [weak self] in self?.onNavigate?(.definition, left, line, character) },
+            item("Go to implementation") { [weak self] in self?.onNavigate?(.implementation, left, line, character) },
+            item("Find references") { [weak self] in self?.onNavigate?(.references, left, line, character) },
+            .separator(),
+            item("Stage selected lines", enabled: !left && !isDirty) { [weak self] in
+                self?.onStageLines?(span.lowerBound..<(span.upperBound + 1), staging.snapshotID)
+            },
+            item("Unstage this section", enabled: hunk.map { staging.state(of: $0) != .unstaged } ?? false) { [weak self] in
+                if let hunk { self?.onToggle?(hunk.id, false, staging.snapshotID) }
+            },
+            .separator(),
+        ]
+        items.append(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        items.append(item("Copy path and line") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString("\(path):\(span.lowerBound + 1)\(span.count > 1 ? "-\(span.upperBound + 1)" : "")", forType: .string)
+        })
+        items[3].toolTip = "⌘-click"
+        return items
     }
 
     // MARK: Editing the working file
@@ -329,6 +457,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             gutter.frame = NSRect(x: w - gw, y: 0, width: gw, height: h)
         }
         messageLabel.frame = NSRect(x: 0, y: h / 2 - 12, width: w, height: 24)
+        positionCards()
         window?.invalidateCursorRects(for: gutter)
     }
 
@@ -383,6 +512,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private func syncGutter() {
         gutter.leftOffset = leftScroll.contentView.bounds.origin.y
         gutter.rightOffset = rightScroll.contentView.bounds.origin.y
+        positionCards()
     }
 
     private func scrollRight(toLine line: Int) {

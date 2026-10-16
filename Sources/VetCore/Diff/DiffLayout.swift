@@ -6,12 +6,26 @@ public struct DiffLayout: Sendable {
         case code(Int)
         /// "⋯ N unchanged lines"; `id` is the region's first HEAD line.
         case fold(id: Int, hidden: Int)
+        /// One row of space for a review note shown under a line (both sides get the rows).
+        case note(id: String, row: Int)
+    }
+
+    /// A review note to show under a file line: `left` means a HEAD line, else a working-file line.
+    public struct NoteAnchor: Sendable, Hashable {
+        public let id: String
+        public let left: Bool
+        public let line: Int
+        public let rows: Int
+        public init(id: String, left: Bool, line: Int, rows: Int) {
+            self.id = id; self.left = left; self.line = line; self.rows = rows
+        }
     }
 
     public enum SegmentKind: Sendable, Hashable {
         case same
         case fold(id: Int)
         case hunk(id: Int)
+        case note(id: String)
     }
 
     /// A stretch shown side by side: `left` and `right` are display-line ranges.
@@ -32,7 +46,7 @@ public struct DiffLayout: Sendable {
     public static let context = 4
     public static let minimumFold = 4
 
-    public init(headCount: Int, workCount: Int, hunks: [Hunk], folding: Bool, expanded: Set<Int>) {
+    public init(headCount: Int, workCount: Int, hunks: [Hunk], folding: Bool, expanded: Set<Int>, notes: [NoteAnchor] = []) {
         var left: [DisplayLine] = [], right: [DisplayLine] = [], segments: [Segment] = []
         var foldHead: [Int: Range<Int>] = [:], foldWork: [Int: Range<Int>] = [:]
         func same(_ h: Range<Int>, _ w: Range<Int>) {
@@ -60,7 +74,12 @@ public struct DiffLayout: Sendable {
             let keepTop = isFirst ? 0 : Self.context
             let keepBottom = isLast ? 0 : Self.context
             let hidden = n - keepTop - keepBottom
-            guard folding, !expanded.contains(h.lowerBound), hidden >= Self.minimumFold, !hunks.isEmpty else {
+            // A note's line is never folded away.
+            let hidesNote = notes.contains { a in
+                a.left ? (h.lowerBound + keepTop..<h.upperBound - keepBottom).contains(a.line)
+                       : (w.lowerBound + keepTop..<w.upperBound - keepBottom).contains(a.line)
+            }
+            guard folding, !expanded.contains(h.lowerBound), hidden >= Self.minimumFold, !hunks.isEmpty, !hidesNote else {
                 same(h, w)
                 continue
             }
@@ -73,9 +92,51 @@ public struct DiffLayout: Sendable {
             segments.append(Segment(left: l..<(l + 1), right: r..<(r + 1), kind: .fold(id: h.lowerBound)))
             same((h.upperBound - keepBottom)..<h.upperBound, (w.upperBound - keepBottom)..<w.upperBound)
         }
-        self.left = left
-        self.right = right
-        self.segments = segments
+        // Notes: split the stretch holding each note's line just below it, and give both sides
+        // the note's rows there (in a changed section, the rows go under the whole section).
+        if notes.isEmpty {
+            self.left = left
+            self.right = right
+            self.segments = segments
+        } else {
+            var outL: [DisplayLine] = [], outR: [DisplayLine] = [], outS: [Segment] = []
+            func emit(_ l: ArraySlice<DisplayLine>, _ r: ArraySlice<DisplayLine>, _ kind: SegmentKind) {
+                let a = outL.count, b = outR.count
+                outL += l
+                outR += r
+                outS.append(Segment(left: a..<outL.count, right: b..<outR.count, kind: kind))
+            }
+            func emitNote(_ n: NoteAnchor) {
+                let rows = (0..<max(1, n.rows)).map { DisplayLine.note(id: n.id, row: $0) }
+                emit(rows[...], rows[...], .note(id: n.id))
+            }
+            func lineAt(_ d: DisplayLine) -> Int? { if case .code(let l) = d { l } else { nil } }
+            for seg in segments {
+                let l = left[seg.left], r = right[seg.right]
+                let inside = notes.filter { a in (a.left ? l : r).contains { lineAt($0) == a.line } }
+                guard !inside.isEmpty else { emit(l, r, seg.kind); continue }
+                if case .same = seg.kind {
+                    // Equal stretches line up one to one: cut right under each note's line.
+                    var start = 0
+                    let cuts = inside.map { a -> (Int, NoteAnchor) in
+                        let side = a.left ? l : r
+                        return (side.firstIndex { lineAt($0) == a.line }! - side.startIndex + 1, a)
+                    }.sorted { $0.0 < $1.0 }
+                    for (cut, a) in cuts {
+                        if cut > start { emit(l.dropFirst(start).prefix(cut - start), r.dropFirst(start).prefix(cut - start), .same) }
+                        emitNote(a)
+                        start = cut
+                    }
+                    if start < l.count { emit(l.dropFirst(start), r.dropFirst(start), .same) }
+                } else {
+                    emit(l, r, seg.kind)
+                    inside.forEach(emitNote)
+                }
+            }
+            self.left = outL
+            self.right = outR
+            self.segments = outS
+        }
         self.foldHead = foldHead
         self.foldWork = foldWork
     }

@@ -64,6 +64,12 @@ final class ReviewModel {
     private var loadSerial = 0
     private(set) var isGitRepo = true
     private(set) var marks: MarkStore?
+    private(set) var notes: NoteStore?
+    /// The note being written or edited (shown as an editable card).
+    private(set) var editingNoteID: String?
+    private(set) var notesVersion = 0
+    /// Where drafts go (set by the workspace).
+    var link: ClaudeLink?
     private var autoStaging = false
     /// Paths staged/unstaged optimistically while git runs.
     private var pending: [String: StageState] = [:]
@@ -85,6 +91,7 @@ final class ReviewModel {
         isGitRepo = GitRepo.root(containing: folder) != nil
         repo = isGitRepo ? GitRepo(root: folder) : nil
         marks = isGitRepo ? MarkStore(root: folder) : nil
+        notes = NoteStore(root: folder)
         Task { await refresh() }
     }
 
@@ -211,6 +218,129 @@ final class ReviewModel {
                 if outcome == .stale { show("The file changed, so the diff was refreshed. Check it and click again.") }
             } catch {
                 show("Couldn't \(staged ? "stage" : "unstage") the section: \(error)")
+            }
+            await refresh()
+        }
+    }
+
+    // MARK: Review notes
+
+    /// Notes on the open file, each re-found by its line's text if the file moved under it.
+    func notesForOpenFile() -> [ReviewNote] {
+        guard let notes, let doc = diff, let staging = doc.staging else { return [] }
+        return notes.notes.filter { $0.path == doc.change.path }.map { n in
+            var n = n
+            let lines = n.left ? staging.head : staging.work
+            if n.line >= lines.count || String(lines.lines[n.line].text) != n.lineText {
+                for delta in 1...max(1, min(2_000, lines.count)) {
+                    if n.line + delta < lines.count, String(lines.lines[n.line + delta].text) == n.lineText { n.line += delta; break }
+                    if n.line - delta >= 0, n.line - delta < lines.count, String(lines.lines[n.line - delta].text) == n.lineText { n.line -= delta; break }
+                }
+                n.line = min(n.line, max(0, lines.count - 1))
+            }
+            return n
+        }
+    }
+
+    var unsentNotes: [ReviewNote] {
+        _ = notesVersion // so views showing the count update when notes change
+        return (notes?.notes ?? []).filter { !$0.sent && !$0.text.isEmpty }
+    }
+
+    func addNote(left: Bool, line: Int, lineText: String) {
+        guard let notes, let path = diff?.change.path else { return }
+        if let id = editingNoteID, notes.notes.first(where: { $0.id == id })?.text.isEmpty == true { notes.delete(id) }
+        let note = ReviewNote(path: path, left: left, line: line, lineText: lineText, text: "")
+        notes.upsert(note)
+        editingNoteID = note.id
+        noteChanged()
+    }
+
+    func saveNote(_ id: String, text: String) {
+        guard let notes, var note = notes.notes.first(where: { $0.id == id }) else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { notes.delete(id) } else { note.text = trimmed; note.sent = false; notes.upsert(note) }
+        editingNoteID = nil
+        noteChanged()
+    }
+
+    func cancelNote(_ id: String) {
+        if let note = notes?.notes.first(where: { $0.id == id }), note.text.isEmpty { notes?.delete(id) }
+        editingNoteID = nil
+        noteChanged()
+    }
+
+    func editNote(_ id: String) {
+        editingNoteID = id
+        noteChanged()
+    }
+
+    func deleteNote(_ id: String) {
+        notes?.delete(id)
+        if editingNoteID == id { editingNoteID = nil }
+        noteChanged()
+    }
+
+    private func noteChanged() {
+        notesVersion += 1
+        diffVersion += 1
+    }
+
+    /// All unsent notes, as one draft for Claude: file, line, the line itself, and what you wrote.
+    func sendNotes() {
+        guard let notes, let link else { return }
+        let pending = unsentNotes.sorted { ($0.path, $0.line) < ($1.path, $1.line) }
+        guard !pending.isEmpty else { return }
+        var text = "Review notes on the current changes:\n"
+        for (i, n) in pending.enumerated() {
+            text += "\n\(i + 1). \(n.path):\(n.line + 1)\(n.left ? " (old version)" : "")\n"
+            text += "   > \(n.lineText.trimmingCharacters(in: .whitespaces))\n"
+            text += n.text.split(separator: "\n", omittingEmptySubsequences: false).map { "   " + $0 }.joined(separator: "\n") + "\n"
+        }
+        link.sendDraft(text)
+        for var n in pending { n.sent = true; notes.upsert(n) }
+        noteChanged()
+    }
+
+    /// Asks Claude about some lines: the location and the code go in as a draft for you to finish.
+    func askClaude(path: String, lines: ClosedRange<Int>, code: String, old: Bool) {
+        let where_ = lines.count == 1 ? "line \(lines.lowerBound + 1)" : "lines \(lines.lowerBound + 1)–\(lines.upperBound + 1)"
+        let lang = (path as NSString).pathExtension
+        link?.sendDraft("About \(path) \(where_)\(old ? " (the old version)" : ""):\n```\(lang)\n\(code)\n```\n")
+    }
+
+    func askClaude(aboutFile path: String) {
+        link?.sendDraft("About \(path): ")
+    }
+
+    // MARK: Code navigation (wired to the language servers by the workspace)
+
+    var navigator: ((CodeTextView.Navigation, URL, String, Int, Int) -> Void)?
+
+    /// ⌘-click or a navigation menu item in the diff. Only the working file (right side) is a real
+    /// file on disk; on the HEAD side the same line of the working file is used if it's unchanged.
+    func navigate(_ kind: CodeTextView.Navigation, left: Bool, line: Int, character: Int) {
+        guard let root, let doc = diff, let staging = doc.staging else { return }
+        let url = root.appendingPathComponent(doc.change.path)
+        let text = staging.work.joinedString()
+        guard !left else {
+            show("Go to definition works on the right (current) side.")
+            return
+        }
+        navigator?(kind, url, text, line, character)
+    }
+
+    // MARK: Stage selected lines
+
+    func stageLines(_ lines: Range<Int>, snapshot: String) {
+        guard let repo, let change = diff?.change else { return }
+        error = nil
+        Task {
+            do {
+                let outcome = try await repo.stageLines(change, lines: lines, expectedSnapshot: snapshot)
+                if outcome == .stale { show("The file changed, so the diff was refreshed. Check it and try again.") }
+            } catch {
+                show("Couldn't stage the lines: \(error)")
             }
             await refresh()
         }

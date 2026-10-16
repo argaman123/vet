@@ -25,6 +25,10 @@ final class CodeTextView: NSTextView {
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
+        // No automatic title-bar inset: line math (gutter, ribbons, note cards) assumes the
+        // document starts at the top of the clip view.
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         scroll.drawsBackground = true
         scroll.backgroundColor = DiffTheme.background
         let tv = CodeTextView(usingTextLayoutManager: true)
@@ -94,6 +98,7 @@ final class CodeTextView: NSTextView {
 
     @objc func vetSave(_ sender: Any?) { onSave?() }
 
+
     /// A short, reviewer-only menu instead of the text system's long one.
     override func menu(for event: NSEvent) -> NSMenu? {
         let p = convert(event.locationInWindow, from: nil)
@@ -104,8 +109,11 @@ final class CodeTextView: NSTextView {
             if !NSLocationInRange(index, selectedRange()) || selectedRange().length == 0 { setSelectedRange(NSRange(location: index, length: 0)) }
             for item in contextItems?(pos.line, pos.character) ?? [] { menu.addItem(item) }
         }
-        if !menu.items.isEmpty { menu.addItem(.separator()) }
-        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        // Owners that give a full menu place Copy themselves; otherwise it's just Copy.
+        if !menu.items.contains(where: { $0.action == #selector(NSText.copy(_:)) }) {
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
+            menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        }
         return menu
     }
 
@@ -120,6 +128,21 @@ final class CodeTextView: NSTextView {
         if lineStart == ns.length, index == ns.length, ns.length > 0, ns.character(at: ns.length - 1) == 10 { line += 1 }
         guard foldLines[line] == nil else { return nil }
         return (line, index - lineStart)
+    }
+
+    /// Display lines covered by a character range (the selection).
+    func displayLines(of range: NSRange) -> ClosedRange<Int> {
+        let ns = string as NSString
+        func lineOf(_ index: Int) -> Int {
+            var n = 0
+            ns.enumerateSubstrings(in: NSRange(location: 0, length: min(index, ns.length)), options: [.byLines, .substringNotRequired]) { _, _, enclosing, _ in
+                if NSMaxRange(enclosing) <= index { n += 1 }
+            }
+            return n
+        }
+        let a = lineOf(range.location)
+        let end = range.length > 0 ? NSMaxRange(range) - 1 : range.location
+        return a...max(a, lineOf(end))
     }
 
     /// The text range for (display line, column).
@@ -143,7 +166,9 @@ final class CodeTextView: NSTextView {
         let probe = NSRange(location: max(0, affectedCharRange.location - (affectedCharRange.length == 0 ? 1 : 0)),
                             length: max(1, affectedCharRange.length))
         if NSMaxRange(probe) <= storage.length {
-            storage.enumerateAttribute(.vetFold, in: probe) { value, _, stop in if value != nil { touchesFold = true; stop.pointee = true } }
+            for key in [NSAttributedString.Key.vetFold, .vetNote] {
+                storage.enumerateAttribute(key, in: probe) { value, _, stop in if value != nil { touchesFold = true; stop.pointee = true } }
+            }
         }
         if touchesFold { NSSound.beep(); return false }
         return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)

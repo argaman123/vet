@@ -139,6 +139,15 @@ actor GitRepo {
 
     enum SectionOutcome: Sendable { case done, stale }
 
+    /// Stages just some working-file lines (re-reads and refuses if anything changed since drawing).
+    func stageLines(_ change: FileChange, lines: Range<Int>, expectedSnapshot: String) throws -> SectionOutcome {
+        guard case .document(let doc) = loadDiff(change), let now = doc.staging, now.snapshotID == expectedSnapshot else { return .stale }
+        let mode = change.kind == .untracked ? "100644" : change.modeIndex
+        guard mode == "100644" || mode == "100755", change.kind != .deleted else { return .stale }
+        try writeIndex(path: change.path, text: now.indexText(stagingWorkLines: lines), mode: mode)
+        return .done
+    }
+
     /// Stages or unstages one section, re-reading everything and refusing if HEAD, the index or
     /// the working file changed since the diff the user clicked was drawn. Runs as one actor
     /// call, so no other git operation from Vet can slip in between the read and the write.
