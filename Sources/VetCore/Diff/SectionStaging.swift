@@ -1,104 +1,95 @@
 import CryptoKit
 import Foundation
 
-/// Section ("hunk") staging: which HEAD→work sections are in the index, and the exact new
-/// index text for staging or unstaging one section.
+/// Section ("hunk") staging, done the way VS Code's git extension stages selected ranges:
 ///
-/// The new index is always built from the CURRENT index bytes, replacing only the section's
-/// region. Index content outside every section — e.g. a change that was staged and later
-/// reverted in the working file — is never touched.
+/// - **Stage** a section: apply the index→working-file changes that touch it to the index.
+/// - **Unstage** a section: revert the HEAD→index changes that touch it.
+/// - A change with the same number of lines on both sides is applied line by line, only over
+///   the section's own lines, so a neighbouring change is never swept along. An unequal change
+///   is applied whole (its line correspondence is ambiguous).
+///
+/// The new index is always the CURRENT index with only those changes applied; nothing else in
+/// it is touched. Whether a section counts as staged uses the same "touches" rule, so the
+/// checkbox always agrees with what clicking it does.
 public struct SectionStaging: Sendable {
     public let head: TextLines
     public let index: TextLines
     public let work: TextLines
-    /// HEAD → working-file sections, in file order.
+    /// HEAD → working-file sections, in file order. These are what the diff shows.
     public let hunks: [Hunk]
     /// Changes when HEAD, the index or the working file changes; a click made against an
     /// older snapshot must be refused.
     public let snapshotID: String
 
-    private let regions: [Region]
-
-    struct Region {
-        var headSpan: Range<Int>
-        var indexSpan: Range<Int>
-        var workSpan: Range<Int>
-    }
+    private let headToIndex: [Hunk]  // .head = HEAD lines, .work = index lines
+    private let indexToWork: [Hunk]  // .head = index lines, .work = working-file lines
 
     public init(head: TextLines, index: TextLines, work: TextLines) {
         self.head = head
         self.index = index
         self.work = work
-        let hw = LineDiff.hunks(head: head, work: work)
-        let hi = LineDiff.hunks(head: head, work: index, wordChanges: false)
-        hunks = hw
-        let toIndex = PositionMap(hunks: hi), toWork = PositionMap(hunks: hw)
-        regions = hw.map { h in
-            // Widen the section when an index change straddles its edges.
-            let a = toIndex.enclosing(h.head.lowerBound)?.head.lowerBound ?? h.head.lowerBound
-            let b = toIndex.enclosing(h.head.upperBound)?.head.upperBound ?? h.head.upperBound
-            let a2 = toWork.enclosing(a)?.head.lowerBound ?? a
-            let b2 = toWork.enclosing(b)?.head.upperBound ?? b
-            return Region(headSpan: a2..<b2,
-                          indexSpan: toIndex.map(a2, after: false)..<toIndex.map(b2, after: true),
-                          workSpan: toWork.map(a2, after: false)..<toWork.map(b2, after: true))
-        }
+        hunks = LineDiff.hunks(head: head, work: work)
+        headToIndex = LineDiff.hunks(head: head, work: index, wordChanges: false)
+        indexToWork = LineDiff.hunks(head: index, work: work, wordChanges: false)
+        snapshotID = Self.snapshot(head: head, index: index, work: work)
+    }
+
+    public static func snapshot(head: TextLines, index: TextLines, work: TextLines) -> String {
         var hasher = SHA256()
         hasher.update(data: head.joined())
         hasher.update(data: Data([0]))
         hasher.update(data: index.joined())
         hasher.update(data: Data([0]))
         hasher.update(data: work.joined())
-        snapshotID = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     public func state(of hunk: Hunk) -> StageState {
-        guard let r = region(hunk) else { return .unstaged }
-        let idx = index[r.indexSpan].map(\.key)
-        if idx == work[r.workSpan].map(\.key) { return .staged }
-        if idx == head[r.headSpan].map(\.key) { return .unstaged }
+        if !indexToWork.contains(where: { Self.touches(hunk.work, $0.work) }) { return .staged }
+        if !headToIndex.contains(where: { Self.touches(hunk.head, $0.head) }) { return .unstaged }
         return .partial
     }
 
     /// The full new index text after staging (or unstaging) `hunk`.
     public func indexText(setting hunk: Hunk, staged: Bool) -> Data {
-        guard let r = region(hunk) else { return index.joined() }
-        let replacement = staged ? Array(work[r.workSpan]) : Array(head[r.headSpan])
-        let lines = Array(index.lines[0..<r.indexSpan.lowerBound]) + replacement
-            + Array(index.lines[r.indexSpan.upperBound..<index.count])
+        var lines = index.lines
+        if staged {
+            // Index→work changes touching the section's working-file lines, applied to the index.
+            for x in indexToWork.filter({ Self.touches(hunk.work, $0.work) }).reversed() {
+                let (from, to) = Self.restrict(x.head, x.work, to: hunk.work)
+                lines.replaceSubrange(from, with: work.lines[to])
+            }
+        } else {
+            // HEAD→index changes touching the section's HEAD lines, reverted in the index.
+            for x in headToIndex.filter({ Self.touches(hunk.head, $0.head) }).reversed() {
+                let (headPart, indexPart) = Self.restrict(x.work, x.head, to: hunk.head)
+                lines.replaceSubrange(headPart, with: head.lines[indexPart])
+            }
+        }
         return TextLines(lines: lines).joined()
     }
 
-    private func region(_ hunk: Hunk) -> Region? {
-        guard let k = hunks.firstIndex(where: { $0.id == hunk.id }) else { return nil }
-        return regions[k]
-    }
-}
-
-/// Maps line positions (between lines) from a diff's HEAD side to its other side.
-struct PositionMap {
-    let hunks: [Hunk]
-
-    /// The hunk whose HEAD range strictly contains position `p`, if any.
-    func enclosing(_ p: Int) -> Hunk? {
-        hunks.first { $0.head.lowerBound < p && p < $0.head.upperBound }
+    /// For a change `target ↔ source` (target is the side being rewritten, source supplies the
+    /// new lines), the part that lies within `section` (a range on the source side). Same-size
+    /// changes pair line by line; anything else is used whole.
+    static func restrict(_ target: Range<Int>, _ source: Range<Int>, to section: Range<Int>) -> (Range<Int>, Range<Int>) {
+        guard target.count == source.count, !section.isEmpty else { return (target, source) }
+        let lo = max(source.lowerBound, section.lowerBound), hi = min(source.upperBound, section.upperBound)
+        guard lo < hi else { return (target, source) }
+        let offset = target.lowerBound - source.lowerBound
+        return ((lo + offset)..<(hi + offset), lo..<hi)
     }
 
-    /// Other-side position for HEAD position `p`. At a hunk's edge, `after` picks the far side
-    /// of that hunk, so a section's start maps before neighbouring inserted lines and its end after them.
-    func map(_ p: Int, after: Bool) -> Int {
-        var delta = 0
-        for h in hunks {
-            if p < h.head.lowerBound { break }
-            if h.head.isEmpty && p == h.head.lowerBound {
-                // Lines inserted right at p: a section's start goes before them, its end after them.
-                return after ? h.work.upperBound : h.work.lowerBound
-            }
-            if p == h.head.lowerBound { return h.work.lowerBound }
-            if p < h.head.upperBound { return h.work.lowerBound } // inside a hunk; callers widen first
-            if p == h.head.upperBound { return h.work.upperBound }
-            delta = h.work.upperBound - h.head.upperBound
+    /// Whether a change over `other` affects the lines in `range` (both on the same side).
+    /// Overlapping lines always count. Where either side is a position between lines (an
+    /// insertion or a deletion), changes right at its edges count too.
+    static func touches(_ range: Range<Int>, _ other: Range<Int>) -> Bool {
+        switch (range.isEmpty, other.isEmpty) {
+        case (false, false): return range.overlaps(other)
+        case (true, true): return range.lowerBound == other.lowerBound
+        case (true, false): return other.lowerBound <= range.lowerBound && range.lowerBound <= other.upperBound
+        case (false, true): return range.lowerBound <= other.lowerBound && other.lowerBound <= range.upperBound
         }
-        return p + delta
     }
 }
