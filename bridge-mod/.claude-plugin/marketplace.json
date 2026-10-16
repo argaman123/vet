@@ -1,0 +1,11 @@
+{
+  "name": "vet",
+  "owner": { "name": "Vet" },
+  "plugins": [
+    {
+      "name": "vet-bridge",
+      "source": "./vet-bridge",
+      "description": "Lets the Vet review app put drafts into your Claude chat and know when replies finish."
+    }
+  ]
+}

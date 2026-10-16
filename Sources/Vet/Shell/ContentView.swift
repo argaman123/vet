@@ -10,13 +10,16 @@ struct ContentView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            RailView(state: state, run: workspace.run, editingRun: $editingRun) { state.selected = $0 }
+            RailView(state: state, run: workspace.run, editingRun: $editingRun) {
+                state.selected = $0
+                state.badges[$0] = nil // opening a tab clears its badge
+            }
                 .frame(width: RailView.width)
                 .padding(.top, 34) // room for the window's close/minimize/zoom buttons
             VStack(spacing: 0) {
             Group {
                 switch state.selected {
-                case .review: ReviewView(model: workspace.review, projects: projects)
+                case .review: ReviewView(model: workspace.review, projects: projects, link: workspace.link)
                 case .files: FilesView(model: workspace.files)
                 case .browser: BrowserView(model: workspace.browser)
                 }
@@ -27,6 +30,16 @@ struct ContentView: View {
         }
         .background(.background)
         .sheet(isPresented: $editingRun) { RunConfigEditor(run: workspace.run, isPresented: $editingRun) }
+        .overlay(alignment: .bottom) {
+            if let toast = workspace.link.toast {
+                Text(toast)
+                    .font(.callout)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(.bottom, workspace.run.outputVisible ? 258 : 18)
+                    .transition(.opacity)
+            }
+        }
         .ignoresSafeArea()
         .task(id: projects.current) { workspace.open(projects.current) }
     }

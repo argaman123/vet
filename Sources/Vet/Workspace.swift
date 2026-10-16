@@ -8,8 +8,29 @@ final class Workspace {
     let files = FilesModel()
     let browser = BrowserModel()
     let run = RunModel()
+    let link = ClaudeLink()
+    /// Set when Claude finishes a reply in this project: unreviewed files for the Review badge.
+    var onClaudeFinished: ((Int) -> Void)?
     private(set) var root: URL?
     private var watcher: RepoWatcher?
+
+    func startLink() {
+        link.start()
+        link.onTurnComplete = { [weak self] cwd in
+            guard let self, let root = self.root, Self.same(cwd, root) else { return }
+            Task {
+                await self.review.refresh()
+                let unreviewed = self.review.changes.filter { self.review.stage(of: $0) != .staged }.count
+                self.onClaudeFinished?(unreviewed)
+            }
+        }
+    }
+
+    /// Whether Claude's folder is this project (or inside it).
+    static func same(_ cwd: String, _ root: URL) -> Bool {
+        let a = URL(fileURLWithPath: cwd).resolvingSymlinksInPath().path, b = root.resolvingSymlinksInPath().path
+        return a == b || a.hasPrefix(b + "/")
+    }
 
     func open(_ folder: URL?) {
         guard folder?.standardizedFileURL != root?.standardizedFileURL else {

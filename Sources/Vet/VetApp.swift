@@ -27,6 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         main = MainWindowController(content: ContentView(state: state, projects: projects, workspace: workspace))
         main.show()
         NSApp.activate()
+        workspace.startLink()
+        workspace.onClaudeFinished = { [weak self] count in
+            guard let self, self.state.selected != .review else { return }
+            self.state.badges[.review] = count
+        }
     }
 
     @objc func openFolder(_ sender: Any?) {
@@ -45,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         workspace.run.stop() // don't leave your dev server running after Vet quits
+        workspace.link.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

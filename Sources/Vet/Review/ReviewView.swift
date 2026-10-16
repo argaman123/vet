@@ -5,6 +5,9 @@ import VetCore
 struct ReviewView: View {
     let model: ReviewModel
     let projects: ProjectStore
+    let link: ClaudeLink
+    @State private var installMessage: String?
+    @State private var installing = false
 
     var body: some View {
         HSplitView {
@@ -37,6 +40,7 @@ struct ReviewView: View {
                     .onTapGesture { model.dismissError() }
                     .help("Click to dismiss")
             }
+            claudeLinkRow
             if projects.current == nil {
                 emptyState("Open a project", "File › Open Folder…", action: projects.showOpenPanel)
             } else if !model.isGitRepo {
@@ -47,6 +51,31 @@ struct ReviewView: View {
                 FileTreeView(model: model, version: model.version, selectedPath: model.selectedPath)
             }
         }
+    }
+
+    /// Whether drafts reach Claude, and a one-click install of the Claude Desktop mod if not.
+    private var claudeLinkRow: some View {
+        HStack(spacing: 6) {
+            Circle().fill(link.connected ? Color.green : Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
+            Text(link.connected ? "Claude linked" : "Claude not linked").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            if !link.connected {
+                Button(installing ? "Connecting…" : "Connect Claude") {
+                    installing = true
+                    Task {
+                        installMessage = await link.installMod()
+                        installing = false
+                    }
+                }
+                .buttonStyle(.borderless).font(.caption).disabled(installing)
+                .help("Installs the small vet-bridge mod into Claude Code so Vet can put drafts into your chat")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
+        .alert("Claude link", isPresented: Binding(get: { installMessage != nil }, set: { if !$0 { installMessage = nil } })) {
+            Button("OK") { installMessage = nil }
+        } message: { Text(installMessage ?? "") }
     }
 
     private var diffArea: some View {

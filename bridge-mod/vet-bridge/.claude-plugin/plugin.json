@@ -1,0 +1,8 @@
+{
+  "name": "vet-bridge",
+  "version": "0.1.0",
+  "description": "Lets the Vet review app put drafts into your Claude chat and know when replies finish.",
+  "author": {
+    "name": "Vet"
+  }
+}
