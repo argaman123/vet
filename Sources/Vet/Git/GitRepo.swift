@@ -37,7 +37,37 @@ actor GitRepo {
     }
 
     func status() throws -> [FileChange] {
-        StatusParser.parse(try run(["status", "--porcelain=v2", "-z", "--untracked-files=all", "--find-renames"]))
+        let changes = StatusParser.parse(try run(["status", "--porcelain=v2", "-z", "--untracked-files=all", "--find-renames"]))
+        return (try? pairUnstagedRenames(changes)) ?? changes
+    }
+
+    /// A file moved but not staged shows as a deletion plus an untracked file. As in Working
+    /// Tree 0.9.13, match them with git's own rename detection in a throwaway copy of the index
+    /// (intent-to-add the new files there, then ask status); the real index is never touched.
+    private func pairUnstagedRenames(_ changes: [FileChange]) throws -> [FileChange] {
+        let deleted = changes.filter { $0.kind == .deleted && $0.stage == .unstaged }
+        let untracked = changes.filter { $0.kind == .untracked }
+        guard !deleted.isEmpty, !untracked.isEmpty, untracked.count <= 500 else { return changes }
+        let gitDir = Self.gitDir(of: root)
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("vet-index-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.copyItem(at: gitDir.appendingPathComponent("index"), to: temp)
+        let env = ["GIT_INDEX_FILE": temp.path]
+        _ = try run(["add", "--intent-to-add", "--"] + untracked.map(\.path), env: env)
+        let scratch = StatusParser.parse(try run(["status", "--porcelain=v2", "-z", "--untracked-files=no", "--find-renames"], env: env))
+        var renamed: [String: String] = [:] // new path → old path
+        for c in scratch where c.kind == .renamed && c.stage == .unstaged {
+            if let old = c.origPath, deleted.contains(where: { $0.path == old }) { renamed[c.path] = old }
+        }
+        guard !renamed.isEmpty else { return changes }
+        let olds = Set(renamed.values)
+        return changes.compactMap { c in
+            if olds.contains(c.path) && c.kind == .deleted { return nil }
+            if let old = renamed[c.path], c.kind == .untracked {
+                return FileChange(path: c.path, origPath: old, kind: .renamed, stage: .unstaged, modeIndex: "100644", modeWork: c.modeWork)
+            }
+            return c
+        }
     }
 
     /// HEAD's version of the file (renames read their old path). Nil when it isn't in HEAD;
@@ -120,7 +150,8 @@ actor GitRepo {
         let head: Data?, index: Data?
         do {
             head = try headText(change)
-            index = try indexText(change.path)
+            // An unstaged rename isn't in the index under its new name yet: use the old one's.
+            index = try indexText(change.path) ?? (change.origPath != nil ? try indexText(change.origPath!) : nil)
         } catch {
             return .document(.message(change, "Couldn't read the file from git: \(error)"))
         }
@@ -155,7 +186,9 @@ actor GitRepo {
         guard case .document(let doc) = loadDiff(change), let now = doc.staging, now.snapshotID == expectedSnapshot,
               let hunk = now.hunks.first(where: { $0.id == hunkID }) else { return .stale }
         let workExists = FileManager.default.fileExists(atPath: root.appendingPathComponent(change.path).path)
-        if change.kind == .deleted || !workExists {
+        let unstagedRename = change.kind == .renamed && (try? indexText(change.path)) == nil
+        if change.kind == .deleted || !workExists || unstagedRename {
+            // Unstaged renames are staged whole first (as in Working Tree), then by section.
             // A deleted file (or one renamed and then deleted) is staged as a removal, never as empty text.
             if staged { try stageFiles([change]) } else { try unstageFiles([change]) }
             return .done
@@ -177,11 +210,11 @@ actor GitRepo {
 
     // MARK: Process
 
-    private func run(_ args: [String], stdin: Data? = nil) throws -> Data {
-        try Self.runSync(args, in: root, stdin: stdin)
+    private func run(_ args: [String], stdin: Data? = nil, env extra: [String: String] = [:]) throws -> Data {
+        try Self.runSync(args, in: root, stdin: stdin, env: extra)
     }
 
-    private static func runSync(_ args: [String], in dir: URL, stdin: Data? = nil) throws -> Data {
+    private static func runSync(_ args: [String], in dir: URL, stdin: Data? = nil, env extra: [String: String] = [:]) throws -> Data {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: gitPath)
         p.arguments = args
@@ -190,6 +223,7 @@ actor GitRepo {
         var env = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
         env["GIT_OPTIONAL_LOCKS"] = "0" // status must not fight Claude's own git commands for the index lock
         env["GIT_LITERAL_PATHSPECS"] = "1" // `src/[id]/page.ts` is a path, never a pattern
+        for (k, v) in extra { env[k] = v }
         env["LC_ALL"] = "C"
         p.environment = env
         let out = Pipe(), err = Pipe(), inPipe = Pipe()
