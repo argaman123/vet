@@ -49,18 +49,30 @@ struct ReviewView: View {
     }
 
     private var diffArea: some View {
-        Group {
-            if let path = model.selectedPath {
-                VStack(spacing: 6) {
-                    Text(path).font(.headline)
-                    Text("The diff will show here.").foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            if let doc = model.diff {
+                HStack(spacing: 8) {
+                    if let orig = doc.change.origPath {
+                        Text("Renamed: \(orig) → \(doc.change.path)").lineLimit(1).truncationMode(.middle)
+                    } else {
+                        Text(doc.change.path).lineLimit(1).truncationMode(.middle)
+                    }
+                    Spacer()
+                    iconButton("chevron.up", "Previous change") { model.jumpToChange(forward: false) }
+                    iconButton("chevron.down", "Next change") { model.jumpToChange(forward: true) }
+                    iconButton(model.folding ? "arrow.up.and.down.text.horizontal" : "rectangle.compress.vertical",
+                               model.folding ? "Show unchanged lines" : "Fold unchanged lines") { model.folding.toggle() }
                 }
-            } else {
-                Text("Select a file to review").foregroundStyle(.secondary)
+                .font(.callout)
+                .padding(.horizontal, 12)
+                .frame(height: 34)
+                .foregroundStyle(Color(nsColor: DiffTheme.text))
+                .background(Color(nsColor: DiffTheme.foldBand))
             }
+            RibbonDiffView(model: model, version: model.diffVersion, jumpSerial: model.jump.serial)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(red: 0x0d / 255, green: 0x11 / 255, blue: 0x17 / 255))
+        .background(Color(nsColor: DiffTheme.background))
     }
 
     private func iconButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {

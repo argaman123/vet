@@ -2,6 +2,21 @@ import AppKit
 import Observation
 import VetCore
 
+/// Debug timing: `defaults write dev.vet.Vet logTiming -bool YES` appends how long each diff took to show
+/// to `$TMPDIR/vet-timing.log`.
+@MainActor enum Timing {
+    static var selectionStarted: Date?
+    static let enabled = UserDefaults.standard.bool(forKey: "logTiming")
+    static func diffShown(_ path: String) {
+        guard enabled, let start = selectionStarted else { return }
+        let line = String(format: "diff %@ %.0f ms\n", path, Date().timeIntervalSince(start) * 1000)
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("vet-timing.log")
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
+        else { try? Data(line.utf8).write(to: url) }
+        selectionStarted = nil
+    }
+}
+
 /// State of the Review tab for one project.
 @MainActor @Observable
 final class ReviewModel {
@@ -11,7 +26,25 @@ final class ReviewModel {
     private(set) var tree: [FileTreeNode] = []
     /// Bumped on every refresh so the outline view knows to reload.
     private(set) var version = 0
-    var selectedPath: String?
+    var selectedPath: String? {
+        didSet {
+            guard oldValue != selectedPath else { return }
+            expandedFolds = []
+            Timing.selectionStarted = Date()
+            Task { await loadDiff() }
+        }
+    }
+    /// The open file's diff.
+    private(set) var diff: DiffDocument?
+    private(set) var diffVersion = 0
+    /// Fold unchanged regions (remembered across files and launches).
+    var folding = UserDefaults.standard.object(forKey: "foldUnchanged") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(folding, forKey: "foldUnchanged"); expandedFolds = []; diffVersion += 1 }
+    }
+    /// Folds the user opened in the current file (by the region's first HEAD line).
+    var expandedFolds: Set<Int> = []
+    /// Bumped to ask the diff view to jump to the previous/next section.
+    private(set) var jump: (serial: Int, forward: Bool) = (0, true)
     /// Folders the user has expanded (repo-relative paths).
     var expanded: Set<String> = []
     private(set) var error: String?
@@ -46,6 +79,7 @@ final class ReviewModel {
             if let sel = selectedPath, !fresh.contains(where: { $0.path == sel }) { selectedPath = nil }
             error = nil
             version += 1
+            await loadDiff()
         } catch {
             self.error = "\(error)"
         }
@@ -76,6 +110,58 @@ final class ReviewModel {
             }
             await refresh() // shows git's real state, success or not
         }
+    }
+
+    func loadDiff() async {
+        guard let repo, let root, let path = selectedPath, let change = changes.first(where: { $0.path == path }) else {
+            if diff != nil { diff = nil; diffVersion += 1 }
+            return
+        }
+        let doc = await DiffDocument.load(change, repo: repo, root: root)
+        guard selectedPath == path else { return } // the user moved on meanwhile
+        diff = doc
+        diffVersion += 1
+    }
+
+    func expandFold(_ id: Int) {
+        expandedFolds.insert(id)
+        diffVersion += 1
+    }
+
+    func jumpToChange(forward: Bool) { jump = (jump.serial + 1, forward) }
+
+    /// Stages or unstages one section of the open file. Refused if the file, the index or HEAD
+    /// changed since the diff was drawn, so a click never lands on text the user didn't see.
+    func setHunk(_ id: Int, staged: Bool) {
+        guard let repo, let root, let doc = diff, let shown = doc.staging,
+              let hunk = shown.hunks.first(where: { $0.id == id }) else { return }
+        let change = doc.change
+        Task {
+            do {
+                let fresh = await DiffDocument.load(change, repo: repo, root: root)
+                guard let now = fresh.staging, now.snapshotID == shown.snapshotID else {
+                    self.error = "The file changed, so the diff was refreshed. Check it and click again."
+                    await refresh()
+                    return
+                }
+                if change.kind == .deleted {
+                    if staged { try await repo.stageFile(change) } else { try await repo.unstageFile(change) }
+                } else {
+                    let text = now.indexText(setting: hunk, staged: staged)
+                    try await repo.writeIndex(path: change.path, text: text, mode: Self.mode(for: change, root: root))
+                }
+            } catch {
+                self.error = "Couldn't \(staged ? "stage" : "unstage") the section: \(error)"
+            }
+            await refresh()
+        }
+    }
+
+    private static func mode(for change: FileChange, root: URL) -> String {
+        if change.kind == .untracked {
+            return FileManager.default.isExecutableFile(atPath: root.appendingPathComponent(change.path).path) ? "100755" : "100644"
+        }
+        return change.modeIndex
     }
 
     func nextUnreviewed() {
