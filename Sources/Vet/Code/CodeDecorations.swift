@@ -24,6 +24,12 @@ final class HintBox: NSObject {
     init(_ h: InlayHintMark) { label = h.label; padLeft = h.padLeft; padRight = h.padRight }
 
     nonisolated(unsafe) static let font = NSFont.systemFont(ofSize: 10.5)
+    /// Left to right even for a Hebrew string type.
+    nonisolated(unsafe) static let paragraph: NSParagraphStyle = {
+        let p = NSMutableParagraphStyle()
+        p.baseWritingDirection = .leftToRight
+        return p
+    }()
     var labelSize: NSSize { (label as NSString).size(withAttributes: [.font: Self.font]) }
     /// The gap opened in the text for the pill.
     var gap: CGFloat { ceil(labelSize.width) + 10 + (padLeft ? 4 : 0) + (padRight ? 4 : 0) }
@@ -60,6 +66,13 @@ extension CodeTextView {
             storage.addAttribute(.vetHint, value: box, range: r)
         }
         storage.endEditing()
+        relayoutVisibleText()
+    }
+
+    /// Attribute changes (gaps, colors) invalidate laid-out lines; lay the visible ones out again
+    /// now, or they stay blank until the next scroll.
+    func relayoutVisibleText() {
+        textLayoutManager?.textViewportLayoutController.layoutViewport()
         needsDisplay = true
     }
 
@@ -104,7 +117,8 @@ extension CodeTextView {
                 NSColor.quaternaryLabelColor.withAlphaComponent(0.6).setFill()
                 NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
                 (box.label as NSString).draw(at: NSPoint(x: pill.minX + 4, y: pill.minY + (15 - size.height) / 2),
-                                             withAttributes: [.font: HintBox.font, .foregroundColor: NSColor.secondaryLabelColor])
+                                             withAttributes: [.font: HintBox.font, .foregroundColor: NSColor.secondaryLabelColor,
+                                                              .paragraphStyle: HintBox.paragraph])
             }
         }
         var rects: [(NSRect, LineLensMark)] = []
@@ -125,5 +139,29 @@ extension CodeTextView {
     /// The lens under a point, if any.
     func lens(at point: NSPoint) -> LineLensMark? {
         lensRects.first { $0.0.insetBy(dx: -2, dy: -2).contains(point) }?.1
+    }
+
+    /// Colors names by what they are (functions, properties, parameters…), from the language
+    /// server's semantic tokens, over the syntax colors. `display` maps a file line to its row.
+    func applySemanticTokens(_ tokens: [SemanticToken], display: (Int) -> Int?) {
+        guard let storage = textStorage, !tokens.isEmpty else { return }
+        let ns = storage.string as NSString
+        var starts: [Int] = [0], location = 0
+        while true {
+            let r = ns.range(of: "\n", options: .literal, range: NSRange(location: location, length: ns.length - location))
+            if r.location == NSNotFound { break }
+            location = NSMaxRange(r)
+            starts.append(location)
+        }
+        storage.beginEditing()
+        for t in tokens {
+            guard let row = display(t.line), row < starts.count, let color = DiffTheme.semantic(t.type, modifiers: t.modifiers) else { continue }
+            let lineEnd = row + 1 < starts.count ? starts[row + 1] - 1 : ns.length
+            let start = starts[row] + t.character
+            guard start + t.length <= lineEnd else { continue }
+            storage.addAttribute(.foregroundColor, value: color, range: NSRange(location: start, length: t.length))
+        }
+        storage.endEditing()
+        relayoutVisibleText()
     }
 }

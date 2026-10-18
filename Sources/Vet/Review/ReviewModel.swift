@@ -449,6 +449,8 @@ final class ReviewModel {
 
     var navigator: ((CodeTextView.Navigation, URL, String, Int, Int) -> Void)?
     var hoverer: ((URL, String, Int, Int) -> Void)?
+    /// Loads reading aids into the diff's working-file pane once it shows a file.
+    var readingAids: ((RibbonDiffNSView) -> Void)?
 
     /// Hover info for a working-file line of the open diff.
     func hover(line: Int, character: Int) {

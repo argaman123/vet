@@ -160,7 +160,30 @@ private struct HoverView: View {
     }
 
     static func markdown(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+        (try? AttributedString(markdown: tags(s), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+    }
+
+    /// JSDoc tags as VS Code shows them: "*@param* `name` — text" on one line.
+    static func tags(_ s: String) -> String {
+        var lines = s.components(separatedBy: "\n"), out: [String] = []
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            if let m = line.wholeMatch(of: /@(\w+)(?:\s+(\S+))?\s*(.*)/) {
+                var text = String(m.3)
+                if text.isEmpty, i + 1 < lines.count, !lines[i + 1].trimmingCharacters(in: .whitespaces).isEmpty, !lines[i + 1].hasPrefix("@") {
+                    i += 1
+                    text = lines[i]
+                }
+                let name = m.2.map { " `\($0)`" } ?? ""
+                out.append("*@\(m.1)*\(name)\(text.isEmpty ? "" : " — \(text)")")
+            } else {
+                out.append(line)
+            }
+            i += 1
+        }
+        lines = out
+        return lines.joined(separator: "\n")
     }
 
     /// Code with the editor's syntax colors.

@@ -108,8 +108,9 @@ final class CodeTextView: NSTextView {
             onFoldClick?(id)
             return
         }
-        if let lens = lens(at: p), let onLensClick {
-            onLensClick(lens)
+        if let hit = lensRects.first(where: { $0.0.insetBy(dx: -2, dy: -2).contains(p) }), let onLensClick {
+            NavigationAnchor.set(self, hit.0)
+            onLensClick(hit.1)
             return
         }
         if event.modifierFlags.contains(.command), let onNavigate, let pos = position(at: p) {

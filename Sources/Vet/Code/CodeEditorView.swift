@@ -18,6 +18,11 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     /// ⌘-click or the right-click menu asked to navigate from this position.
     var onNavigate: ((CodeTextView.Navigation, Int, Int) -> Void)?
     /// The pointer rested on a symbol at (line, column).
+    /// Typing paused (or a file was loaded): time to ask for the reading aids again.
+    var onTextSettled: (() -> Void)?
+    private var settle: DispatchWorkItem?
+    var pane: CodeTextView { textView }
+    var lineGutter: LineNumberGutter { gutter }
     var onHover: ((Int, Int) -> Void)? {
         get { textView.onHover }
         set { textView.onHover = newValue }
@@ -139,6 +144,10 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         }
         rehighlight = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+        settle?.cancel()
+        let settled = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.onTextSettled?() } }
+        settle = settled
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: settled)
     }
 }
 

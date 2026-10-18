@@ -45,6 +45,7 @@ struct RibbonDiffView: NSViewRepresentable {
             view.notes = model.notesForOpenFile()
             view.editingNoteID = model.editingNoteID
             view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
+            model.readingAids?(view)
         }
         if jumpSerial != view.lastJump {
             view.lastJump = jumpSerial
@@ -107,6 +108,13 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// Unified mode: right-side display line → its row in the one pane.
     private var unifiedOfRight: [Int: Int] = [:]
     private var unifiedHunks: [Int: Range<Int>] = [:]
+    /// The working-file pane, for reading aids (semantic colors, hints, lenses).
+    var workPane: CodeTextView { rightText }
+    /// The working-file text the pane was built from.
+    var shownWorkText: String? { shownStaging?.work.joinedString() }
+    /// A working-file line's row in its pane (nil when folded away).
+    func workRow(ofFileLine line: Int) -> Int? { workRows[line] }
+    private var workRows: [Int: Int] = [:]
 
     private struct Anchor { let left: Bool; let line: Int; let text: Substring; let offset: CGFloat }
     private var syncing = false
@@ -141,6 +149,10 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         rightText.contextItems = { [weak self] line, character in self?.menuItems(left: false, displayLine: line, character: character) ?? [] }
         leftText.onNavigate = { [weak self] kind, line, character in self?.navigate(kind, left: true, displayLine: line, character: character) }
         rightText.onNavigate = { [weak self] kind, line, character in self?.navigate(kind, left: false, displayLine: line, character: character) }
+        rightText.onLensClick = { [weak self] lens in
+            guard let self, let (side, fileLine) = self.resolve(left: false, displayLine: lens.line), !side else { return }
+            self.onNavigate?(.references, false, fileLine, lens.character)
+        }
         rightText.onHover = { [weak self] line, character in
             guard let self, let (side, fileLine) = self.resolve(left: false, displayLine: line), !side else { return }
             self.onHover?(fileLine, character)
@@ -268,6 +280,12 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         }
         gutter.unifiedRanges = unifiedHunks
         gutter.reload()
+        workRows = [:]
+        for (d, line) in layout.right.enumerated() {
+            if case .code(let l) = line { workRows[l] = unifiedRows == nil ? d : unifiedOfRight[d] }
+        }
+        rightText.inlayHints = []
+        rightText.lenses = []
 
         // Every line is 18 pt, so the exact document height is known now; setting it up front
         // means restoring the scroll position isn't clamped by a half-laid-out text view.
@@ -507,6 +525,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         isDirty = true
+        rightText.lenses = [] // their rows shift as you type; they come back with the next refresh
         rehighlight?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, let storage = self.rightText.textStorage else { return }

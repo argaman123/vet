@@ -15,6 +15,8 @@ final class Workspace {
     var navResults: (title: String, locations: [CodeLocation])?
     /// Shown while a language server answers ("Finding definition…").
     private(set) var navBusy: String?
+    /// Gutter jump icons' targets, by file and line (from the last reading-aids load).
+    @ObservationIgnored var jumpTargets: [URL: [Int: GutterMark]] = [:]
     /// Shows a file in the editor after navigation (set by the app; records history).
     var onOpenFile: ((URL, Int) -> Void)?
     /// Asked to open another project (Review follows the Claude chat you're working in).
@@ -155,6 +157,7 @@ final class Workspace {
         navigator = folder.map { CodeNavigator(root: $0) }
         review.navigator = { [weak self] kind, url, text, line, character in self?.navigate(kind, url: url, text: text, line: line, character: character) }
         review.hoverer = { [weak self] url, text, line, character in self?.hover(url: url, text: text, line: line, character: character) }
+        review.readingAids = { [weak self] view in self?.loadReadingAids(diff: view) }
         review.open(folder)
         files.open(folder)
         browser.open(project: folder)
@@ -172,8 +175,144 @@ final class Workspace {
 }
 
 extension Workspace {
-    /// Asks the language server for hover info (wired once the hover request lands).
+    /// Asks the language server for hover info.
     func hoverContent(_ navigator: CodeNavigator, url: URL, text: String, line: Int, character: Int, language: CodeLanguage) async -> HoverContent? {
-        nil
+        guard let info = await navigator.hover(of: url, text: text, line: line, character: character) else { return nil }
+        let signature = info.signature ?? "", docs = info.documentation ?? ""
+        guard !signature.isEmpty || !docs.isEmpty else { return nil }
+        return HoverContent(signature: signature, documentation: docs, language: language)
+    }
+
+    // MARK: Reading aids: semantic colors, inline hints, usage/author lenses, jump icons
+
+    /// For the editor: everything, once the text is shown or typing pauses.
+    func loadReadingAids(editor view: CodeEditorView, url: URL) {
+        let text = view.currentText
+        let current = { [weak view] in view?.currentText == text }
+        view.lineGutter.onMarkClick = { [weak self, weak view] line, _, rect in
+            guard let self, let view else { return }
+            NavigationAnchor.set(view.lineGutter, rect)
+            self.openJumpTargets(line: line, url: url, text: view.currentText)
+        }
+        view.pane.onLensClick = { [weak self, weak view] lens in
+            guard let self, let view else { return }
+            self.navigate(.references, url: url, text: view.currentText, line: lens.line, character: lens.character)
+        }
+        loadReadingAids(pane: view.pane, gutter: view.lineGutter, url: url, text: text, row: { $0 }, current: current)
+    }
+
+    /// For the diff's working-file pane.
+    func loadReadingAids(diff view: RibbonDiffNSView) {
+        guard let root, let doc = review.diff, let text = view.shownWorkText else { return }
+        let url = root.appendingPathComponent(doc.change.path)
+        let current = { [weak view] in view?.shownWorkText == text && !(view?.isDirty ?? true) }
+        loadReadingAids(pane: view.workPane, gutter: nil, url: url, text: text, row: { [weak view] in view?.workRow(ofFileLine: $0) }, current: current)
+    }
+
+    private func loadReadingAids(pane: CodeTextView, gutter: LineNumberGutter?, url: URL, text: String,
+                                 row: @escaping (Int) -> Int?, current: @escaping () -> Bool) {
+        guard let navigator, navigator.isSupported(url) else {
+            pane.inlayHints = []
+            pane.lenses = []
+            gutter?.marks = [:]
+            return
+        }
+        let lineCount = text.reduce(into: 1) { if $1 == "\n" { $0 += 1 } }
+        Task { [weak pane] in
+            let tokens = await navigator.semanticTokens(of: url, text: text)
+            guard let pane, current() else { return }
+            pane.applySemanticTokens(tokens, display: row)
+        }
+        Task { [weak pane] in
+            let hints = await navigator.inlayHints(of: url, text: text, lines: 0..<lineCount)
+            guard let pane, current() else { return }
+            pane.inlayHints = hints.compactMap { h in
+                guard let label = Self.hintLabel(h) else { return nil }
+                return row(h.line).map { InlayHintMark(line: $0, character: h.character, label: label, padLeft: h.paddingLeft, padRight: h.paddingRight) }
+            }
+        }
+        let repo = review.repo, path = root.map { Self.relativePath(url, in: $0) }
+        Task { [weak pane] in
+            async let lensList = navigator.codeLenses(of: url, text: text)
+            async let symbolList = navigator.documentSymbols(of: url, text: text)
+            let (lenses, symbols) = await (lensList, symbolList)
+            let declarations = symbols.flatMap(\.flattened)
+            // One lens per line: usages (and implementations) from the server, the last author from git.
+            var byLine: [Int: [CodeLensInfo]] = [:]
+            for l in lenses { byLine[l.line, default: []].append(l) }
+            let lines = byLine.keys.sorted()
+            let spans: [ClosedRange<Int>] = lines.map { line in
+                let d = declarations.first { $0.selectionRange.start.line == line }
+                return (line + 1)...((d?.range.end.line ?? line) + 1) // blame lines are 1-based
+            }
+            var authors: [(author: String, date: Date)?] = Array(repeating: nil, count: lines.count)
+            if let repo, let path, !lines.isEmpty {
+                authors = (try? await repo.lastAuthors(path: path, ranges: spans, workingText: Data(text.utf8))) ?? authors
+            }
+            guard let pane, current() else { return }
+            pane.lenses = lines.enumerated().compactMap { i, line in
+                guard let r = row(line) else { return nil }
+                let infos = byLine[line] ?? []
+                var parts = infos.map(Self.lensText)
+                if let a = authors[i] { parts.append(a.author) }
+                return LineLensMark(line: r, character: infos.first?.character ?? 0, text: parts.joined(separator: " · "))
+            }
+        }
+        if let gutter {
+            Task { [weak gutter] in
+                let marks = await navigator.gutterMarks(of: url, text: text)
+                guard let gutter, current() else { return }
+                var out: [Int: LineNumberGutter.JumpMark] = [:]
+                for m in marks { if let r = row(m.line) { out[r] = m.kind == .overrides ? .overrides : .implemented } }
+                gutter.marks = out
+                jumpTargets[url] = Dictionary(marks.map { ($0.line, $0) }, uniquingKeysWith: { a, _ in a })
+            }
+        }
+    }
+
+    /// What a hint shows: nothing for a type that only repeats a literal (": 30", ": 'bolt'"),
+    /// and long types cut short, as VS Code does.
+    nonisolated static func hintLabel(_ h: InlayHint) -> String? {
+        var label = h.label.trimmingCharacters(in: .whitespaces)
+        if h.kind == .type {
+            let type = label.hasPrefix(":") ? label.dropFirst().trimmingCharacters(in: .whitespaces) : label
+            if type.first.map({ $0.isNumber || $0 == "\"" || $0 == "'" || $0 == "`" || $0 == "-" }) ?? true || type == "true" || type == "false" { return nil }
+        }
+        if label.count > 36 { label = String(label.prefix(35)) + "…" }
+        return label
+    }
+
+    /// "3 references" → "3 usages", as WebStorm says it.
+    nonisolated static func lensText(_ lens: CodeLensInfo) -> String {
+        guard lens.kind == .references else { return lens.title }
+        let n = Int(lens.title.prefix { $0.isNumber }) ?? 0
+        return n == 0 ? "no usages" : n == 1 ? "1 usage" : "\(n) usages"
+    }
+
+    nonisolated static func relativePath(_ url: URL, in root: URL) -> String {
+        let r = root.standardizedFileURL.path, p = url.standardizedFileURL.path
+        return p.hasPrefix(r + "/") ? String(p.dropFirst(r.count + 1)) : p
+    }
+
+    /// A gutter icon was clicked: one target opens, several show in the usages popover.
+    func openJumpTargets(line: Int, url: URL, text: String) {
+        guard let mark = jumpTargets[url]?[line] else { return }
+        let targets = mark.targets.compactMap(CodeLocation.init)
+        if targets.count == 1 { open(targets[0]); return }
+        let symbol = Self.word(in: text, line: line, character: Self.firstWordColumn(text, line: line)) ?? "Symbol"
+        ReferencesPresenter.shared.show(symbol: symbol, locations: targets, root: root,
+                                        noun: mark.kind == .overrides ? "overridden declaration" : "implementation",
+                                        textOf: { _ in nil }, open: { [weak self] loc in self?.open(loc) })
+    }
+
+    nonisolated static func firstWordColumn(_ text: String, line: Int) -> Int {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard line < lines.count else { return 0 }
+        // The declared name: the identifier before the first "(" or ":" or "{", else the first one.
+        let s = String(lines[line])
+        if let m = s.firstMatch(of: /([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*[(:{]/) {
+            return s.utf16.distance(from: s.utf16.startIndex, to: m.1.startIndex.samePosition(in: s.utf16) ?? s.utf16.startIndex)
+        }
+        return s.utf16.prefix { $0 == 32 || $0 == 9 }.count
     }
 }

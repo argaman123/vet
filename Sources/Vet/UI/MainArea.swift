@@ -159,6 +159,8 @@ struct EditorScreen: View {
                     app.workspace.navigate(kind, url: url, text: text, line: line, character: character)
                 }, hover: { url, text, line, character in
                     app.workspace.hover(url: url, text: text, line: line, character: character)
+                }, readingAids: { view, url in
+                    app.workspace.loadReadingAids(editor: view, url: url)
                 })
             }
         }

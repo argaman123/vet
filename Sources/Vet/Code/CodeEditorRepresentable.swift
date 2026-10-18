@@ -9,6 +9,8 @@ struct CodeEditorRepresentable: NSViewRepresentable {
     let jump: Int
     var navigator: ((CodeTextView.Navigation, URL, String, Int, Int) -> Void)?
     var hover: ((URL, String, Int, Int) -> Void)?
+    /// Loads semantic colors, hints, lenses and gutter icons for the shown text.
+    var readingAids: ((CodeEditorView, URL) -> Void)?
 
     func makeNSView(context: Context) -> CodeEditorView {
         let v = model.editorView // kept by the model across tab switches
@@ -34,10 +36,15 @@ struct CodeEditorRepresentable: NSViewRepresentable {
                 navigator?(kind, url, view.currentText, line, character)
             }, copyLocation: "\(model.relativePath ?? url.path):\(line + 1)")
         }
+        view.onTextSettled = { [weak view, weak model] in
+            guard let view, let url = model?.openURL else { return }
+            readingAids?(view, url)
+        }
         if view.shownVersion != version, let text = model.text {
             view.shownVersion = version
             view.shownJump = jump
             view.load(text, language: model.language, force: true)
+            if let url = model.openURL { readingAids?(view, url) }
             // After layout, so the target can sit a third of the way down.
             if let target = model.target { DispatchQueue.main.async { view.scrollTo(line: target.line, character: target.character) } }
         } else if view.shownJump != jump {

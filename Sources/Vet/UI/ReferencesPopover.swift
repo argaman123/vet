@@ -19,10 +19,11 @@ final class ReferencesPresenter: NSObject, NSPopoverDelegate {
     static let shared = ReferencesPresenter()
     private var popover: NSPopover?
 
-    func show(symbol: String, locations: [CodeLocation], root: URL?, textOf: @escaping (URL) -> String?,
+    func show(symbol: String, locations: [CodeLocation], root: URL?, noun: String = "usage", textOf: @escaping (URL) -> String?,
               open: @escaping (CodeLocation) -> Void) {
         popover?.close()
         let model = ReferencesModel(symbol: symbol, locations: locations, root: root, textOf: textOf)
+        model.noun = noun
         let p = NSPopover()
         p.behavior = .transient
         p.animates = true
@@ -63,6 +64,8 @@ final class ReferencesModel {
     }
 
     let symbol: String
+    /// What the matches are ("usage", "implementation"), for the header.
+    var noun = "usage"
     let files: [File]
     var selection: String?
     private let textOf: (URL) -> String?
@@ -128,7 +131,7 @@ struct ReferencesView: View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Text(model.symbol).font(.system(.body, design: .monospaced)).fontWeight(.semibold)
-                Text("\(model.count) usage\(model.count == 1 ? "" : "s") in \(model.files.count) file\(model.files.count == 1 ? "" : "s")")
+                Text("\(model.count) \(model.noun)\(model.count == 1 ? "" : "s") in \(model.files.count) file\(model.files.count == 1 ? "" : "s")")
                     .foregroundStyle(.secondary)
                 Spacer()
                 if let hit = model.selectedHit {
