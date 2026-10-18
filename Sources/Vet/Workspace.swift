@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import VetCore
 
 /// One open project: its Review and Files state, sharing a single folder watcher.
 @MainActor @Observable
@@ -68,6 +69,16 @@ final class Workspace {
                     return view
                 }, open: { [weak self] loc in self?.open(loc) })
             }
+        }
+    }
+
+    /// Hover info at (line, column): the symbol's signature and documentation in a popover.
+    func hover(url: URL, text: String, line: Int, character: Int) {
+        guard let navigator, navigator.isSupported(url) else { return }
+        let language = CodeLanguage(path: url.path)
+        Task {
+            guard let content = await hoverContent(navigator, url: url, text: text, line: line, character: character, language: language) else { return }
+            HoverPresenter.shared.show(content)
         }
     }
 
@@ -143,6 +154,7 @@ final class Workspace {
         navigator?.shutdown()
         navigator = folder.map { CodeNavigator(root: $0) }
         review.navigator = { [weak self] kind, url, text, line, character in self?.navigate(kind, url: url, text: text, line: line, character: character) }
+        review.hoverer = { [weak self] url, text, line, character in self?.hover(url: url, text: text, line: line, character: character) }
         review.open(folder)
         files.open(folder)
         browser.open(project: folder)
@@ -156,5 +168,12 @@ final class Workspace {
                 self.files.diskChanged()
             }
         }
+    }
+}
+
+extension Workspace {
+    /// Asks the language server for hover info (wired once the hover request lands).
+    func hoverContent(_ navigator: CodeNavigator, url: URL, text: String, line: Int, character: Int, language: CodeLanguage) async -> HoverContent? {
+        nil
     }
 }

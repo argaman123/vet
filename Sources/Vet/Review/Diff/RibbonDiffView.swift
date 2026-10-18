@@ -28,6 +28,7 @@ struct RibbonDiffView: NSViewRepresentable {
         }
         v.onStageLines = { [weak model] lines, snapshot in model?.stageLines(lines, snapshot: snapshot) }
         v.onNavigate = { [weak model] kind, left, line, character in model?.navigate(kind, left: left, line: line, character: character) }
+        v.onHover = { [weak model] line, character in model?.hover(line: line, character: character) }
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
         return v
     }
@@ -72,6 +73,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     var onAsk: ((Bool, ClosedRange<Int>, String) -> Void)?
     var onStageLines: ((Range<Int>, String) -> Void)?
     var onNavigate: ((CodeTextView.Navigation, Bool, Int, Int) -> Void)?
+    /// Hover on a working-file line (HEAD lines aren't what the language server has open).
+    var onHover: ((Int, Int) -> Void)?
     private var cards: [NoteCardView] = []
     /// Where each card sits in its text view's coordinates; repositioned over the panes on scroll.
     private var cardPlaces: [(card: NoteCardView, left: Bool, rect: NSRect)] = []
@@ -138,6 +141,10 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         rightText.contextItems = { [weak self] line, character in self?.menuItems(left: false, displayLine: line, character: character) ?? [] }
         leftText.onNavigate = { [weak self] kind, line, character in self?.navigate(kind, left: true, displayLine: line, character: character) }
         rightText.onNavigate = { [weak self] kind, line, character in self?.navigate(kind, left: false, displayLine: line, character: character) }
+        rightText.onHover = { [weak self] line, character in
+            guard let self, let (side, fileLine) = self.resolve(left: false, displayLine: line), !side else { return }
+            self.onHover?(fileLine, character)
+        }
         gutter.onToggle = { [weak self] id, staged, snapshot in self?.onToggle?(id, staged, snapshot) }
         gutter.onDrag = { [weak self] dx in self?.drag(dx) }
         gutter.onResetSplit = { [weak self] in self?.setSplit(0.5) }

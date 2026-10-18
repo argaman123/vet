@@ -19,6 +19,11 @@ final class CodeTextView: NSTextView {
     var onNavigate: ((Navigation, Int, Int) -> Void)?
     /// The right-click menu's items for (display line, column), above Copy. Nil keeps a minimal menu.
     var contextItems: ((Int, Int) -> [NSMenuItem])?
+    /// The pointer rested on a symbol at (display line, column): the owner asks the language
+    /// server and answers with `HoverPresenter.shared.show`.
+    var onHover: ((Int, Int) -> Void)?
+    private var hoverWork: DispatchWorkItem?
+    private var hoverTracking: NSTrackingArea?
 
     static func make() -> (NSScrollView, CodeTextView) {
         let scroll = NSScrollView()
@@ -100,6 +105,43 @@ final class CodeTextView: NSTextView {
     }
 
     @objc func vetSave(_ sender: Any?) { onSave?() }
+
+    // MARK: Hover
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking { removeTrackingArea(hoverTracking) }
+        let t = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(t)
+        hoverTracking = t
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        hoverWork?.cancel()
+        guard onHover != nil, NSEvent.pressedMouseButtons == 0 else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.hoverRested(at: p) } }
+        hoverWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hoverWork?.cancel()
+        HoverPresenter.shared.cancelPending()
+    }
+
+    /// Asks for hover info when the pointer is really on a symbol (not past the line's end).
+    private func hoverRested(at p: NSPoint) {
+        guard let window, window.isKeyWindow, let pos = position(at: p) else { return }
+        let rect = symbolRect(line: pos.line, character: pos.character)
+        guard rect.insetBy(dx: -1, dy: -2).contains(p), word(line: pos.line, character: pos.character) != nil else { return }
+        let key = "\(ObjectIdentifier(self).hashValue):\(pos.line):\(Int(rect.minX))"
+        guard !HoverPresenter.shared.isShowing(key) else { return }
+        HoverPresenter.shared.prepare(view: self, rect: rect, key: key)
+        onHover?(pos.line, pos.character)
+    }
 
 
     /// A short, reviewer-only menu instead of the text system's long one.

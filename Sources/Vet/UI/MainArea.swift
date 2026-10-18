@@ -155,9 +155,11 @@ struct EditorScreen: View {
             if let message = files.message {
                 Text(message).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                CodeEditorRepresentable(model: files, version: files.docVersion, jump: files.jumpSerial) { kind, url, text, line, character in
+                CodeEditorRepresentable(model: files, version: files.docVersion, jump: files.jumpSerial, navigator: { kind, url, text, line, character in
                     app.workspace.navigate(kind, url: url, text: text, line: line, character: character)
-                }
+                }, hover: { url, text, line, character in
+                    app.workspace.hover(url: url, text: text, line: line, character: character)
+                })
             }
         }
         .background(Color(nsColor: .textBackgroundColor))

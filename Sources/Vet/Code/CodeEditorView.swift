@@ -17,6 +17,11 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     var shownJump = -1
     /// ⌘-click or the right-click menu asked to navigate from this position.
     var onNavigate: ((CodeTextView.Navigation, Int, Int) -> Void)?
+    /// The pointer rested on a symbol at (line, column).
+    var onHover: ((Int, Int) -> Void)? {
+        get { textView.onHover }
+        set { textView.onHover = newValue }
+    }
     var contextItems: ((Int, Int) -> [NSMenuItem])? {
         get { textView.contextItems }
         set { textView.contextItems = newValue }

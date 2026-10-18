@@ -448,6 +448,13 @@ final class ReviewModel {
     // MARK: Code navigation (wired to the language servers by the workspace)
 
     var navigator: ((CodeTextView.Navigation, URL, String, Int, Int) -> Void)?
+    var hoverer: ((URL, String, Int, Int) -> Void)?
+
+    /// Hover info for a working-file line of the open diff.
+    func hover(line: Int, character: Int) {
+        guard let root, let doc = diff, let staging = doc.staging else { return }
+        hoverer?(root.appendingPathComponent(doc.change.path), staging.work.joinedString(), line, character)
+    }
 
     /// ⌘-click or a navigation menu item in the diff. Only the working file (right side) is a real
     /// file on disk; on the HEAD side the same line of the working file is used if it's unchanged.

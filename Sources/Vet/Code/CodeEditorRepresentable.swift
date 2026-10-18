@@ -8,6 +8,7 @@ struct CodeEditorRepresentable: NSViewRepresentable {
     let version: Int
     let jump: Int
     var navigator: ((CodeTextView.Navigation, URL, String, Int, Int) -> Void)?
+    var hover: ((URL, String, Int, Int) -> Void)?
 
     func makeNSView(context: Context) -> CodeEditorView {
         let v = model.editorView // kept by the model across tab switches
@@ -21,6 +22,10 @@ struct CodeEditorRepresentable: NSViewRepresentable {
         view.onNavigate = { [weak view, weak model] kind, line, character in
             guard let view, let model, let url = model.openURL else { return }
             navigator?(kind, url, view.currentText, line, character)
+        }
+        view.onHover = { [weak view, weak model] line, character in
+            guard let view, let model, let url = model.openURL else { return }
+            hover?(url, view.currentText, line, character)
         }
         view.contextItems = { [weak view, weak model] line, character in
             guard let model, let url = model.openURL else { return [] }
