@@ -14,14 +14,16 @@ final class Workspace {
     var navResults: (title: String, locations: [CodeLocation])?
     /// Shown while a language server answers ("Finding definition…").
     private(set) var navBusy: String?
-    /// Switch to the Files tab (set by the app).
-    var onShowFiles: (() -> Void)?
+    /// Shows a file in the editor after navigation (set by the app; records history).
+    var onOpenFile: ((URL, Int) -> Void)?
     /// Asked to open another project (Review follows the Claude chat you're working in).
     var onOpenProject: ((URL) -> Void)?
     /// Set when Claude finishes a reply in this project: unreviewed files for the Review badge.
     var onClaudeFinished: ((Int) -> Void)?
     private(set) var root: URL?
     private var watcher: RepoWatcher?
+    /// What Search Everywhere currently suggests.
+    var searchResults = SearchResults()
 
     // MARK: Code navigation
 
@@ -75,7 +77,7 @@ final class Workspace {
     func open(_ location: CodeLocation) {
         navResults = nil
         files.show(location.url, line: location.startLine, character: location.startCharacter)
-        onShowFiles?()
+        if files.openURL == location.url { onOpenFile?(location.url, location.startLine) }
     }
 
     func startLink() {

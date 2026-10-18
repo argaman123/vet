@@ -76,6 +76,35 @@ final class ReviewModel {
 
     var reviewedCount: Int { changes.filter { stage(of: $0) == .staged }.count }
 
+    // MARK: Branch, layout and commit (wired to GitRepo's branch/commit operations)
+
+    /// The checked-out branch (nil when detached or not a repo).
+    private(set) var branch: String?
+    /// Local branches for the title menu.
+    private(set) var branches: [String] = []
+    /// Unified (one column) instead of side by side.
+    var unified = UserDefaults.standard.bool(forKey: "unifiedDiff") {
+        didSet { UserDefaults.standard.set(unified, forKey: "unifiedDiff"); diffVersion += 1 }
+    }
+
+    func refreshBranches() async {
+        guard let root else { branch = nil; branches = []; return }
+        let head = (try? String(contentsOf: GitRepo.gitDir(of: root).appendingPathComponent("HEAD"), encoding: .utf8)) ?? ""
+        branch = head.hasPrefix("ref: refs/heads/") ? String(head.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines) : nil
+    }
+
+    func checkout(_ name: String) {
+        show("Switching branches isn't wired up yet.")
+    }
+
+    func lastCommitMessage() async -> String? { nil }
+
+    /// Commits what's staged (reviewed); optionally pushes. Returns whether it worked.
+    func commit(message: String, amend: Bool, push: Bool) async -> Bool {
+        show("Committing isn't wired up yet.")
+        return false
+    }
+
     func open(_ folder: URL?) {
         // Coming back to the Review tab shouldn't reset your place in the same project.
         if let folder, folder.standardizedFileURL == root?.standardizedFileURL {
@@ -109,6 +138,7 @@ final class ReviewModel {
             // A file that left the list (say Claude committed it) closes, unless you're editing it.
             if let sel = selectedPath, !fresh.contains(where: { $0.path == sel }), !diffDirty { selectedPath = nil }
             version += 1
+            await refreshBranches()
             await loadDiff()
             await autoStageUnimportant()
         } catch {

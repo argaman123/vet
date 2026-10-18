@@ -178,9 +178,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftWords.merge(h.headCols) { $1 }
             rightWords.merge(h.workCols) { $1 }
         }
-        leftText.textStorage?.setAttributedString(Self.text(staging.head, layout.left, doc.language, words: leftWords, color: DiffTheme.removed))
+        leftText.textStorage?.setAttributedString(Self.text(staging.head, layout.left, doc.language, words: leftWords, color: DiffTheme.removed, foldStarts: layout.foldHead.mapValues(\.lowerBound)))
         defer { rightText.undoManager?.removeAllActions(withTarget: rightText.textStorage as Any) }
-        rightText.textStorage?.setAttributedString(Self.text(staging.work, layout.right, doc.language, words: rightWords, color: DiffTheme.added))
+        rightText.textStorage?.setAttributedString(Self.text(staging.work, layout.right, doc.language, words: rightWords, color: DiffTheme.added, foldStarts: layout.foldWork.mapValues(\.lowerBound)))
 
         var leftBands: [CodeTextView.Band] = [], rightBands: [CodeTextView.Band] = []
         var leftMarkers: [(Int, NSColor)] = [], rightMarkers: [(Int, NSColor)] = []
@@ -460,8 +460,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     /// Builds one pane's text: real lines with syntax colors and word highlights, plus fold rows.
     private static func text(_ lines: TextLines, _ display: [DiffLayout.DisplayLine], _ language: CodeLanguage,
-                             words: [Int: [Range<Int>]], color: NSColor) -> NSAttributedString {
-        CodeText.attributed(lines, display, language, words: words, color: color)
+                             words: [Int: [Range<Int>]], color: NSColor, foldStarts: [Int: Int] = [:]) -> NSAttributedString {
+        CodeText.attributed(lines, display, language, words: words, color: color, foldStarts: foldStarts)
     }
 
     // MARK: Layout and divider

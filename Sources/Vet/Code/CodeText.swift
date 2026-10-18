@@ -10,7 +10,8 @@ enum CodeText {
 
     /// One pane's text: `display` picks which file lines show (and where folds go).
     static func attributed(_ lines: TextLines, _ display: [DiffLayout.DisplayLine], _ language: CodeLanguage,
-                           words: [Int: [Range<Int>]] = [:], color: NSColor = DiffTheme.added) -> NSAttributedString {
+                           words: [Int: [Range<Int>]] = [:], color: NSColor = DiffTheme.added,
+                           foldStarts: [Int: Int] = [:]) -> NSAttributedString {
         let full = lines.joinedString()
         let tokens = Highlighter.tokens(full, language: language)
         var starts: [Int] = []
@@ -50,7 +51,10 @@ enum CodeText {
                 var attrs = base
                 attrs[.foregroundColor] = DiffTheme.lineNumber
                 attrs[.vetFold] = id
-                out.append(NSAttributedString(string: "   ⋯   \(hidden) unchanged lines" + newline, attributes: attrs))
+                let scope = foldStarts[id].map { ScopeLabel.chain(lines, at: $0) } ?? ""
+                let label = scope.isEmpty ? "\(hidden) unchanged lines" : "\(scope)  ·  \(hidden) lines"
+                attrs[.font] = NSFont.systemFont(ofSize: 11)
+                out.append(NSAttributedString(string: "  ⌄  " + label + newline, attributes: attrs))
             }
         }
         out.endEditing()
@@ -81,6 +85,41 @@ enum CodeText {
             if tokens[mid].range.location + tokens[mid].range.length <= offset { lo = mid + 1 } else { hi = mid }
         }
         return lo
+    }
+}
+
+/// Where a line sits: the enclosing class and function names, outermost first ("LightningLayer › hover()").
+/// Indentation-based, so it works for any brace or indent language without a language server.
+enum ScopeLabel {
+    static func chain(_ lines: TextLines, at index: Int) -> String {
+        guard index < lines.count else { return "" }
+        func indent(_ s: Substring) -> Int { s.prefix { $0 == " " || $0 == "\t" }.count }
+        var limit = Int.max, names: [String] = []
+        var i = index
+        // The first non-blank line at or after the fold gives the starting depth.
+        while i < lines.count, lines.lines[i].text.trimmingCharacters(in: .whitespaces).isEmpty { i += 1 }
+        if i < lines.count { limit = indent(lines.lines[i].text) }
+        var j = min(index, lines.count) - 1
+        while j >= 0, limit > 0, names.count < 4 {
+            let t = lines.lines[j].text
+            if !t.trimmingCharacters(in: .whitespaces).isEmpty, indent(t) < limit {
+                limit = indent(t)
+                if let name = declaredName(String(t)) { names.append(name) }
+            }
+            j -= 1
+        }
+        return names.reversed().joined(separator: " › ")
+    }
+
+    private static let keywords: Set<String> = ["if", "for", "while", "switch", "catch", "return", "else", "do", "try", "when", "with"]
+
+    private static func declaredName(_ line: String) -> String? {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        if let m = t.firstMatch(of: /(?:class|interface|enum|object|struct|protocol|extension|trait|impl)\s+([A-Za-z_][\w]*)/) { return String(m.1) }
+        if let m = t.firstMatch(of: /(?:def|fun|func|function)\s+([A-Za-z_][\w]*)/) { return String(m.1) + "()" }
+        if let m = t.firstMatch(of: /^(?:(?:public|private|protected|static|readonly|override|async|abstract|export|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\(/),
+           !keywords.contains(String(m.1)) { return String(m.1) + "()" }
+        return nil
     }
 }
 
