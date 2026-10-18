@@ -59,12 +59,3 @@ struct CommitPopover: View {
         }
     }
 }
-
-// MARK: Find in Files (filled in by the search engine)
-
-struct FindTool: View {
-    let app: AppDelegate
-    var body: some View {
-        FindInFilesView(app: app)
-    }
-}

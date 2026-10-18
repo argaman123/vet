@@ -23,6 +23,11 @@ enum DiffTheme {
     /// Folded unchanged lines (IntelliJ's diff separators) and note cards.
     static let foldBand = dynamic(light: hex(0xE4E6EB), dark: hex(0x2B2D30))
     static let foldLabel = dynamic(light: hex(0x6C707E), dark: hex(0x868991))
+    /// The folded-lines button and the wave behind it.
+    static let foldPill = dynamic(light: hex(0xEBECF0), dark: hex(0x2B2D30))
+    static let foldPillHover = dynamic(light: hex(0xDFE1E5), dark: hex(0x393B40))
+    static let foldPillBorder = dynamic(light: hex(0xD3D5DB), dark: hex(0x43454A))
+    static let foldWave = dynamic(light: hex(0xC9CCD6), dark: hex(0x43454A))
     static let text = dynamic(light: hex(0x080808), dark: hex(0xBCBEC4))
     static let lineNumber = dynamic(light: hex(0xAEB3C2), dark: hex(0x4B5059))
     static let lineNumberCurrent = dynamic(light: hex(0x767A8A), dark: hex(0xA1A3AB))
@@ -59,9 +64,31 @@ enum DiffTheme {
     static let unifiedRemovedWord = dynamic(light: hex(0xEDAFAF), dark: hex(0x7A3A3D))
     static let unifiedAddedWord = dynamic(light: hex(0x93D193), dark: hex(0x3E7050))
 
-    static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    static let numberFont = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
-    static let lineHeight: CGFloat = 18
+    // Code text size: pinch a code pane, or ⌘+ / ⌘− / ⌘0. Rows are 1.5× the font size.
+    static let defaultFontSize: CGFloat = 12
+    static var fontSize: CGFloat {
+        let v = UserDefaults.standard.double(forKey: "codeFontSize")
+        return v == 0 ? defaultFontSize : CGFloat(v)
+    }
+    static func setFontSize(_ size: CGFloat) {
+        let clamped = min(28, max(9, size.rounded()))
+        guard clamped != fontSize else { return }
+        UserDefaults.standard.set(Double(clamped), forKey: "codeFontSize")
+        cached = nil
+        NotificationCenter.default.post(name: .vetCodeFontChanged, object: nil)
+    }
+    private static var cached: (size: CGFloat, font: NSFont, number: NSFont, line: CGFloat)?
+    private static var metrics: (size: CGFloat, font: NSFont, number: NSFont, line: CGFloat) {
+        if let c = cached, c.size == fontSize { return c }
+        let s = fontSize
+        let m = (s, NSFont.monospacedSystemFont(ofSize: s, weight: .regular),
+                 NSFont.monospacedDigitSystemFont(ofSize: max(9, s - 1.5), weight: .regular), (s * 1.5).rounded())
+        cached = m
+        return m
+    }
+    static var font: NSFont { metrics.font }
+    static var numberFont: NSFont { metrics.number }
+    static var lineHeight: CGFloat { metrics.line }
     static let inset = NSSize(width: 10, height: 6)
 
     static func token(_ kind: TokenKind) -> NSColor {
@@ -143,4 +170,9 @@ enum DiffTheme {
         case .conflicted: dynamic(light: hex(0xC4221D), dark: hex(0xDE6A66))
         }
     }
+}
+
+extension Notification.Name {
+    /// The code text size changed (every code pane re-lays out).
+    static let vetCodeFontChanged = Notification.Name("VetCodeFontChanged")
 }

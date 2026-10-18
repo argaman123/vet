@@ -189,23 +189,74 @@ extension CodeTextView {
         }
     }
 
-    /// Fold rows drawn like a button: a chevron and the label, centered in the row.
+    /// Fold rows drawn as WebStorm's separators: a wavy line across the row and a pill button
+    /// (chevron and label) that lights up under the pointer.
     func drawFoldRows(in rect: NSRect) {
         guard let storage = textStorage, !foldLines.isEmpty, let range = characterRange(covering: rect) else { return }
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                                                    .foregroundColor: DiffTheme.foldLabel, .paragraphStyle: HintBox.paragraph]
-        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold).applying(.init(paletteColors: [DiffTheme.foldLabel]))
+        let hovered = hoveredFoldLine
         storage.enumerateAttribute(.vetFoldLabel, in: range) { value, r, _ in
             guard let label = value as? String, let frame = segmentFrame(NSRange(location: r.location, length: 1)) else { return }
-            let row = NSRect(x: 0, y: frame.minY, width: bounds.width, height: DiffTheme.lineHeight)
-            var x = textContainerOrigin.x + 4
-            if let chevron = NSImage(systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: "Show unchanged lines")?.withSymbolConfiguration(config) {
-                let size = chevron.size
-                chevron.draw(in: NSRect(x: x, y: row.midY - size.height / 2, width: size.width, height: size.height))
-                x += size.width + 7
-            }
+            let row = NSRect(x: 0, y: frame.minY, width: max(bounds.width, enclosingScrollView?.contentSize.width ?? 0), height: DiffTheme.lineHeight)
+            Self.drawWave(in: row)
+            let lit = hovered == line(at: NSPoint(x: 0, y: row.midY))
+            let fg = lit ? DiffTheme.text : DiffTheme.foldLabel
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: fg, .paragraphStyle: HintBox.paragraph]
+            let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold).applying(.init(paletteColors: [fg]))
+            let chevron = NSImage(systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: "Show unchanged lines")?.withSymbolConfiguration(config)
             let size = (label as NSString).size(withAttributes: attrs)
+            let chevronWidth = chevron?.size.width ?? 0
+            let pill = NSRect(x: textContainerOrigin.x, y: row.minY + 1.5, width: ceil(size.width) + chevronWidth + 22, height: DiffTheme.lineHeight - 3)
+            (lit ? DiffTheme.foldPillHover : DiffTheme.foldPill).setFill()
+            let shape = NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2)
+            shape.fill()
+            DiffTheme.foldPillBorder.setStroke(); shape.lineWidth = 1; shape.stroke()
+            var x = pill.minX + 8
+            if let chevron {
+                chevron.draw(in: NSRect(x: x, y: row.midY - chevron.size.height / 2, width: chevron.size.width, height: chevron.size.height))
+                x += chevronWidth + 6
+            }
             (label as NSString).draw(at: NSPoint(x: x, y: row.midY - size.height / 2), withAttributes: attrs)
         }
     }
+
+    /// The thin wavy line WebStorm draws where unchanged lines are folded away.
+    static func drawWave(in row: NSRect) {
+        let wave = NSBezierPath()
+        let mid = row.midY, amp: CGFloat = 1.6, step: CGFloat = 4
+        var x = row.minX
+        wave.move(to: NSPoint(x: x, y: mid))
+        while x < row.maxX {
+            wave.curve(to: NSPoint(x: x + step * 2, y: mid), controlPoint1: NSPoint(x: x + step * 0.5, y: mid - amp * 2), controlPoint2: NSPoint(x: x + step * 1.5, y: mid + amp * 2))
+            x += step * 2
+        }
+        wave.lineWidth = 1
+        DiffTheme.foldWave.setStroke()
+        wave.stroke()
+    }
+
+    /// Re-applies the code font and row height after the text size changed (keeps edits).
+    func applyCodeFont() {
+        guard let storage = textStorage else { return }
+        let all = NSRange(location: 0, length: storage.length)
+        storage.beginEditing()
+        storage.enumerateAttribute(.font, in: all) { value, r, _ in
+            if let f = value as? NSFont, f.isFixedPitch { storage.addAttribute(.font, value: DiffTheme.font, range: r) }
+        }
+        storage.addAttribute(.paragraphStyle, value: CodeTextView.paragraph, range: all)
+        storage.endEditing()
+        font = DiffTheme.font
+        typingAttributes = CodeText.baseAttributes
+        relayoutVisibleText()
+    }
+
+    // Pinch to change the code text size (every pane follows).
+    override func magnify(with event: NSEvent) {
+        pinch += event.magnification
+        if abs(pinch) >= 0.12 {
+            DiffTheme.setFontSize(DiffTheme.fontSize + (pinch > 0 ? 1 : -1))
+            pinch = 0
+        }
+        if event.phase == .ended || event.phase == .cancelled { pinch = 0 }
+    }
 }
+

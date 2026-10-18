@@ -7,10 +7,10 @@ final class RibbonGutterView: NSView {
     /// `unified`: one pane; both number columns (HEAD, working file) then the checkboxes.
     enum Mode { case split, rightOnly, leftOnly, unified }
     static let numbersWidth: CGFloat = 40
-    static let ribbonWidth: CGFloat = 44
-    /// Side by side: the staging checkboxes' own column, between the ribbon and the new line
-    /// numbers, so they don't sit on the colored bridge.
-    static let checkWidth: CGFloat = 22
+    static let ribbonWidth: CGFloat = 36
+    /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
+    /// staging checkbox; each change's color runs unbroken through all of them.
+    static let checkWidth: CGFloat = 24
 
     var mode: Mode = .split { didSet { needsDisplay = true } }
     var diffLayout: DiffLayout?
@@ -73,8 +73,14 @@ final class RibbonGutterView: NSView {
         needsDisplay = true
     }
 
+    /// A click flips the section between staged and not (a mixed box stages the rest), from the
+    /// state on screen, and shows the result at once; the button's own off→mixed→on cycle would
+    /// read a quick second click as "stage" again.
     @objc private func toggled(_ sender: NSButton) {
-        onToggle?(sender.tag, sender.state != .off, snapshotID)
+        let stage = states[sender.tag] != .staged
+        states[sender.tag] = stage ? .staged : .unstaged
+        sender.state = stage ? .on : .off
+        onToggle?(sender.tag, stage, snapshotID)
     }
 
     private func y(_ line: Int, left: Bool) -> CGFloat {
@@ -106,7 +112,7 @@ final class RibbonGutterView: NSView {
             if mode == .split {
                 // At the change's first new line (or on the marker where lines were only removed).
                 let top = s.right.isEmpty ? y(s.right.lowerBound, left: false) - DiffTheme.lineHeight / 2 : y(s.right.lowerBound, left: false)
-                let x = Self.numbersWidth + Self.ribbonWidth + (Self.checkWidth - 16) / 2
+                let x = Self.numbersWidth * 2 + Self.ribbonWidth + (Self.checkWidth - 16) / 2
                 b.frame = NSRect(x: x, y: top + (DiffTheme.lineHeight - 16) / 2, width: 16, height: 16)
                 b.isHidden = top < -20 || top > bounds.height + 20
                 continue
@@ -153,32 +159,24 @@ final class RibbonGutterView: NSView {
                 let change = DiffTheme.change(head: h.head, work: h.work)
                 DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: staged).setFill()
                 path.fill()
-                if staged { // a reviewed section gets an outline instead of a strong fill
-                    DiffTheme.marker(change).withAlphaComponent(0.6).setStroke()
-                    path.lineWidth = 1
-                    path.stroke()
-                }
+
             }
         }
-        // Folded rows continue through the number columns (each side at its own scroll position).
-        DiffTheme.foldBand.setFill()
+        // Folded rows: the wave continues through the number columns (each side at its own scroll).
         for s in diffLayout.segments {
             guard case .fold = s.kind else { continue }
             switch mode {
             case .split:
-                NSRect(x: 0, y: y(s.left.lowerBound, left: true), width: Self.numbersWidth, height: DiffTheme.lineHeight).fill()
-                NSRect(x: bounds.width - Self.numbersWidth, y: y(s.right.lowerBound, left: false), width: Self.numbersWidth, height: DiffTheme.lineHeight).fill()
+                CodeTextView.drawWave(in: NSRect(x: 0, y: y(s.left.lowerBound, left: true), width: Self.numbersWidth, height: DiffTheme.lineHeight))
+                let x1 = Self.numbersWidth + Self.ribbonWidth
+                CodeTextView.drawWave(in: NSRect(x: x1, y: y(s.right.lowerBound, left: false), width: bounds.width - x1, height: DiffTheme.lineHeight))
             case .rightOnly:
-                NSRect(x: 0, y: y(s.right.lowerBound, left: false), width: bounds.width, height: DiffTheme.lineHeight).fill()
+                CodeTextView.drawWave(in: NSRect(x: 0, y: y(s.right.lowerBound, left: false), width: bounds.width, height: DiffTheme.lineHeight))
             case .leftOnly:
-                NSRect(x: 0, y: y(s.left.lowerBound, left: true), width: bounds.width, height: DiffTheme.lineHeight).fill()
+                CodeTextView.drawWave(in: NSRect(x: 0, y: y(s.left.lowerBound, left: true), width: bounds.width, height: DiffTheme.lineHeight))
             case .unified:
-                break // the unified pane draws its own rows; the gutter has its row ranges below
+                break
             }
-        }
-        if mode == .split { // the checkbox column stays plain
-            DiffTheme.gutter.setFill()
-            NSRect(x: Self.numbersWidth + Self.ribbonWidth, y: 0, width: Self.checkWidth, height: bounds.height).fill()
         }
         // Line numbers.
         let attrs: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumber]
@@ -219,7 +217,7 @@ final class RibbonGutterView: NSView {
         switch mode {
         case .split:
             numbers(leftNumbers, left: true, x: 0)
-            numbers(rightNumbers, left: false, x: Self.numbersWidth + Self.ribbonWidth + Self.checkWidth)
+            numbers(rightNumbers, left: false, x: Self.numbersWidth + Self.ribbonWidth)
         case .rightOnly: numbers(rightNumbers, left: false, x: Self.ribbonWidth)
         case .leftOnly: numbers(leftNumbers, left: true, x: 0)
         case .unified:

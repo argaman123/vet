@@ -4,27 +4,11 @@ import Observation
 /// What the window shows: the sidebar tool, the main area's content and its history.
 @MainActor @Observable
 final class UIState {
+    /// What the sidebar shows: the changes (always, by default) or the project's files (⌘2).
     enum Tool: String, CaseIterable, Identifiable {
-        case changes, project, find, run, browser
+        case changes, project
         var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .changes: "Changes"
-            case .project: "Project"
-            case .find: "Find in Files"
-            case .run: "Run"
-            case .browser: "Browser"
-            }
-        }
-        var symbol: String {
-            switch self {
-            case .changes: "checklist"
-            case .project: "folder"
-            case .find: "text.magnifyingglass"
-            case .run: "play.rectangle"
-            case .browser: "safari"
-            }
-        }
+        var title: String { self == .changes ? "Changes" : "Project" }
     }
 
     /// The main area's content. Navigation history is a list of these.

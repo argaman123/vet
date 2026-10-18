@@ -4,35 +4,21 @@ import UniformTypeIdentifiers
 import SwiftUI
 import VetCore
 
-/// The glass sidebar: a tool picker on top (WebStorm's tool strip, the Mac way) and the tool.
+/// The glass sidebar: the changes, or the project's files.
 struct SidebarView: View {
     let app: AppDelegate
 
     var body: some View {
-        let ui = app.ui
-        VStack(spacing: 0) {
-            Picker("Tool", selection: Bindable(ui).tool) {
-                ForEach(UIState.Tool.allCases) { tool in
-                    Image(systemName: tool.symbol).accessibilityLabel(tool.title).help(tool.title).tag(tool)
-                }
+        // No tool strip: the changes are the sidebar; the project's files come up with ⌘2.
+        Group {
+            switch app.ui.tool {
+            case .changes: ChangesTool(app: app)
+            case .project: ProjectTool(app: app)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
-            Group {
-                switch ui.tool {
-                case .changes: ChangesTool(app: app)
-                case .project: ProjectTool(app: app)
-                case .find: FindTool(app: app)
-                case .run: RunTool(app: app)
-                case .browser: BrowserTool(app: app)
-                }
-            }
-            .frame(maxHeight: .infinity)
-            // IDE trees want dense rows (Xcode's navigators use the small size too).
-            .environment(\.sidebarRowSize, .small)
         }
+        .frame(maxHeight: .infinity)
+        // IDE trees want dense rows (Xcode's navigators use the small size too).
+        .environment(\.sidebarRowSize, .small)
     }
 }
 
@@ -49,13 +35,13 @@ struct ChangesTool: View {
                 Text(review.changes.isEmpty ? "No changes" : "\(review.reviewedCount) of \(review.changes.count) reviewed")
                     .foregroundStyle(.secondary)
                 Spacer()
-                ToolButton("arrow.down.to.line", "Next Unreviewed File (⌥⌘U)") {
-                    review.nextUnreviewed()
-                    if let p = review.selectedPath { app.ui.show(.diff(path: p)) }
-                }
                 ToolButton("line.3.horizontal.decrease.circle", "Unimportant Files…") { app.ui.editingRules = true }
-                ToolButton("arrow.up.left.and.arrow.down.right", "Expand All") { review.expandAll() }
-                ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { review.collapseAll() }
+                // One button that flips between expanding and collapsing everything.
+                if review.allExpanded {
+                    ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { review.collapseAll() }
+                } else {
+                    ToolButton("arrow.up.left.and.arrow.down.right", "Expand All") { review.expandAll() }
+                }
             }
             ClaudeLinkRow(app: app)
             if app.projects.current == nil {
@@ -75,24 +61,15 @@ struct ChangesTool: View {
 
     private var changesList: some View {
         let review = app.workspace.review
-        let tracked = FileTreeNode.build(review.changes.filter { $0.kind != .untracked })
-        let untracked = FileTreeNode.build(review.changes.filter { $0.kind == .untracked })
+        // New files sit in the same tree as everything else (checking one adds it to git).
+        let all = review.tree
         return List(selection: Binding(get: { review.selectedPath }, set: { path in
             if let path, review.changes.contains(where: { $0.path == path }) { app.showDiff(path) }
         })) {
-            if !tracked.isEmpty {
-                Section {
-                    ForEach(CompactChange.compact(tracked)) { ChangeNodeRow(app: app, item: $0, quickLook: $quickLook) }
-                } header: {
-                    SectionHeader(title: "Changes", nodes: tracked, app: app)
-                }
-            }
-            if !untracked.isEmpty {
-                Section {
-                    ForEach(CompactChange.compact(untracked)) { ChangeNodeRow(app: app, item: $0, quickLook: $quickLook) }
-                } header: {
-                    SectionHeader(title: "Not in Git", nodes: untracked, app: app)
-                }
+            Section {
+                ForEach(CompactChange.compact(all)) { ChangeNodeRow(app: app, item: $0, quickLook: $quickLook) }
+            } header: {
+                SectionHeader(title: "Changes", nodes: all, app: app)
             }
         }
         .listStyle(.sidebar)
@@ -156,15 +133,25 @@ struct ChangeNodeRow: View {
             } label: {
                 HStack(spacing: 6) {
                     TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }
-                    Label(item.name, systemImage: review.isMarked(node.path) ? "folder.badge.minus" : "folder")
+                    Label(item.name, systemImage: "folder")
                         .lineLimit(1)
-                        .opacity(review.isMarked(node.path) ? 0.55 : 1)
+                        .opacity(review.stage(of: node) == .staged ? 0.65 : 1) // reviewed names recede
+                    Spacer(minLength: 0)
                 }
+                .contentShape(Rectangle())
+                // Double-click opens or closes the folder, like Finder and the IDEs.
+                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    if review.expanded.contains(node.path) { review.expanded.remove(node.path) } else { review.expanded.insert(node.path) }
+                })
             }
+            .listRowBackground(review.isMarked(node.path) ? Color.primary.opacity(0.04) : nil)
             .contextMenu { menu }
         } else {
             FileChangeLabel(app: app, node: node)
                 .tag(node.path)
+                // Clicking the selected file again brings its diff back (e.g. from the browser).
+                .simultaneousGesture(TapGesture().onEnded { app.showDiff(node.path) })
+                .listRowBackground(review.isMarked(node.path) ? Color.primary.opacity(0.04) : nil)
                 .contextMenu { menu }
         }
     }
@@ -198,24 +185,20 @@ private struct FileChangeLabel: View {
     var body: some View {
         let review = app.workspace.review
         let change = node.change!
-        let marked = review.isMarked(node.path)
         HStack(spacing: 6) {
             TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }
             Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 0) {
                 Text(node.name).lineLimit(1).truncationMode(.middle)
                     .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(change.kind.color))
+                    .opacity(review.stage(of: change) == .staged && prominence != .increased ? 0.65 : 1) // reviewed names recede
                 if let orig = change.origPath {
                     Text("from \((orig as NSString).lastPathComponent)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
-            Text(change.kind.letter)
-                .font(.caption.weight(.semibold).monospaced())
-                .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(change.kind.color))
-                .help(change.kind.help)
         }
-        .opacity(marked ? 0.55 : 1)
+        .help(change.kind.help)
     }
 }
 

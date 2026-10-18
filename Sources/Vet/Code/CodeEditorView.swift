@@ -49,6 +49,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         textView.onNavigate = { [weak self] kind, line, character in self?.onNavigate?(kind, line, character) }
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+        NotificationCenter.default.addObserver(self, selector: #selector(fontChanged), name: .vetCodeFontChanged, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -154,6 +155,14 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         let height = DiffTheme.inset.height * 2 + CGFloat(lineCount) * DiffTheme.lineHeight
         textView.minSize = NSSize(width: 0, height: height)
         textView.setFrameSize(NSSize(width: max(textView.frame.width, scroll.contentSize.width), height: max(height, scroll.contentSize.height)))
+    }
+
+    @objc private func fontChanged() {
+        textView.applyCodeFont()
+        sizeDocument(lineCount: max(1, gutter.numbers.count))
+        gutter.needsDisplay = true
+        updateSticky()
+        sticky.needsDisplay = true
     }
 
     @objc private func scrolled() {

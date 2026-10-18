@@ -12,10 +12,11 @@ struct ProjectTool: View {
         let files = app.workspace.files
         VStack(spacing: 0) {
             ToolHeader {
-                Text(app.projects.current?.lastPathComponent ?? "No project").foregroundStyle(.secondary).lineLimit(1)
+                Text("Project").fontWeight(.semibold).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 ToolButton("scope", "Reveal the Open File") { if let p = files.relativePath { files.expandAncestors(of: p) } }
                 ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { files.expanded = [] }
+                ToolButton("xmark", "Back to Changes (⌘1)") { app.ui.tool = .changes }
             }
             if app.projects.current == nil {
                 EmptyToolState(title: "No Project", message: "Open a project folder.") {
@@ -101,80 +102,5 @@ struct ProjectNodeRow: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(node.path, forType: .string)
         }
-    }
-}
-
-// MARK: Run: configurations, start/stop, output
-
-struct RunTool: View {
-    let app: AppDelegate
-
-    var body: some View {
-        let run = app.workspace.run, ui = app.ui
-        VStack(spacing: 0) {
-            ToolHeader {
-                Text(run.isRunning ? "Running" : run.crashed ? "Stopped with an error" : "Not running")
-                    .foregroundStyle(run.crashed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                Spacer()
-                ToolButton(run.outputVisible ? "rectangle.bottomthird.inset.filled" : "rectangle.bottomthird.inset.filled",
-                           run.outputVisible ? "Hide Output (⇧⌘Y)" : "Show Output (⇧⌘Y)") { run.outputVisible.toggle() }
-                ToolButton("slider.horizontal.3", "Edit Configurations…") { ui.editingRunConfigs = true }
-            }
-            if run.configs.isEmpty {
-                EmptyToolState(title: "No Run Configurations", message: "Add a command such as npm run start.") {
-                    Button("Add Configuration…") { ui.editingRunConfigs = true }
-                }
-            } else {
-                List(selection: Binding(get: { run.selected?.id }, set: { run.selectedID = $0 })) {
-                    Section("Configurations") {
-                        ForEach(run.configs) { c in
-                            HStack(spacing: 8) {
-                                Image(systemName: c.id == run.selected?.id && run.isRunning ? "play.circle.fill" : "play.circle")
-                                    .foregroundStyle(c.id == run.selected?.id && run.isRunning ? .green : .secondary)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(c.name.isEmpty ? c.command : c.name).lineLimit(1)
-                                    Text(c.command).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                            }
-                            .tag(c.id)
-                            .contextMenu {
-                                Button("Run") { run.selectedID = c.id; run.start(); run.outputVisible = true }.disabled(run.isRunning)
-                                Button("Edit Configurations…") { ui.editingRunConfigs = true }
-                            }
-                        }
-                    }
-                }
-                .listStyle(.sidebar)
-            }
-        }
-    }
-}
-
-// MARK: Browser: address and the page in the main area
-
-struct BrowserTool: View {
-    let app: AppDelegate
-    @FocusState private var editing: Bool
-
-    var body: some View {
-        let browser = app.workspace.browser
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
-                .textFieldStyle(.roundedBorder)
-                .focused($editing)
-                .onSubmit { browser.go(browser.address); app.showBrowser(); editing = false }
-            HStack {
-                Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
-                Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
-                Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help("Reload")
-                Spacer()
-                Button("Show Page") { app.showBrowser() }
-            }
-            .buttonStyle(.borderless)
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 4)
-        .onAppear { app.showBrowser() }
     }
 }

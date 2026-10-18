@@ -42,6 +42,7 @@ struct RibbonDiffView: NSViewRepresentable {
         if view.shownVersion != version {
             view.shownVersion = version
             view.unified = model.unified
+            view.pendingHunks = model.pendingHunks
             view.notes = model.notesForOpenFile()
             view.editingNoteID = model.editingNoteID
             view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
@@ -103,6 +104,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private var shownLines: (head: TextLines, work: TextLines)?
     /// Show changed files in one pane (HEAD lines above the new ones) instead of side by side.
     var unified = false
+    /// Sections clicked whose git command hasn't finished (shown as clicked).
+    var pendingHunks: [Int: StageState] = [:]
     /// Unified mode: which side and display line each row of the one pane shows.
     private var unifiedRows: [(left: Bool, display: Int)]?
     /// Unified mode: right-side display line → its row in the one pane.
@@ -145,6 +148,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
                                                    name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         }
         for tv in [leftText, rightText] { tv.onFoldClick = { [weak self] id in self?.onFoldClick?(id) } }
+        NotificationCenter.default.addObserver(self, selector: #selector(fontChanged), name: .vetCodeFontChanged, object: nil)
         // The working file (right side) can be edited and saved; HEAD (left) can't.
         rightText.isEditable = true
         rightText.allowsUndo = true
@@ -209,7 +213,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
                                                                                  width: cardWidth(left: $0.left && mode != .unified))) })
         diffLayout = layout
         var states: [Int: StageState] = [:]
-        for h in staging.hunks { states[h.id] = staging.state(of: h) }
+        for h in staging.hunks { states[h.id] = pendingHunks[h.id] ?? staging.state(of: h) }
 
         var leftWords: [Int: [Range<Int>]] = [:], rightWords: [Int: [Range<Int>]] = [:]
         for h in staging.hunks {
@@ -254,8 +258,6 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
                 if s.right.isEmpty { rightMarkers.append((s.right.lowerBound, color)) }
                 else { rightBands.append(.init(lines: s.right, color: fill)) }
             case .fold(let id):
-                leftBands.append(.init(lines: s.left, color: DiffTheme.foldBand))
-                rightBands.append(.init(lines: s.right, color: DiffTheme.foldBand))
                 leftFolds[s.left.lowerBound] = id
                 rightFolds[s.right.lowerBound] = id
             case .same, .note: break
@@ -498,7 +500,6 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
                 }
             case .fold(let id):
                 guard let u = unifiedOfRight[seg.right.lowerBound] else { continue }
-                bands.append(.init(lines: u..<(u + 1), color: DiffTheme.foldBand))
                 folds[u] = id
             case .same, .note: break
             }
@@ -722,6 +723,24 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     // MARK: Linked scrolling (by section anchors, so unequal sections line up)
+
+    /// The code text size changed: new font and row height in both panes, keeping any edits.
+    @objc private func fontChanged() {
+        guard let layout = diffLayout else { return }
+        leftText.applyCodeFont()
+        rightText.applyCodeFont()
+        for (scroll, tv, count) in [(leftScroll, leftText, layout.left.count), (rightScroll, rightText, unifiedRows?.count ?? layout.right.count)] {
+            let height = DiffTheme.inset.height * 2 + CGFloat(count) * DiffTheme.lineHeight
+            tv.minSize = NSSize(width: 0, height: height)
+            tv.setFrameSize(NSSize(width: max(tv.frame.width, scroll.contentSize.width), height: max(height, scroll.contentSize.height)))
+        }
+        placeCards(layout)
+        gutter.reload()
+        needsLayout = true
+        syncGutter()
+        leftSticky.needsDisplay = true
+        rightSticky.needsDisplay = true
+    }
 
     @objc private func scrolled(_ note: Notification) {
         guard !syncing, mode == .split, let clip = note.object as? NSClipView else {

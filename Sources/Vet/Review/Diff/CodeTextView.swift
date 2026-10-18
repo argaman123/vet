@@ -28,6 +28,10 @@ final class CodeTextView: NSTextView {
     var lenses: [LineLensMark] = [] { didSet { if oldValue != lenses { needsDisplay = true } } }
     var onLensClick: ((LineLensMark) -> Void)?
     var lensRects: [(NSRect, LineLensMark)] = []
+    /// Pinch accumulated toward the next text-size step.
+    var pinch: CGFloat = 0
+    /// The fold row under the pointer (drawn lit, with a hand cursor).
+    var hoveredFoldLine: Int? { didSet { if oldValue != hoveredFoldLine { needsDisplay = true } } }
     private var hoverTracking: NSTrackingArea?
 
     static func make() -> (NSScrollView, CodeTextView) {
@@ -140,6 +144,10 @@ final class CodeTextView: NSTextView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
+        let at = convert(event.locationInWindow, from: nil)
+        let row = line(at: at)
+        hoveredFoldLine = foldLines[row] != nil ? row : nil
+        if hoveredFoldLine != nil || lens(at: at) != nil { NSCursor.pointingHand.set() }
         hoverWork?.cancel()
         guard onHover != nil, NSEvent.pressedMouseButtons == 0 else { return }
         let p = convert(event.locationInWindow, from: nil)
@@ -150,6 +158,7 @@ final class CodeTextView: NSTextView {
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        hoveredFoldLine = nil
         hoverWork?.cancel()
         HoverPresenter.shared.cancelPending()
     }

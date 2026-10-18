@@ -73,6 +73,14 @@ final class ReviewModel {
     private var autoStaging = false
     /// Paths staged/unstaged optimistically while git runs.
     private var pending: [String: StageState] = [:]
+    /// Git commands still running per path; a path's pending state stays until its last one ends
+    /// (a refresh in between must not flip the checkbox back).
+    private var inFlight: [String: Int] = [:]
+    /// Sections clicked but not yet staged/unstaged in git, by section id (the diff shows these).
+    private(set) var pendingHunks: [Int: StageState] = [:]
+    private var hunkInFlight: [Int: Int] = [:]
+    /// Section clicks run one after another, each against the file's state after the previous one.
+    private var hunkQueue: Task<Void, Never>?
 
     var reviewedCount: Int { changes.filter { stage(of: $0) == .staged }.count }
 
@@ -191,7 +199,7 @@ final class ReviewModel {
             let fresh = try await repo.status()
             let known = Set(changes.map(\.path))
             changes = fresh
-            pending = [:]
+            pending = pending.filter { (inFlight[$0.key] ?? 0) > 0 }
             tree = FileTreeNode.build(fresh)
             // New files open their folders, even if they appeared while Vet was closed;
             // unimportant ones don't.
@@ -240,7 +248,10 @@ final class ReviewModel {
         for c in targets where marks?.isMarked(c.path) ?? false {
             if staged { marks?.releaseHold(c.path) } else { marks?.hold(c.path, hash: MarkStore.contentHash(root: root, path: c.path)) }
         }
-        for c in targets { pending[c.path] = staged ? .staged : .unstaged }
+        for c in targets {
+            pending[c.path] = staged ? .staged : .unstaged
+            inFlight[c.path, default: 0] += 1
+        }
         version += 1
         Task {
             do {
@@ -248,6 +259,10 @@ final class ReviewModel {
                 if staged { try await repo.stageFiles(targets) } else { try await repo.unstageFiles(targets) }
             } catch {
                 show("Couldn't \(staged ? "stage" : "unstage"): \(error)")
+            }
+            for c in targets {
+                inFlight[c.path, default: 1] -= 1
+                if inFlight[c.path] == 0 { inFlight[c.path] = nil }
             }
             await refresh() // shows git's real state, success or not
         }
@@ -347,13 +362,23 @@ final class ReviewModel {
         if isMarked(change.path) {
             if staged { marks?.releaseHold(change.path) } else { marks?.hold(change.path, hash: MarkStore.contentHash(root: root, path: change.path)) }
         }
-        Task {
+        pendingHunks[id] = staged ? .staged : .unstaged
+        hunkInFlight[id, default: 0] += 1
+        let previous = hunkQueue
+        hunkQueue = Task {
+            await previous?.value
+            // After an earlier click, use the file's state as that one left it.
+            var expected = snapshot
+            if previous != nil, case .document(let doc) = await repo.loadDiff(change, previousSnapshot: nil),
+               let fresh = doc.staging?.snapshotID { expected = fresh }
             do {
-                let outcome = try await repo.setSection(change, hunkID: id, staged: staged, expectedSnapshot: snapshot)
+                let outcome = try await repo.setSection(change, hunkID: id, staged: staged, expectedSnapshot: expected)
                 if outcome == .stale { show("The file changed, so the diff was refreshed. Check it and click again.") }
             } catch {
                 show("Couldn't \(staged ? "stage" : "unstage") the section: \(error)")
             }
+            hunkInFlight[id, default: 1] -= 1
+            if hunkInFlight[id] == 0 { hunkInFlight[id] = nil; pendingHunks[id] = nil }
             await refresh()
         }
     }
@@ -555,6 +580,14 @@ final class ReviewModel {
         func walk(_ nodes: [FileTreeNode]) { for n in nodes where n.isFolder { expanded.insert(n.path); walk(n.children) } }
         walk(tree)
         version += 1
+    }
+
+    /// Every folder in the tree is open.
+    var allExpanded: Bool {
+        var folders: [String] = []
+        func walk(_ nodes: [FileTreeNode]) { for n in nodes where n.isFolder { folders.append(n.path); walk(n.children) } }
+        walk(tree)
+        return !folders.isEmpty && folders.allSatisfy(expanded.contains)
     }
 
     func collapseAll() {

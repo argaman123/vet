@@ -45,7 +45,7 @@ struct MainArea: View {
         switch app.ui.location {
         case .diff?: DiffScreen(app: app)
         case .file?: EditorScreen(app: app)
-        case .browser?: WebViewHost(webView: app.workspace.browser.webView)
+        case .browser?: BrowserScreen(app: app)
         case nil: Placeholder(app: app)
         }
     }
@@ -265,3 +265,26 @@ struct OutputPane: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 }
+
+/// The browser in the main area, with its address bar on top.
+struct BrowserScreen: View {
+    let app: AppDelegate
+    @FocusState private var editing: Bool
+
+    var body: some View {
+        let browser = app.workspace.browser
+        VStack(spacing: 0) {
+            HeaderBar {
+                Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
+                Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
+                Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help(browser.isLoading ? "Stop Loading" : "Reload")
+                TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($editing)
+                    .onSubmit { browser.go(browser.address); editing = false }
+            }
+            WebViewHost(webView: browser.webView)
+        }
+    }
+}
+

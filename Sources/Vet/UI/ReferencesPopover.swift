@@ -210,7 +210,7 @@ private struct HitRow: View {
 
 /// The selected match's file in a read-only editor (line numbers, sticky lines, the server's name
 /// colors), the match's line banded a third of the way down and the symbol highlighted.
-private struct ReferencePreview: NSViewRepresentable {
+struct ReferencePreview: NSViewRepresentable {
     let lines: TextLines
     let url: URL
     let line: Int

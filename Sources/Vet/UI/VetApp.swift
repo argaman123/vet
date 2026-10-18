@@ -121,10 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showBrowser() { ui.show(.browser) }
 
-    func showFindInFiles() {
-        ui.tool = .find
-        find.focusSerial += 1
-    }
+    func showFindInFiles() { FindPresenter.shared.show(app: self) }
 
     // MARK: Actions (Search Everywhere lists the menu commands)
 
@@ -143,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = review
         if run.isRunning { list.append(("stop", "Stop")) } else if run.selected != nil { list.append(("run", "Run ‘\(run.selected!.name)’")) }
         list += UIState.Tool.allCases.map { ("tool.\($0.rawValue)", "Show \($0.title)") }
+        list.append(("browser", "Show Browser"))
         return list
     }
 
@@ -154,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "back": goBack()
         case "forward": goForward()
         case "findInFiles": showFindInFiles()
+        case "browser": showBrowser()
         case "previousChange": review.jumpToChange(forward: false)
         case "nextChange": review.jumpToChange(forward: true)
         case "nextUnreviewed": review.nextUnreviewed(); if let p = review.selectedPath { ui.show(.diff(path: p)) }
@@ -231,9 +230,18 @@ struct VetCommands: Commands {
         CommandGroup(after: .sidebar) {
             Divider()
             ForEach(Array(UIState.Tool.allCases.enumerated()), id: \.element) { index, tool in
-                Button(tool.title) { app.ui.tool = tool }
-                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+                Button(tool.title) {
+                    app.ui.tool = tool
+                    // Changes brings the selected file's diff back (from the browser, say).
+                    if tool == .changes, case .browser? = app.ui.location, let p = app.workspace.review.selectedPath { app.showDiff(p) }
+                }
+                .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
+            Button("Browser") { app.showBrowser() }.keyboardShortcut("3")
+            Divider()
+            Button("Bigger Code Text") { DiffTheme.setFontSize(DiffTheme.fontSize + 1) }.keyboardShortcut("+")
+            Button("Smaller Code Text") { DiffTheme.setFontSize(DiffTheme.fontSize - 1) }.keyboardShortcut("-")
+            Button("Actual Code Text Size") { DiffTheme.setFontSize(DiffTheme.defaultFontSize) }.keyboardShortcut("0")
             Divider()
             Button(app.workspace.run.outputVisible ? "Hide Run Output" : "Show Run Output") { app.workspace.run.outputVisible.toggle() }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
