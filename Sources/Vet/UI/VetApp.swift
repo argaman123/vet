@@ -60,6 +60,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHook.on("font") { [weak self] args in
             if let f = CodeFont(rawValue: args.joined(separator: " ")) { DiffTheme.setCodeFont(f); self?.ui.codeFont = f }
         }
+        SnapshotHook.on("usages") { [weak self] args in
+            // usages <line> <character>: Find Usages from the open editor file
+            guard let self, args.count == 2, let line = Int(args[0]), let ch = Int(args[1]), let url = self.workspace.files.openURL else { return }
+            let view = self.workspace.files.editorView
+            NavigationAnchor.set(view.pane, view.pane.symbolRect(line: line, character: ch))
+            self.workspace.navigate(.references, url: url, text: view.currentText, line: line, character: ch)
+        }
+        SnapshotHook.on("checkout") { [weak self] args in if let b = args.first { self?.workspace.review.checkout(b) } }
+        SnapshotHook.on("center") { _ in
+            for w in NSApp.windows where w.isVisible && w.frame.width > 400 { w.setFrame(NSRect(x: 218, y: 92, width: 1440, height: 900), display: true) }
+        }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
             guard args.count == 2, let line = Int(args[0]), let character = Int(args[1]) else { return }

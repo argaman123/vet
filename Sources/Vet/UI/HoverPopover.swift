@@ -48,8 +48,13 @@ final class HoverPresenter: NSObject, NSPopoverDelegate {
         popover.animates = false
         popover.delegate = self
         let host = NSHostingController(rootView: HoverView(content: content))
-        host.sizingOptions = .preferredContentSize
+        host.sizingOptions = []
+        // Measure the content at most 560 pt wide (wrapping), and size the popover to it.
+        let fit = host.sizeThatFits(in: NSSize(width: 560, height: 2000))
+        let size = NSSize(width: ceil(min(560, max(140, fit.width))), height: ceil(min(520, fit.height)))
+        host.view.frame = NSRect(origin: .zero, size: size)
         popover.contentViewController = host
+        popover.contentSize = size
         popover.show(relativeTo: p.rect, of: p.view, preferredEdge: .maxY)
         self.popover = popover
         shownKey = p.key
@@ -131,7 +136,10 @@ private struct HoverView: View {
             }
         }
         .padding(12)
-        .frame(minWidth: 120, maxWidth: 560, alignment: .leading)
+        .frame(maxWidth: 560, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        // A solid surface: the popover's glass alone lets the code behind show through the text.
+        .background(Color(nsColor: DiffTheme.sidebar))
     }
 
     enum Block { case text(String), code(String) }
