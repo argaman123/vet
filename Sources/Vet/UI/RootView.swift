@@ -19,8 +19,10 @@ struct RootView: View {
                 .searchable(text: Bindable(ui).search, isPresented: Bindable(ui).focusSearch, placement: .toolbar, prompt: "Search Everywhere")
                 .searchSuggestions { SearchEverywhereSuggestions(app: app) }
         }
+        .onChange(of: ui.search) { _, query in app.searchEverywhere.update(query) }
         .task(id: app.projects.current) {
             app.ui.reset()
+            app.find.reset()
             ws.open(app.projects.current)
         }
         .onChange(of: ws.review.selectedPath) { _, path in

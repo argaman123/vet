@@ -49,6 +49,8 @@ final class FilesModel {
 
     private(set) var root: URL?
     private(set) var tree: [FileListNode] = []
+    /// Every file in the tree (repo-relative), for Search Everywhere.
+    @ObservationIgnored private(set) var paths: [String] = []
     private(set) var treeVersion = 0
     var expanded: Set<String> = []
 
@@ -95,6 +97,7 @@ final class FilesModel {
             let paths = await Task.detached { Self.listFiles(root) }.value
             guard !Task.isCancelled, root == self.root else { return }
             tree = FileListNode.build(paths)
+            self.paths = paths
             treeVersion += 1
         }
     }

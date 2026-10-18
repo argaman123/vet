@@ -57,41 +57,6 @@ struct CommitPopover: View {
     }
 }
 
-// MARK: Search Everywhere suggestions (filled in by the search engine)
-
-struct SearchEverywhereSuggestions: View {
-    let app: AppDelegate
-    var body: some View {
-        let results = app.workspace.searchResults
-        ForEach(results.sections, id: \.title) { section in
-            Section(section.title) {
-                ForEach(section.items) { item in
-                    Label {
-                        HStack {
-                            Text(item.title)
-                            Spacer()
-                            Text(item.detail).foregroundStyle(.secondary)
-                        }
-                    } icon: { Image(systemName: item.symbol) }
-                    .searchCompletion(item.id)
-                }
-            }
-        }
-    }
-}
-
-/// What Search Everywhere shows for the current query, grouped (Files, Classes & Symbols, Actions, Text).
-struct SearchResults {
-    struct Item: Identifiable, Hashable {
-        let id: String
-        let title: String
-        let detail: String
-        let symbol: String
-    }
-    struct Group { let title: String; let items: [Item] }
-    var sections: [Group] = []
-}
-
 // MARK: Find in Files (filled in by the search engine)
 
 struct FindTool: View {

@@ -30,6 +30,8 @@ struct SidebarView: View {
                 }
             }
             .frame(maxHeight: .infinity)
+            // IDE trees want dense rows (Xcode's navigators use the small size too).
+            .environment(\.sidebarRowSize, .small)
         }
     }
 }

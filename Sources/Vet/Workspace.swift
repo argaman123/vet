@@ -26,7 +26,6 @@ final class Workspace {
     private(set) var root: URL?
     private var watcher: RepoWatcher?
     /// What Search Everywhere currently suggests.
-    var searchResults = SearchResults()
 
     // MARK: Code navigation
 
