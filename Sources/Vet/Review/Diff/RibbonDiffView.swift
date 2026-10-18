@@ -220,6 +220,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftWords.merge(h.headCols) { $1 }
             rightWords.merge(h.workCols) { $1 }
         }
+        leftWords = Self.readableWords(leftWords, staging.head)
+        rightWords = Self.readableWords(rightWords, staging.work)
         // Changed words: the section's full color (IntelliJ's inner fragments); red and green in
         // the unified layout, where both sides share one column; faded once reviewed.
         var leftWordColor: [Int: NSColor] = [:], rightWordColor: [Int: NSColor] = [:]
@@ -668,6 +670,31 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         rightScroll.isHidden = true
         gutter.isHidden = true
         needsLayout = true
+    }
+
+    /// Changed-word marks worth showing, as IntelliJ shows inner changes: none on a line that
+    /// changed almost entirely (the line's color says it), and marks a space or a symbol apart
+    /// joined into one.
+    private static func readableWords(_ words: [Int: [Range<Int>]], _ lines: TextLines) -> [Int: [Range<Int>]] {
+        var out: [Int: [Range<Int>]] = [:]
+        for (line, ranges) in words where line < lines.count {
+            let text = Array(lines.lines[line].text.utf16)
+            let content = text.filter { $0 != 32 && $0 != 9 }.count
+            var merged: [Range<Int>] = []
+            for r in ranges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+                if let last = merged.last, r.lowerBound - last.upperBound <= 2 {
+                    merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, r.upperBound)
+                } else {
+                    merged.append(r)
+                }
+            }
+            let covered = merged.reduce(0) { sum, r in
+                sum + text[min(r.lowerBound, text.count)..<min(r.upperBound, text.count)].filter { $0 != 32 && $0 != 9 }.count
+            }
+            if content > 0, Double(covered) / Double(content) >= 0.5 { continue }
+            out[line] = merged
+        }
+        return out
     }
 
     /// Builds one pane's text: real lines with syntax colors and word highlights, plus fold rows.

@@ -7,31 +7,49 @@ import VetCore
 struct ProjectTool: View {
     let app: AppDelegate
     @State private var quickLook: URL?
+    @State private var row: String?
 
     var body: some View {
         let files = app.workspace.files
         VStack(spacing: 0) {
             ToolHeader {
-                Text("Project").fontWeight(.semibold).foregroundStyle(.secondary).lineLimit(1)
+                Text("All Files").fontWeight(.semibold).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 ToolButton("scope", "Reveal the Open File") { if let p = files.relativePath { files.expandAncestors(of: p) } }
                 ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { files.expanded = [] }
-                ToolButton("xmark", "Back to Changes (⌘1)") { app.ui.tool = .changes }
             }
             if app.projects.current == nil {
                 EmptyToolState(title: "No Project", message: "Open a project folder.") {
                     Button("Open Folder…") { app.projects.showOpenPanel() }
                 }
             } else {
-                List(selection: Binding(get: { files.relativePath }, set: { path in
-                    if let path, let url = files.url(for: path), !(files.tree.isEmpty) { app.showFile(url) }
+                List(selection: Binding(get: { row ?? files.relativePath }, set: { path in
+                    row = path
+                    if let path, Self.isFile(path, files.tree), let url = files.url(for: path) { app.showFile(url) }
                 })) {
                     ForEach(CompactFile.compact(files.tree)) { ProjectNodeRow(app: app, item: $0, quickLook: $quickLook) }
                 }
                 .listStyle(.sidebar)
+                // Double-click (or Return) opens or closes a folder.
+                .contextMenu(forSelectionType: String.self) { _ in EmptyView() } primaryAction: { ids in
+                    for id in ids where !Self.isFile(id, files.tree) {
+                        if files.expanded.contains(id) { files.expanded.remove(id) } else { files.expanded.insert(id) }
+                    }
+                }
                 .quickLookPreview($quickLook)
             }
         }
+    }
+}
+
+extension ProjectTool {
+    /// Whether `path` is a file (not a folder) in the tree.
+    static func isFile(_ path: String, _ nodes: [FileListNode]) -> Bool {
+        for n in nodes {
+            if n.path == path { return !n.isFolder }
+            if n.isFolder, path.hasPrefix(n.path + "/") { return isFile(path, n.children) }
+        }
+        return false
     }
 }
 
@@ -71,6 +89,7 @@ struct ProjectNodeRow: View {
             } label: {
                 Label(item.name, systemImage: "folder").lineLimit(1)
             }
+            .tag(node.path)
             .contextMenu { menu }
         } else {
             HStack(spacing: 6) {

@@ -96,21 +96,14 @@ struct MainToolbar: ToolbarContent {
             Button { app.goForward() } label: { Label("Forward", systemImage: "chevron.right") }
                 .disabled(!ui.canGoForward).help("Forward (⌘])")
         }
-        if case .diff? = ui.location {
-            ToolbarItemGroup(placement: .principal) {
-                Button { review.jumpToChange(forward: false) } label: { Label("Previous Change", systemImage: "chevron.up") }
-                    .help("Previous Change (⌥⌘↑)")
-                Button { review.jumpToChange(forward: true) } label: { Label("Next Change", systemImage: "chevron.down") }
-                    .help("Next Change (⌥⌘↓)")
+        ToolbarItem(placement: .navigation) {
+            // Where you work: the changes, all files, or the browser.
+            Picker("Show", selection: Binding(get: { app.place }, set: { app.go(to: $0) })) {
+                Image(systemName: "checklist").accessibilityLabel("Changes").help("Changes (⌘1)").tag(AppDelegate.Place.changes)
+                Image(systemName: "folder").accessibilityLabel("All Files").help("All Files (⌘2)").tag(AppDelegate.Place.files)
+                Image(systemName: "safari").accessibilityLabel("Browser").help("Browser (⌘3)").tag(AppDelegate.Place.browser)
             }
-            ToolbarItem(placement: .principal) {
-                Picker("Layout", selection: Bindable(review).unified) {
-                    Image(systemName: "rectangle.split.2x1").accessibilityLabel("Side by Side").help("Side by Side").tag(false)
-                    Image(systemName: "rectangle.grid.1x2").accessibilityLabel("Unified").help("Unified").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .help("Diff Layout")
-            }
+            .pickerStyle(.segmented)
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Menu {

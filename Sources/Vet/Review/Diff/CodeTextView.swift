@@ -12,7 +12,8 @@ final class CodeTextView: NSTextView {
     var foldLines: [Int: Int] = [:] // display line → fold id
     var onFoldClick: ((Int) -> Void)?
 
-    enum Navigation { case definition, implementation, references }
+    /// `usagesOrDeclaration` (force click): the usages, or the declaration when it has none.
+    enum Navigation { case definition, implementation, references, usagesOrDeclaration }
     /// ⌘S while this pane has focus.
     var onSave: (() -> Void)?
     /// ⌘-click: go to definition at (display line, UTF-16 column).
@@ -30,6 +31,8 @@ final class CodeTextView: NSTextView {
     var lensRects: [(NSRect, LineLensMark)] = []
     /// Pinch accumulated toward the next text-size step.
     var pinch: CGFloat = 0
+    private var lastPressureStage = 0
+    private var forceClicked = false
     /// The fold row under the pointer (drawn lit, with a hand cursor).
     var hoveredFoldLine: Int? { didSet { if oldValue != hoveredFoldLine { needsDisplay = true } } }
     private var hoverTracking: NSTrackingArea?
@@ -67,6 +70,7 @@ final class CodeTextView: NSTextView {
         tv.selectedTextAttributes = [.backgroundColor: DiffTheme.selection]
         tv.insertionPointColor = DiffTheme.text
         tv.usesFindBar = true
+        tv.textLayoutManager?.delegate = tv
         scroll.documentView = tv
         return (scroll, tv)
     }
@@ -131,6 +135,29 @@ final class CodeTextView: NSTextView {
     }
 
     @objc func vetSave(_ sender: Any?) { onSave?() }
+
+    /// Force click (a deep press on the trackpad): usages of the symbol, or its declaration when
+    /// nothing uses it. (Replaces the system's Look Up in code.)
+    override func quickLook(with event: NSEvent) {
+        if forceClicked { forceClicked = false; return } // pressureChange already handled this press
+        forceNavigate(at: event.locationInWindow)
+    }
+
+    override func pressureChange(with event: NSEvent) {
+        if event.stage == 2, lastPressureStage < 2 {
+            forceClicked = true
+            forceNavigate(at: event.locationInWindow)
+        }
+        if event.stage == 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.forceClicked = false } }
+        lastPressureStage = event.stage
+    }
+
+    private func forceNavigate(at windowPoint: NSPoint) {
+        let p = convert(windowPoint, from: nil)
+        guard let onNavigate, let pos = position(at: p), word(line: pos.line, character: pos.character) != nil else { return }
+        NavigationAnchor.set(self, symbolRect(line: pos.line, character: pos.character))
+        onNavigate(.usagesOrDeclaration, pos.line, pos.character)
+    }
 
     // MARK: Hover
 
@@ -327,3 +354,29 @@ final class CodeTextView: NSTextView {
         }
     }
 }
+
+// MARK: Text centered in its row
+
+/// TextKit puts a fixed-height row's extra space above the text, so code sat low in its row
+/// (and in every band and highlight drawn for it). Each line is drawn lifted by half of that.
+extension CodeTextView: @preconcurrency NSTextLayoutManagerDelegate {
+    func textLayoutManager(_ textLayoutManager: NSTextLayoutManager, textLayoutFragmentFor location: NSTextLocation,
+                           in textElement: NSTextElement) -> NSTextLayoutFragment {
+        CenteredLineFragment(textElement: textElement, range: textElement.elementRange)
+    }
+
+    /// How far a line's glyphs are lifted to sit centered in the row.
+    static var glyphLift: CGFloat {
+        let f = DiffTheme.font
+        let natural = f.ascender - f.descender + f.leading
+        return max(0, (DiffTheme.lineHeight - natural) / 2)
+    }
+}
+
+final class CenteredLineFragment: NSTextLayoutFragment {
+    override func draw(at point: CGPoint, in context: CGContext) {
+        let lift = MainActor.assumeIsolated { CodeTextView.glyphLift }
+        super.draw(at: CGPoint(x: point.x, y: point.y - lift), in: context)
+    }
+}
+

@@ -40,7 +40,7 @@ final class StickyLinesView: NSView {
                 guard let n = number(row.line) else { continue }
                 let s = NSAttributedString(string: "\(n)", attributes: attrs)
                 let size = s.size()
-                s.draw(at: NSPoint(x: (gutterWidth == LineNumberGutter.width ? LineNumberGutter.numbersRight : gutterWidth - 8) - size.width, y: CGFloat(i) * DiffTheme.lineHeight + (DiffTheme.lineHeight - size.height) / 2 + 1.5))
+                s.draw(at: NSPoint(x: (gutterWidth == LineNumberGutter.width ? LineNumberGutter.numbersRight : gutterWidth - 8) - size.width, y: CGFloat(i) * DiffTheme.lineHeight + (DiffTheme.lineHeight - size.height) / 2))
             }
         }
         NSColor.separatorColor.setFill()

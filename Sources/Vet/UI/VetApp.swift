@@ -121,6 +121,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showBrowser() { ui.show(.browser) }
 
+    /// The toolbar's switcher: the changes (diff), all files (project tree + editor), the browser.
+    enum Place: Hashable { case changes, files, browser }
+    var place: Place {
+        if case .browser? = ui.location { return .browser }
+        return ui.tool == .project ? .files : .changes
+    }
+    func go(to place: Place) {
+        switch place {
+        case .changes:
+            ui.tool = .changes
+            if let p = workspace.review.selectedPath { showDiff(p) }
+        case .files:
+            ui.tool = .project
+            if case .browser? = ui.location, let url = workspace.files.openURL { showFile(url) }
+        case .browser:
+            showBrowser()
+        }
+    }
+
     func showFindInFiles() { FindPresenter.shared.show(app: self) }
 
     // MARK: Actions (Search Everywhere lists the menu commands)
@@ -230,12 +249,8 @@ struct VetCommands: Commands {
         CommandGroup(after: .sidebar) {
             Divider()
             ForEach(Array(UIState.Tool.allCases.enumerated()), id: \.element) { index, tool in
-                Button(tool.title) {
-                    app.ui.tool = tool
-                    // Changes brings the selected file's diff back (from the browser, say).
-                    if tool == .changes, case .browser? = app.ui.location, let p = app.workspace.review.selectedPath { app.showDiff(p) }
-                }
-                .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+                Button(tool == .changes ? "Changes" : "All Files") { app.go(to: tool == .changes ? .changes : .files) }
+                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
             Button("Browser") { app.showBrowser() }.keyboardShortcut("3")
             Divider()

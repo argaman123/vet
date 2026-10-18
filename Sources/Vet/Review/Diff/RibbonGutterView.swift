@@ -110,8 +110,11 @@ final class RibbonGutterView: NSView {
             }
             guard let s = segment(for: id) else { b.isHidden = true; continue }
             if mode == .split {
-                // At the change's first new line (or on the marker where lines were only removed).
-                let top = s.right.isEmpty ? y(s.right.lowerBound, left: false) - DiffTheme.lineHeight / 2 : y(s.right.lowerBound, left: false)
+                // At the change's first new line; for removed lines, beside where the ribbon starts.
+                // Removed lines: centered on the line where they were removed (kept inside the view
+                // at the very top of the file).
+                let top = s.right.isEmpty ? max(y(0, left: false) - DiffTheme.inset.height + 1, y(s.right.lowerBound, left: false) - DiffTheme.lineHeight / 2)
+                    : y(s.right.lowerBound, left: false)
                 let x = Self.numbersWidth * 2 + Self.ribbonWidth + (Self.checkWidth - 16) / 2
                 b.frame = NSRect(x: x, y: top + (DiffTheme.lineHeight - 16) / 2, width: 16, height: 16)
                 b.isHidden = top < -20 || top > bounds.height + 20
@@ -191,7 +194,7 @@ final class RibbonGutterView: NSView {
         func number(_ n: Int, x: CGFloat, y: CGFloat, changed: Bool = false) {
             let s = NSAttributedString(string: "\(n + 1)", attributes: changed ? bright : attrs)
             let size = s.size()
-            s.draw(at: NSPoint(x: x + Self.numbersWidth - 6 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2 + 1.5))
+            s.draw(at: NSPoint(x: x + Self.numbersWidth - 6 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2))
         }
         func numbers(_ list: [Int?], left: Bool, x: CGFloat) {
             let pinned = left ? leftPinned : rightPinned

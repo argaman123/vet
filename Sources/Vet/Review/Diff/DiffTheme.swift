@@ -165,7 +165,7 @@ enum DiffTheme {
         case .modified: dynamic(light: hex(0x0033B3), dark: hex(0x70AEFF))
         case .renamed: dynamic(light: hex(0x0033B3), dark: hex(0x70AEFF))
         case .added: dynamic(light: hex(0x067D17), dark: hex(0x73BD79))
-        case .untracked: dynamic(light: hex(0xB23247), dark: hex(0xE88F89))
+        case .untracked: dynamic(light: hex(0x067D17), dark: hex(0x73BD79)) // new is new, in git or not
         case .deleted: dynamic(light: hex(0x6C707E), dark: hex(0x6F737A))
         case .conflicted: dynamic(light: hex(0xC4221D), dark: hex(0xDE6A66))
         }

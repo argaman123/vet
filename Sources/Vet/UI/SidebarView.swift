@@ -27,6 +27,8 @@ struct SidebarView: View {
 struct ChangesTool: View {
     let app: AppDelegate
     @State private var quickLook: URL?
+    /// The highlighted row: a file (its diff is open) or a folder.
+    @State private var row: String?
 
     var body: some View {
         let review = app.workspace.review
@@ -63,7 +65,8 @@ struct ChangesTool: View {
         let review = app.workspace.review
         // New files sit in the same tree as everything else (checking one adds it to git).
         let all = review.tree
-        return List(selection: Binding(get: { review.selectedPath }, set: { path in
+        return List(selection: Binding(get: { row ?? review.selectedPath }, set: { path in
+            row = path
             if let path, review.changes.contains(where: { $0.path == path }) { app.showDiff(path) }
         })) {
             Section {
@@ -72,6 +75,18 @@ struct ChangesTool: View {
                 SectionHeader(title: "Changes", nodes: all, app: app)
             }
         }
+        // Double-click (or Return): a folder opens or closes, a file shows its diff.
+        .contextMenu(forSelectionType: String.self) { ids in
+            if let id = ids.first, let node = FileTreeNode.find(id, in: review.tree) {
+                ChangeMenu(app: app, node: node, quickLook: $quickLook)
+            }
+        } primaryAction: { ids in
+            for id in ids {
+                if review.changes.contains(where: { $0.path == id }) { app.showDiff(id) }
+                else if review.expanded.contains(id) { review.expanded.remove(id) } else { review.expanded.insert(id) }
+            }
+        }
+        .onChange(of: review.selectedPath) { _, path in row = path }
         .listStyle(.sidebar)
     }
 }
@@ -138,25 +153,26 @@ struct ChangeNodeRow: View {
                         .opacity(review.stage(of: node) == .staged ? 0.65 : 1) // reviewed names recede
                     Spacer(minLength: 0)
                 }
-                .contentShape(Rectangle())
-                // Double-click opens or closes the folder, like Finder and the IDEs.
-                .simultaneousGesture(TapGesture(count: 2).onEnded {
-                    if review.expanded.contains(node.path) { review.expanded.remove(node.path) } else { review.expanded.insert(node.path) }
-                })
             }
+            .tag(node.path)
             .listRowBackground(review.isMarked(node.path) ? Color.primary.opacity(0.04) : nil)
-            .contextMenu { menu }
         } else {
             FileChangeLabel(app: app, node: node)
                 .tag(node.path)
                 // Clicking the selected file again brings its diff back (e.g. from the browser).
                 .simultaneousGesture(TapGesture().onEnded { app.showDiff(node.path) })
                 .listRowBackground(review.isMarked(node.path) ? Color.primary.opacity(0.04) : nil)
-                .contextMenu { menu }
         }
     }
+}
 
-    @ViewBuilder private var menu: some View {
+/// A changed file's or folder's menu (right-click in the changes tree).
+struct ChangeMenu: View {
+    let app: AppDelegate
+    let node: FileTreeNode
+    @Binding var quickLook: URL?
+
+    var body: some View {
         let review = app.workspace.review
         if !node.isFolder {
             Button("Open in Editor") { if let url = review.url(for: node.path) { app.showFile(url) } }

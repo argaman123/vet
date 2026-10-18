@@ -38,13 +38,28 @@ final class Workspace {
             return
         }
         let symbol = Self.word(in: text, line: line, character: character) ?? "Symbol"
-        navBusy = kind == .references ? "Finding usages of \(symbol)…" : kind == .implementation ? "Finding implementations…" : "Finding declaration…"
+        navBusy = kind == .references || kind == .usagesOrDeclaration ? "Finding usages of \(symbol)…" : kind == .implementation ? "Finding implementations…" : "Finding declaration…"
         Task {
             var kind = kind
             var found: [CodeLocation] = switch kind {
             case .definition: await navigator.definition(of: url, text: text, line: line, character: character)
             case .implementation: await navigator.implementation(of: url, text: text, line: line, character: character)
             case .references: await navigator.references(of: url, text: text, line: line, character: character)
+            case .usagesOrDeclaration: await navigator.references(of: url, text: text, line: line, character: character)
+            }
+            // Force click: usages if anything besides this very spot uses the symbol, else its declaration.
+            if kind == .usagesOrDeclaration {
+                let elsewhere = found.filter { loc in
+                    !(loc.url.standardizedFileURL == url.standardizedFileURL && loc.startLine == line
+                      && (loc.startCharacter...max(loc.endCharacter, loc.startCharacter)).contains(character))
+                }
+                if elsewhere.isEmpty {
+                    kind = .definition
+                    navBusy = "Finding declaration…"
+                    found = await navigator.definition(of: url, text: text, line: line, character: character)
+                } else {
+                    kind = .references
+                }
             }
             // Like VS Code: a definition that lands on an import of the symbol follows it to the
             // real declaration (the TypeScript server sometimes answers with the alias).

@@ -66,3 +66,15 @@ final class FileTreeNode {
         roots.flatMap { $0.isFolder ? filesInOrder($0.children) : [$0.change!] }
     }
 }
+
+extension FileTreeNode {
+    /// The node at `path` (a file or folder) anywhere in `nodes`.
+    static func find(_ path: String, in nodes: [FileTreeNode]) -> FileTreeNode? {
+        for n in nodes {
+            if n.path == path { return n }
+            if n.isFolder, path.hasPrefix(n.path + "/"), let hit = find(path, in: n.children) { return hit }
+        }
+        return nil
+    }
+}
+

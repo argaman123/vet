@@ -34,7 +34,7 @@ final class LineNumberGutter: NSView {
             let s = NSAttributedString(string: "\(n + 1)", attributes: n == highlighted ? strong : attrs)
             let size = s.size()
             let y = DiffTheme.inset.height + CGFloat(i) * DiffTheme.lineHeight - offset
-            s.draw(at: NSPoint(x: Self.numbersRight - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2 + 1.5))
+            s.draw(at: NSPoint(x: Self.numbersRight - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2))
         }
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular).applying(.init(paletteColors: [.systemBlue]))
         for (line, mark) in marks where line >= first && line < first + count {

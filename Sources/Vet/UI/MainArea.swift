@@ -91,7 +91,8 @@ struct DiffHeader: View {
 
     var body: some View {
         let review = app.workspace.review
-        let change = doc.change
+        // The file as git sees it now (the diff's copy keeps the state it was loaded with).
+        let change = review.changes.first { $0.path == doc.change.path } ?? doc.change
         HeaderBar {
             TriStateCheckbox(state: review.stage(of: change)) { on in
                 if let node = FileTreeNode.build([change]).first.map(leaf) { review.setStaged(node, on) }
@@ -115,6 +116,16 @@ struct DiffHeader: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            // The diff's own controls, where WebStorm keeps them: change navigation and layout.
+            Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up") }
+                .help("Previous Change (⌥⌘↑)")
+            Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down") }
+                .help("Next Change (⌥⌘↓)")
+            Picker("Layout", selection: Bindable(review).unified) {
+                Image(systemName: "rectangle.split.2x1").accessibilityLabel("Side by Side").help("Side by Side").tag(false)
+                Image(systemName: "rectangle.grid.1x2").accessibilityLabel("Unified").help("Unified").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
             Menu {
                 Button("Open in Editor") { if let url = review.url(for: change.path) { app.showFile(url) } }
                 Button(review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { review.folding.toggle() }
