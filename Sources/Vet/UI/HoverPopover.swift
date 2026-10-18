@@ -17,15 +17,20 @@ final class HoverPresenter: NSObject, NSPopoverDelegate {
     static let shared = HoverPresenter()
     private var popover: NSPopover?
     private var monitor: Any?
-    /// The request being answered: the view and the symbol's rect in it.
-    private var pending: (view: NSView, rect: NSRect, key: String)?
+    /// The request being answered: the view and the symbol's rect in it, and its token.
+    private var pending: (view: NSView, rect: NSRect, key: String, token: Int)?
+    private var tokens = 0
+    /// The token of the latest request; an answer carrying any other token is stale.
+    private(set) var currentToken = 0
     private var shownKey: String?
     private var shownAnchor: (view: NSView, rect: NSRect)?
 
     /// Called when the pointer has rested on a symbol; `show` follows if the server answers.
     func prepare(view: NSView, rect: NSRect, key: String) {
         guard key != shownKey || popover == nil else { return }
-        pending = (view, rect, key)
+        tokens += 1
+        currentToken = tokens
+        pending = (view, rect, key, tokens)
     }
 
     /// Drops a request whose answer hasn't arrived (the pointer moved on).
@@ -33,8 +38,9 @@ final class HoverPresenter: NSObject, NSPopoverDelegate {
 
     func isShowing(_ key: String) -> Bool { popover != nil && shownKey == key }
 
-    func show(_ content: HoverContent) {
-        guard let p = pending, p.view.window != nil else { return }
+    /// Shows the answer to request `token`; a late answer to an older request is dropped.
+    func show(_ content: HoverContent, token: Int) {
+        guard let p = pending, p.token == token, p.view.window != nil else { return }
         pending = nil
         close()
         let popover = NSPopover()

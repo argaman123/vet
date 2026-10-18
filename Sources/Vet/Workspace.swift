@@ -77,9 +77,10 @@ final class Workspace {
     func hover(url: URL, text: String, line: Int, character: Int) {
         guard let navigator, navigator.isSupported(url) else { return }
         let language = CodeLanguage(path: url.path)
+        let token = HoverPresenter.shared.currentToken // the request the text view just prepared
         Task {
             guard let content = await hoverContent(navigator, url: url, text: text, line: line, character: character, language: language) else { return }
-            HoverPresenter.shared.show(content)
+            HoverPresenter.shared.show(content, token: token)
         }
     }
 
