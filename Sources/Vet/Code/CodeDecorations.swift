@@ -23,7 +23,8 @@ final class HintBox: NSObject {
     let label: String, padLeft: Bool, padRight: Bool
     init(_ h: InlayHintMark) { label = h.label; padLeft = h.padLeft; padRight = h.padRight }
 
-    nonisolated(unsafe) static let font = NSFont.systemFont(ofSize: 10.5)
+    /// The code font, smaller (IntelliJ draws hints in the editor's font).
+    nonisolated(unsafe) static let font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
     /// Left to right even for a Hebrew string type.
     nonisolated(unsafe) static let paragraph: NSParagraphStyle = {
         let p = NSMutableParagraphStyle()
@@ -114,15 +115,15 @@ extension CodeTextView {
                 let size = box.labelSize
                 let pill = NSRect(x: frame.maxX - box.gap / 2 + (box.padLeft ? 4 : 0) + 1, y: frame.minY + (DiffTheme.lineHeight - 15) / 2,
                                   width: ceil(size.width) + 8, height: 15)
-                NSColor.quaternaryLabelColor.withAlphaComponent(0.6).setFill()
-                NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
+                DiffTheme.inlayBackground.setFill()
+                NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
                 (box.label as NSString).draw(at: NSPoint(x: pill.minX + 4, y: pill.minY + (15 - size.height) / 2),
-                                             withAttributes: [.font: HintBox.font, .foregroundColor: NSColor.secondaryLabelColor,
+                                             withAttributes: [.font: HintBox.font, .foregroundColor: DiffTheme.inlayText,
                                                               .paragraphStyle: HintBox.paragraph])
             }
         }
         var rects: [(NSRect, LineLensMark)] = []
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: DiffTheme.lensText]
         for lens in lenses where lens.line >= firstLine && lens.line <= lastLine && lens.line < starts.count {
             let start = starts[lens.line]
             let end = lens.line + 1 < starts.count ? starts[lens.line + 1] - 1 : ns.length
@@ -163,5 +164,48 @@ extension CodeTextView {
         }
         storage.endEditing()
         relayoutVisibleText()
+    }
+
+    /// The characters of the laid-out rows a rect covers.
+    func characterRange(covering rect: NSRect) -> NSRange? {
+        guard let tlm = textLayoutManager, let tcm = tlm.textContentManager, let storage = textStorage else { return nil }
+        let origin = textContainerOrigin
+        let top = tlm.textLayoutFragment(for: NSPoint(x: 0, y: max(0, rect.minY - origin.y)))
+        let bottom = tlm.textLayoutFragment(for: NSPoint(x: 0, y: max(0, rect.maxY - origin.y)))
+        let start = top.map { tcm.offset(from: tcm.documentRange.location, to: $0.rangeInElement.location) } ?? 0
+        let end = bottom.map { tcm.offset(from: tcm.documentRange.location, to: $0.rangeInElement.endLocation) } ?? storage.length
+        guard end > start else { return nil }
+        return NSRange(location: start, length: min(end, storage.length) - start)
+    }
+
+    /// Changed-word marks, the full height of their row (rounded, inset a point).
+    func drawWordHighlights(in rect: NSRect) {
+        guard let storage = textStorage, let range = characterRange(covering: rect) else { return }
+        storage.enumerateAttribute(.vetWordHighlight, in: range) { value, r, _ in
+            guard let color = value as? NSColor, let frame = segmentFrame(r) else { return }
+            let mark = NSRect(x: frame.minX - 1, y: frame.minY + 1, width: frame.width + 2, height: DiffTheme.lineHeight - 2)
+            color.setFill()
+            NSBezierPath(roundedRect: mark, xRadius: 3, yRadius: 3).fill()
+        }
+    }
+
+    /// Fold rows drawn like a button: a chevron and the label, centered in the row.
+    func drawFoldRows(in rect: NSRect) {
+        guard let storage = textStorage, !foldLines.isEmpty, let range = characterRange(covering: rect) else { return }
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium),
+                                                    .foregroundColor: DiffTheme.foldLabel, .paragraphStyle: HintBox.paragraph]
+        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold).applying(.init(paletteColors: [DiffTheme.foldLabel]))
+        storage.enumerateAttribute(.vetFoldLabel, in: range) { value, r, _ in
+            guard let label = value as? String, let frame = segmentFrame(NSRange(location: r.location, length: 1)) else { return }
+            let row = NSRect(x: 0, y: frame.minY, width: bounds.width, height: DiffTheme.lineHeight)
+            var x = textContainerOrigin.x + 4
+            if let chevron = NSImage(systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: "Show unchanged lines")?.withSymbolConfiguration(config) {
+                let size = chevron.size
+                chevron.draw(in: NSRect(x: x, y: row.midY - size.height / 2, width: size.width, height: size.height))
+                x += size.width + 7
+            }
+            let size = (label as NSString).size(withAttributes: attrs)
+            (label as NSString).draw(at: NSPoint(x: x, y: row.midY - size.height / 2), withAttributes: attrs)
+        }
     }
 }

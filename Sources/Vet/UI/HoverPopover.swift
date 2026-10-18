@@ -192,20 +192,9 @@ private struct HoverView: View {
         return lines.joined(separator: "\n")
     }
 
-    /// Code with the editor's syntax colors.
+    /// Code with the editor's colors (never plain white).
     @MainActor static func code(_ s: String, _ language: CodeLanguage) -> AttributedString {
-        let ns = s as NSString
-        var out = AttributedString()
-        var at = 0
-        for t in Highlighter.tokens(s, language: language).sorted(by: { $0.range.location < $1.range.location }) {
-            guard t.range.location >= at, NSMaxRange(t.range) <= ns.length else { continue }
-            if t.range.location > at { out += AttributedString(ns.substring(with: NSRange(location: at, length: t.range.location - at))) }
-            var piece = AttributedString(ns.substring(with: t.range))
-            piece.foregroundColor = Color(nsColor: DiffTheme.token(t.kind))
-            out += piece
-            at = NSMaxRange(t.range)
-        }
-        if at < ns.length { out += AttributedString(ns.substring(from: at)) }
-        return out
+        CodeText.line(s, language: language)
     }
+
 }

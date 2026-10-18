@@ -136,11 +136,17 @@ struct MainToolbar: ToolbarContent {
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
             let staged = review.changes.filter { review.stage(of: $0) != .unstaged }.count
-            Button { ui.showCommit = true } label: { Text(staged > 0 ? "Commit \(staged)" : "Commit") }
-                .buttonStyle(.glassProminent)
-                .disabled(staged == 0)
-                .help("Commit the checked changes (⌘K)")
-                .popover(isPresented: Bindable(ui).showCommit, arrowEdge: .bottom) { CommitPopover(app: app) }
+            // Prominent once something is checked; with nothing checked it stays a readable plain
+            // button (the popover then offers to amend the last commit).
+            Group {
+                if staged > 0 {
+                    Button { ui.showCommit = true } label: { Text("Commit \(staged)") }.buttonStyle(.glassProminent)
+                } else {
+                    Button { ui.showCommit = true } label: { Text("Commit") }.buttonStyle(.glass)
+                }
+            }
+            .help("Commit the checked changes (⌘K)")
+            .popover(isPresented: Bindable(ui).showCommit, arrowEdge: .bottom) { CommitPopover(app: app) }
         }
     }
 }

@@ -22,6 +22,8 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     var onTextSettled: (() -> Void)?
     private var settle: DispatchWorkItem?
     var pane: CodeTextView { textView }
+    /// A read-only viewer (the usages preview).
+    var readOnly = false { didSet { textView.isEditable = !readOnly } }
     var lineGutter: LineNumberGutter { gutter }
     var onHover: ((Int, Int) -> Void)? {
         get { textView.onHover }
@@ -34,6 +36,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        clipsToBounds = true
         addSubview(scroll)
         addSubview(gutter)
         addSubview(sticky)
@@ -72,8 +75,10 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        // Views don't clip to their bounds by default (macOS 14+): filling the dirty rect alone
+        // painted over the file header above the editor.
         DiffTheme.background.setFill()
-        dirtyRect.fill()
+        dirtyRect.intersection(bounds).fill()
     }
 
     /// Shows a file. Unsaved edits are only replaced when `force` is set.
@@ -104,6 +109,29 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
             textView.showFindIndicator(for: range)
         }
         window?.makeFirstResponder(textView)
+    }
+
+    /// Shows a line a third of the way down with a full-row band, and marks `columns` on it, without
+    /// taking focus or moving the selection (for previews).
+    func reveal(line: Int, columns: Range<Int>?) {
+        let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - scroll.contentView.bounds.height / 3
+        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(max(0, y), maxY)))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        gutter.offset = scroll.contentView.bounds.minY
+        gutter.highlighted = line
+        textView.bands = [.init(lines: line..<(line + 1), color: DiffTheme.foldBand)]
+        if let storage = textView.textStorage {
+            storage.beginEditing()
+            storage.removeAttribute(.vetWordHighlight, range: NSRange(location: 0, length: storage.length))
+            if let columns, let start = textView.range(line: line, character: columns.lowerBound),
+               NSMaxRange(start) + columns.count <= storage.length {
+                storage.addAttribute(.vetWordHighlight, value: DiffTheme.searchMatch, range: NSRange(location: start.location, length: columns.count))
+            }
+            storage.endEditing()
+        }
+        updateSticky()
+        textView.needsDisplay = true
     }
 
     var currentText: String { textView.string }

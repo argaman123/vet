@@ -8,6 +8,9 @@ final class RibbonGutterView: NSView {
     enum Mode { case split, rightOnly, leftOnly, unified }
     static let numbersWidth: CGFloat = 40
     static let ribbonWidth: CGFloat = 44
+    /// Side by side: the staging checkboxes' own column, between the ribbon and the new line
+    /// numbers, so they don't sit on the colored bridge.
+    static let checkWidth: CGFloat = 22
 
     var mode: Mode = .split { didSet { needsDisplay = true } }
     var diffLayout: DiffLayout?
@@ -37,7 +40,11 @@ final class RibbonGutterView: NSView {
     override var isFlipped: Bool { true }
 
     static func width(for mode: Mode) -> CGFloat {
-        mode == .split || mode == .unified ? numbersWidth * 2 + ribbonWidth : numbersWidth + ribbonWidth
+        switch mode {
+        case .split: numbersWidth * 2 + ribbonWidth + checkWidth
+        case .unified: numbersWidth * 2 + ribbonWidth
+        case .rightOnly, .leftOnly: numbersWidth + ribbonWidth
+        }
     }
 
     func reload() {
@@ -48,6 +55,7 @@ final class RibbonGutterView: NSView {
         for h in hunks {
             let b = NSButton(checkboxWithTitle: "", target: self, action: #selector(toggled(_:)))
             b.allowsMixedState = true
+            b.controlSize = .small
             b.tag = h.id
             b.toolTip = "Stage this section (mark it reviewed)"
             addSubview(b)
@@ -95,6 +103,14 @@ final class RibbonGutterView: NSView {
                 continue
             }
             guard let s = segment(for: id) else { b.isHidden = true; continue }
+            if mode == .split {
+                // At the change's first new line (or on the marker where lines were only removed).
+                let top = s.right.isEmpty ? y(s.right.lowerBound, left: false) - DiffTheme.lineHeight / 2 : y(s.right.lowerBound, left: false)
+                let x = Self.numbersWidth + Self.ribbonWidth + (Self.checkWidth - 16) / 2
+                b.frame = NSRect(x: x, y: top + (DiffTheme.lineHeight - 16) / 2, width: 16, height: 16)
+                b.isHidden = top < -20 || top > bounds.height + 20
+                continue
+            }
             let ly = (y(s.left.lowerBound, left: true) + y(s.left.upperBound, left: true)) / 2
             let ry = (y(s.right.lowerBound, left: false) + y(s.right.upperBound, left: false)) / 2
             let cy = mode == .leftOnly ? ly : mode == .rightOnly ? ry : (ly + ry) / 2
@@ -134,14 +150,19 @@ final class RibbonGutterView: NSView {
                 path.curve(to: NSPoint(x: x0, y: l1), controlPoint1: NSPoint(x: c2, y: r1), controlPoint2: NSPoint(x: c1, y: l1))
                 path.line(to: NSPoint(x: 0, y: l1))
                 path.close()
-                DiffTheme.fill(head: h.head, work: h.work, staged: staged).setFill()
+                let change = DiffTheme.change(head: h.head, work: h.work)
+                DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: staged).setFill()
                 path.fill()
                 if staged { // a reviewed section gets an outline instead of a strong fill
-                    DiffTheme.color(head: h.head, work: h.work).withAlphaComponent(0.45).setStroke()
+                    DiffTheme.marker(change).withAlphaComponent(0.6).setStroke()
                     path.lineWidth = 1
                     path.stroke()
                 }
             }
+        }
+        if mode == .split { // the checkbox column stays plain
+            DiffTheme.gutter.setFill()
+            NSRect(x: Self.numbersWidth + Self.ribbonWidth, y: 0, width: Self.checkWidth, height: bounds.height).fill()
         }
         // Line numbers.
         let attrs: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumber]
@@ -173,7 +194,7 @@ final class RibbonGutterView: NSView {
         switch mode {
         case .split:
             numbers(leftNumbers, left: true, x: 0)
-            numbers(rightNumbers, left: false, x: Self.numbersWidth + Self.ribbonWidth)
+            numbers(rightNumbers, left: false, x: Self.numbersWidth + Self.ribbonWidth + Self.checkWidth)
         case .rightOnly: numbers(rightNumbers, left: false, x: Self.ribbonWidth)
         case .leftOnly: numbers(leftNumbers, left: true, x: 0)
         case .unified:

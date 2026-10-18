@@ -216,8 +216,18 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftWords.merge(h.headCols) { $1 }
             rightWords.merge(h.workCols) { $1 }
         }
-        let leftAttr = Self.text(staging.head, layout.left, doc.language, words: leftWords, color: DiffTheme.removed, foldStarts: layout.foldHead.mapValues(\.lowerBound))
-        let rightAttr = Self.text(staging.work, layout.right, doc.language, words: rightWords, color: DiffTheme.added, foldStarts: layout.foldWork.mapValues(\.lowerBound))
+        // Changed words: the section's full color (IntelliJ's inner fragments); red and green in
+        // the unified layout, where both sides share one column; faded once reviewed.
+        var leftWordColor: [Int: NSColor] = [:], rightWordColor: [Int: NSColor] = [:]
+        for h in staging.hunks {
+            let staged = states[h.id] == .staged
+            let l = DiffTheme.word(mode == .unified ? DiffTheme.unifiedRemovedWord : DiffTheme.modifiedWord, staged: staged)
+            let r = DiffTheme.word(mode == .unified ? DiffTheme.unifiedAddedWord : DiffTheme.modifiedWord, staged: staged)
+            for line in h.head { leftWordColor[line] = l }
+            for line in h.work { rightWordColor[line] = r }
+        }
+        let leftAttr = Self.text(staging.head, layout.left, doc.language, words: leftWords, wordColor: leftWordColor, foldStarts: layout.foldHead.mapValues(\.lowerBound))
+        let rightAttr = Self.text(staging.work, layout.right, doc.language, words: rightWords, wordColor: rightWordColor, foldStarts: layout.foldWork.mapValues(\.lowerBound))
         leftText.textStorage?.setAttributedString(leftAttr)
         defer { rightText.undoManager?.removeAllActions(withTarget: rightText.textStorage as Any) }
         if mode == .unified {
@@ -236,8 +246,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             switch s.kind {
             case .hunk(let id):
                 guard let h = staging.hunks.first(where: { $0.id == id }) else { continue }
-                let color = DiffTheme.color(head: h.head, work: h.work)
-                let fill = DiffTheme.fill(head: h.head, work: h.work, staged: states[id] == .staged)
+                let change = DiffTheme.change(head: h.head, work: h.work)
+                let color = DiffTheme.marker(change)
+                let fill = DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: states[id] == .staged)
                 if s.left.isEmpty { leftMarkers.append((s.left.lowerBound, color)) }
                 else { leftBands.append(.init(lines: s.left, color: fill)) }
                 if s.right.isEmpty { rightMarkers.append((s.right.lowerBound, color)) }
@@ -475,13 +486,14 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             case .hunk(let id):
                 guard let r = unifiedHunks[id] else { continue }
                 let staged = states[id] == .staged
+                let hasWords = staging.hunks.first { $0.id == id }.map { !($0.headCols.isEmpty && $0.workCols.isEmpty) } ?? false
                 let removed = r.lowerBound..<(r.lowerBound + seg.left.count), added = removed.upperBound..<r.upperBound
                 if !removed.isEmpty {
-                    bands.append(.init(lines: removed, color: DiffTheme.solid(DiffTheme.removed, staged ? 0.07 : 0.16)))
+                    bands.append(.init(lines: removed, color: DiffTheme.fill(DiffTheme.unifiedRemoved, hasWords: hasWords, staged: staged)))
                     bars.append((removed, DiffTheme.removed))
                 }
                 if !added.isEmpty {
-                    bands.append(.init(lines: added, color: DiffTheme.solid(DiffTheme.added, staged ? 0.07 : 0.16)))
+                    bands.append(.init(lines: added, color: DiffTheme.fill(DiffTheme.unifiedAdded, hasWords: hasWords, staged: staged)))
                     bars.append((added, DiffTheme.added))
                 }
             case .fold(let id):
@@ -575,18 +587,20 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         for line in storage.string.components(separatedBy: "\n") {
             let length = (line as NSString).length
             let range = NSRange(location: location, length: min(length + 1, ns.length - location))
-            var fold: Int?, note = false, foldElsewhere = false
+            var fold: Int?, note = false, foldElsewhere = false, foldLabel: String?
             if range.length > 0 {
                 storage.enumerateAttribute(.vetFold, in: range) { value, r, _ in
                     guard let id = value as? Int else { return }
                     if r.location == location { fold = id } else { foldElsewhere = true }
                 }
+                if fold != nil { foldLabel = storage.attribute(.vetFoldLabel, at: location, effectiveRange: nil) as? String }
                 storage.enumerateAttribute(.vetNote, in: range) { value, _, _ in if value != nil { note = true } }
                 storage.enumerateAttribute(.vetRemoved, in: range) { value, _, _ in if value != nil { note = true } }
             }
             if foldElsewhere { return nil }
             if let fold {
-                guard let hidden = layout.foldWork[fold], line.contains("unchanged lines") else { return nil }
+                // The row must be exactly as built (its label after the chevron's space).
+                guard let hidden = layout.foldWork[fold], let foldLabel, line == "      " + foldLabel else { return nil }
                 rows.append(.original(hidden))
             } else if note {
                 rows.append(.skip)
@@ -657,8 +671,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     /// Builds one pane's text: real lines with syntax colors and word highlights, plus fold rows.
     private static func text(_ lines: TextLines, _ display: [DiffLayout.DisplayLine], _ language: CodeLanguage,
-                             words: [Int: [Range<Int>]], color: NSColor, foldStarts: [Int: Int] = [:]) -> NSAttributedString {
-        CodeText.attributed(lines, display, language, words: words, color: color, foldStarts: foldStarts)
+                             words: [Int: [Range<Int>]], wordColor: [Int: NSColor], foldStarts: [Int: Int] = [:]) -> NSAttributedString {
+        CodeText.attributed(lines, display, language, words: words, wordColor: wordColor, foldStarts: foldStarts)
     }
 
     // MARK: Layout and divider
@@ -692,7 +706,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     // full-size bitmap in memory.
     override func draw(_ dirtyRect: NSRect) {
         DiffTheme.background.setFill()
-        dirtyRect.fill()
+        dirtyRect.intersection(bounds).fill()
     }
 
     private func drag(_ dx: CGFloat) {

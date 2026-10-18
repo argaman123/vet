@@ -97,7 +97,7 @@ struct DiffHeader: View {
                 if let node = FileTreeNode.build([change]).first.map(leaf) { review.setStaged(node, on) }
             }
             Image(nsImage: FileIcons.icon(for: change.path)).resizable().frame(width: 16, height: 16)
-            Text((change.path as NSString).lastPathComponent).fontWeight(.semibold)
+            Text((change.path as NSString).lastPathComponent).fontWeight(.semibold).foregroundStyle(change.kind.color)
             if let orig = change.origPath {
                 Text("renamed from \(orig)").foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             } else {
@@ -147,6 +147,7 @@ struct EditorScreen: View {
                 if let url = files.openURL {
                     Image(nsImage: FileIcons.icon(for: url.lastPathComponent)).resizable().frame(width: 16, height: 16)
                     Text(url.lastPathComponent).fontWeight(.semibold)
+                        .foregroundStyle(app.workspace.review.changes.first { $0.path == files.relativePath }.map { AnyShapeStyle($0.kind.color) } ?? AnyShapeStyle(.primary))
                     Text(((files.relativePath ?? "") as NSString).deletingLastPathComponent)
                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                 }

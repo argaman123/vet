@@ -111,9 +111,10 @@ private struct SectionHeader: View {
             TriStateCheckbox(state: states == [.staged] ? .staged : states == [.unstaged] ? .unstaged : .partial) { on in
                 for n in nodes { review.setStaged(n, on) }
             }
-            Text(title)
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
             Spacer()
-            Text("\(files.count)").foregroundStyle(.tertiary).monospacedDigit()
+            Text("\(files.count)").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                .padding(.trailing, 8) // the header runs past the rows' inset; keep the count inside
         }
     }
 }
@@ -203,6 +204,7 @@ private struct FileChangeLabel: View {
             Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 0) {
                 Text(node.name).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(change.kind.color))
                 if let orig = change.origPath {
                     Text("from \((orig as NSString).lastPathComponent)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -314,14 +316,8 @@ extension ChangeKind {
         case .conflicted: "!"
         }
     }
-    var color: Color {
-        switch self {
-        case .added, .untracked: .green
-        case .deleted: .red
-        case .conflicted: .orange
-        default: .blue
-        }
-    }
+    /// IntelliJ's file-status color (names and letters in the trees).
+    var color: Color { Color(nsColor: DiffTheme.fileStatus(self)) }
     var help: String {
         switch self {
         case .added: "Added"

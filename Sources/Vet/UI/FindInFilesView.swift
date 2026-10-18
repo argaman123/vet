@@ -139,7 +139,8 @@ struct FindInFilesView: View {
                             MatchRow(match: m).tag(FindModel.id(m))
                         }
                     } label: {
-                        FileGroupLabel(path: group.id, count: group.matches.count)
+                        FileGroupLabel(path: group.id, count: group.matches.count,
+                                       kind: app.workspace.review.changes.first { $0.path == group.id }?.kind)
                     }
                 }
             }
@@ -160,11 +161,12 @@ struct FindInFilesView: View {
 
 private struct FileGroupLabel: View {
     let path: String, count: Int
+    var kind: ChangeKind?
     var body: some View {
         let name = (path as NSString).lastPathComponent, folder = (path as NSString).deletingLastPathComponent
         HStack(spacing: 6) {
             Image(nsImage: FileIcons.icon(for: name)).resizable().frame(width: 16, height: 16)
-            Text(name).lineLimit(1)
+            Text(name).lineLimit(1).foregroundStyle(kind.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.primary))
             Text(folder).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             Spacer(minLength: 4)
             Text("\(count)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
@@ -182,28 +184,13 @@ private struct MatchRow: View {
         }
     }
 
-    /// The line without its indentation, the matches in bold on the find highlight. A match far
-    /// along the line is brought into view: the text before it is cut to a few characters.
+    /// The line in code colors without its indentation, the matches on the search highlight; a
+    /// match far along the line is brought into view (the text before it cut to a few characters).
     static func preview(_ m: FindMatch) -> AttributedString {
         let utf16 = Array(m.preview.utf16)
         let indent = utf16.prefix { $0 == 32 || $0 == 9 }.count
-        var out = AttributedString()
-        var at = indent
-        if let first = m.ranges.map(\.lowerBound).min(), first - indent > 22 {
-            at = first - 10
-            // Don't start inside a surrogate pair.
-            if at > 0, at < utf16.count, UTF16.isTrailSurrogate(utf16[at]) { at -= 1 }
-            out += AttributedString("…")
-        }
-        for r in m.ranges.sorted(by: { $0.lowerBound < $1.lowerBound }) where r.lowerBound >= at && r.upperBound <= utf16.count {
-            if r.lowerBound > at { out += AttributedString(String(decoding: utf16[at..<r.lowerBound], as: UTF16.self)) }
-            var hit = AttributedString(String(decoding: utf16[r], as: UTF16.self))
-            hit.inlinePresentationIntent = .stronglyEmphasized
-            hit.backgroundColor = Color(nsColor: .findHighlightColor).opacity(0.45)
-            out += hit
-            at = r.upperBound
-        }
-        if at < utf16.count { out += AttributedString(String(decoding: utf16[at...], as: UTF16.self)) }
-        return out
+        var from = indent
+        if let first = m.ranges.map(\.lowerBound).min(), first - indent > 22 { from = first - 10 }
+        return CodeText.line(m.preview, language: CodeLanguage(path: m.path), matches: m.ranges, from: from, ellipsis: from > indent)
     }
 }

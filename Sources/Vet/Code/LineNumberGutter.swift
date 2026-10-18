@@ -26,7 +26,7 @@ final class LineNumberGutter: NSView {
         DiffTheme.gutter.setFill()
         bounds.fill()
         let attrs: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumber]
-        let strong: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.text]
+        let strong: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumberCurrent]
         let first = max(0, Int((offset - DiffTheme.inset.height) / DiffTheme.lineHeight))
         let count = Int(bounds.height / DiffTheme.lineHeight) + 2
         for i in first..<min(numbers.count, first + count) {

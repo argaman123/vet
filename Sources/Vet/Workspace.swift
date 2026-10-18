@@ -158,6 +158,10 @@ final class Workspace {
         review.navigator = { [weak self] kind, url, text, line, character in self?.navigate(kind, url: url, text: text, line: line, character: character) }
         review.hoverer = { [weak self] url, text, line, character in self?.hover(url: url, text: text, line: line, character: character) }
         review.readingAids = { [weak self] view in self?.loadReadingAids(diff: view) }
+        ReferencesPresenter.shared.tokens = { [weak self] url, text in
+            guard let navigator = self?.navigator, navigator.isSupported(url) else { return [] }
+            return await navigator.semanticTokens(of: url, text: text)
+        }
         review.open(folder)
         files.open(folder)
         browser.open(project: folder)
@@ -261,7 +265,7 @@ extension Workspace {
             pane.lenses = lines.enumerated().compactMap { i, line in
                 guard let r = row(line) else { return nil }
                 let infos = byLine[line] ?? []
-                var parts = infos.map(Self.lensText)
+                var parts = infos.compactMap(Self.lensText)
                 if let a = authors[i] { parts.append(a.author) }
                 return LineLensMark(line: r, character: infos.first?.character ?? 0, text: parts.joined(separator: " · "))
             }
@@ -290,9 +294,9 @@ extension Workspace {
         return label
     }
 
-    /// "3 references" → "3 usages", as WebStorm says it.
-    nonisolated static func lensText(_ lens: CodeLensInfo) -> String {
-        guard lens.kind == .references else { return lens.title }
+    /// "3 references" → "3 usages", as WebStorm says it; no "0 implementations".
+    nonisolated static func lensText(_ lens: CodeLensInfo) -> String? {
+        guard lens.kind == .references else { return lens.title.hasPrefix("0 ") ? nil : lens.title }
         let n = Int(lens.title.prefix { $0.isNumber }) ?? 0
         return n == 0 ? "no usages" : n == 1 ? "1 usage" : "\(n) usages"
     }

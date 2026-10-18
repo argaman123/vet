@@ -56,6 +56,7 @@ struct ProjectNodeRow: View {
     let app: AppDelegate
     let item: CompactFile
     @Binding var quickLook: URL?
+    @Environment(\.backgroundProminence) private var prominence
     private var node: FileListNode { item.node }
 
     var body: some View {
@@ -73,8 +74,10 @@ struct ProjectNodeRow: View {
         } else {
             HStack(spacing: 6) {
                 Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
+                let change = app.workspace.review.changes.first(where: { $0.path == node.path })
                 Text(node.name).lineLimit(1).truncationMode(.middle)
-                if let change = app.workspace.review.changes.first(where: { $0.path == node.path }) {
+                    .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : change.map { AnyShapeStyle($0.kind.color) } ?? AnyShapeStyle(.primary))
+                if let change {
                     Spacer(minLength: 4)
                     Text(change.kind.letter).font(.caption.weight(.semibold).monospaced()).foregroundStyle(change.kind.color)
                 }

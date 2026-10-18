@@ -14,7 +14,10 @@ struct CommitPopover: View {
         let review = app.workspace.review
         let files = review.changes.filter { review.stage(of: $0) != .unstaged }
         VStack(alignment: .leading, spacing: 10) {
-            Text(amend ? "Amend the last commit" : "Commit \(files.count) reviewed file\(files.count == 1 ? "" : "s")").font(.headline)
+            Text(amend ? "Amend the last commit" : files.isEmpty ? "Nothing checked to commit" : "Commit \(files.count) reviewed file\(files.count == 1 ? "" : "s")").font(.headline)
+            if files.isEmpty && !amend {
+                Text("Check files or sections in Changes, or amend the last commit.").font(.callout).foregroundStyle(.secondary)
+            }
             TextEditor(text: $message)
                 .font(.body)
                 .focused($focused)
@@ -36,10 +39,10 @@ struct CommitPopover: View {
                 if working { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Commit and Push") { commit(push: true) }
-                    .disabled(working || review.gitBusy || (message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !amend))
+                    .disabled(working || review.gitBusy || (!amend && (files.isEmpty || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
                 Button("Commit") { commit(push: false) }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(working || review.gitBusy || (message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !amend))
+                    .disabled(working || review.gitBusy || (!amend && (files.isEmpty || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
             }
         }
         .padding(14)

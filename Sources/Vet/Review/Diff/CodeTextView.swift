@@ -57,7 +57,7 @@ final class CodeTextView: NSTextView {
         tv.textContainer?.widthTracksTextView = false
         tv.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         tv.textContainer?.lineFragmentPadding = 0
-        tv.selectedTextAttributes = [.backgroundColor: DiffTheme.hex(0x264f78)]
+        tv.selectedTextAttributes = [.backgroundColor: DiffTheme.selection]
         tv.insertionPointColor = DiffTheme.text
         tv.usesFindBar = true
         scroll.documentView = tv
@@ -93,6 +93,8 @@ final class CodeTextView: NSTextView {
             m.color.withAlphaComponent(0.8).setFill()
             r.fill()
         }
+        drawWordHighlights(in: rect)
+        drawFoldRows(in: rect)
         if !inlayHints.isEmpty || !lenses.isEmpty { drawDecorations(in: rect) }
     }
 

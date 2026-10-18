@@ -107,7 +107,8 @@ struct SearchEverywhereSuggestions: View {
                     ForEach(group) { item in
                         Label {
                             HStack(spacing: 8) {
-                                Text(Self.highlighted(item)).lineLimit(1)
+                                Text(item.kind == .text ? Self.codeLine(item) : Self.highlighted(item)).lineLimit(1)
+                                    .font(item.kind == .text ? .system(size: 12, design: .monospaced) : nil)
                                 Text(item.detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                             }
                         } icon: {
@@ -148,6 +149,12 @@ struct SearchEverywhereSuggestions: View {
         case 26: "t.square"           // type parameter
         default: "curlybraces.square"
         }
+    }
+
+    /// A text result: the line in code colors, the match on the search highlight.
+    static func codeLine(_ item: SearchItem) -> AttributedString {
+        let path = item.detail.split(separator: ":").dropLast().joined(separator: ":")
+        return CodeText.line(item.title, language: CodeLanguage(path: path), matches: item.matched.map { $0..<($0 + 1) })
     }
 
     /// The title with the matched characters in bold.

@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import VetCore
 
 /// Builds the attributed text shown in code panes: syntax colors, word highlights, fold rows.
@@ -11,7 +12,7 @@ enum CodeText {
     /// One pane's text: `display` picks which file lines show (and where folds go).
     static func attributed(_ lines: TextLines, _ display: [DiffLayout.DisplayLine], _ language: CodeLanguage,
                            words: [Int: [Range<Int>]] = [:], color: NSColor = DiffTheme.added,
-                           foldStarts: [Int: Int] = [:]) -> NSAttributedString {
+                           wordColor: [Int: NSColor] = [:], foldStarts: [Int: Int] = [:]) -> NSAttributedString {
         let full = lines.joinedString()
         let tokens = Highlighter.tokens(full, language: language)
         var starts: [Int] = []
@@ -39,8 +40,9 @@ enum CodeText {
                     if hi > lo { out.addAttribute(.foregroundColor, value: DiffTheme.token(t.kind), range: NSRange(location: at + lo - start, length: hi - lo)) }
                     k += 1
                 }
+                // Drawn by the pane as row-high marks (a text background would hug the glyphs, off-center).
                 for r in words[l] ?? [] where r.upperBound <= length {
-                    out.addAttribute(.backgroundColor, value: color.withAlphaComponent(0.35), range: NSRange(location: at + r.lowerBound, length: r.count))
+                    out.addAttribute(.vetWordHighlight, value: wordColor[l] ?? color, range: NSRange(location: at + r.lowerBound, length: r.count))
                 }
             case .note(let id, _):
                 // Blank space that the note card covers; not part of the file and not editable.
@@ -48,13 +50,16 @@ enum CodeText {
                 attrs[.vetNote] = id
                 out.append(NSAttributedString(string: " " + newline, attributes: attrs))
             case .fold(let id, let hidden):
+                // The row keeps its label as text (so it has a width and reads back), but the pane
+                // draws it: chevron and label centered in the row like a button.
                 var attrs = base
-                attrs[.foregroundColor] = DiffTheme.lineNumber
+                attrs[.foregroundColor] = NSColor.clear
                 attrs[.vetFold] = id
                 let scope = foldStarts[id].map { ScopeLabel.chain(lines, at: $0) } ?? ""
                 let label = scope.isEmpty ? "\(hidden) unchanged lines" : "\(scope)  ·  \(hidden) lines"
+                attrs[.vetFoldLabel] = label
                 attrs[.font] = NSFont.systemFont(ofSize: 11)
-                out.append(NSAttributedString(string: "  ⌄  " + label + newline, attributes: attrs))
+                out.append(NSAttributedString(string: "      " + label + newline, attributes: attrs))
             }
         }
         out.endEditing()
@@ -73,7 +78,7 @@ enum CodeText {
             }
         }
         storage.enumerateAttribute(.vetFold, in: all) { value, range, _ in
-            if value != nil { storage.addAttribute(.foregroundColor, value: DiffTheme.lineNumber, range: range) }
+            if value != nil { storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range) }
         }
         storage.endEditing()
     }
@@ -130,4 +135,46 @@ extension NSAttributedString.Key {
     static let vetNote = NSAttributedString.Key("VetNote")
     /// Marks a HEAD line shown in the unified diff: read-only and not part of the file.
     static let vetRemoved = NSAttributedString.Key("VetRemoved")
+    /// A fold row's label (the pane draws it centered in the row).
+    static let vetFoldLabel = NSAttributedString.Key("VetFoldLabel")
+    /// A changed word's mark color (the pane draws it the full height of the row).
+    static let vetWordHighlight = NSAttributedString.Key("VetWordHighlight")
+}
+
+extension CodeText {
+    /// One line of code for SwiftUI lists (usages, Find in Files, Search Everywhere): the editor's
+    /// syntax colors, with `matches` (UTF-16 ranges) on IntelliJ's search highlight. Text before
+    /// `from` is left out (indentation, or a long line's head, then marked with "…").
+    static func line(_ text: String, language: CodeLanguage, matches: [Range<Int>] = [], from: Int = 0, ellipsis: Bool = false) -> AttributedString {
+        let ns = text as NSString
+        let start = min(max(0, from), ns.length)
+        var colors = [NSColor?](repeating: nil, count: ns.length)
+        for t in Highlighter.tokens(text, language: language) {
+            for i in t.range.location..<min(NSMaxRange(t.range), ns.length) { colors[i] = DiffTheme.token(t.kind) }
+        }
+        var hit = [Bool](repeating: false, count: ns.length)
+        for r in matches { for i in max(0, r.lowerBound)..<min(r.upperBound, ns.length) { hit[i] = true } }
+        var out = AttributedString()
+        if ellipsis {
+            var dots = AttributedString("…")
+            dots.foregroundColor = Color(nsColor: DiffTheme.foldLabel)
+            out += dots
+        }
+        var i = start
+        while i < ns.length {
+            var j = i + 1
+            while j < ns.length, colors[j] == colors[i], hit[j] == hit[i] { j += 1 }
+            // Don't split a surrogate pair.
+            if j < ns.length, UTF16.isTrailSurrogate(ns.character(at: j)) { j += 1 }
+            var piece = AttributedString(ns.substring(with: NSRange(location: i, length: j - i)))
+            piece.foregroundColor = Color(nsColor: colors[i] ?? DiffTheme.text)
+            if hit[i] {
+                piece.backgroundColor = Color(nsColor: DiffTheme.searchMatch)
+                piece.inlinePresentationIntent = .stronglyEmphasized
+            }
+            out += piece
+            i = j
+        }
+        return out
+    }
 }

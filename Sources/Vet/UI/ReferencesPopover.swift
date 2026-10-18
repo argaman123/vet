@@ -19,11 +19,15 @@ final class ReferencesPresenter: NSObject, NSPopoverDelegate {
     static let shared = ReferencesPresenter()
     private var popover: NSPopover?
 
+    /// Semantic tokens for previews (set by the workspace).
+    var tokens: ((URL, String) async -> [SemanticToken])?
+
     func show(symbol: String, locations: [CodeLocation], root: URL?, noun: String = "usage", textOf: @escaping (URL) -> String?,
               open: @escaping (CodeLocation) -> Void) {
         popover?.close()
         let model = ReferencesModel(symbol: symbol, locations: locations, root: root, textOf: textOf)
         model.noun = noun
+        model.tokens = tokens
         let p = NSPopover()
         p.behavior = .transient
         p.animates = true
@@ -64,6 +68,8 @@ final class ReferencesModel {
     }
 
     let symbol: String
+    /// The language server's semantic tokens for a file's text (the preview's name colors).
+    var tokens: ((URL, String) async -> [SemanticToken])?
     /// What the matches are ("usage", "implementation"), for the header.
     var noun = "usage"
     let files: [File]
@@ -145,7 +151,8 @@ struct ReferencesView: View {
             HSplitView {
                 Group {
                     if let hit = model.selectedHit {
-                        ReferencePreview(lines: model.lines(of: hit.location.url), url: hit.location.url, line: hit.location.startLine)
+                        ReferencePreview(lines: model.lines(of: hit.location.url), url: hit.location.url, line: hit.location.startLine,
+                                         columns: hit.column, tokens: model.tokens)
                     } else {
                         Color(nsColor: .textBackgroundColor)
                     }
@@ -172,6 +179,7 @@ struct ReferencesView: View {
                     }
                 }
                 .listStyle(.sidebar)
+                .environment(\.sidebarRowSize, .small)
                 .environment(\.defaultMinListRowHeight, 22)
                 .frame(minWidth: 260, idealWidth: 340, maxWidth: 520)
             }
@@ -184,67 +192,60 @@ struct ReferencesView: View {
 private struct HitRow: View {
     let hit: ReferencesModel.Hit
     var body: some View {
-        Text(attributed).font(.system(size: 11.5, design: .monospaced)).lineLimit(1)
-    }
-    private var attributed: AttributedString {
-        var s = AttributedString(hit.lineText)
-        let u = hit.lineText.utf16
-        if hit.column.upperBound <= u.count,
-           let lo = String.Index(u.index(u.startIndex, offsetBy: hit.column.lowerBound), within: hit.lineText),
-           let hi = String.Index(u.index(u.startIndex, offsetBy: hit.column.upperBound), within: hit.lineText),
-           let a = AttributedString.Index(lo, within: s), let b = AttributedString.Index(hi, within: s) {
-            s[a..<b].inlinePresentationIntent = .stronglyEmphasized
-            s[a..<b].backgroundColor = Color(nsColor: .findHighlightColor).opacity(0.35)
+        HStack(spacing: 8) {
+            Text("\(hit.location.startLine + 1)").font(.system(size: 10.5).monospacedDigit())
+                .foregroundStyle(Color(nsColor: DiffTheme.foldLabel)).frame(minWidth: 26, alignment: .trailing)
+            Text(attributed).font(.system(size: 11.5, design: .monospaced)).lineLimit(1)
         }
-        return s
+    }
+    /// The line in code colors, the symbol on the search highlight.
+    private var attributed: AttributedString {
+        let text = hit.lineText
+        let u = Array(text.utf16)
+        let indent = u.prefix { $0 == 32 || $0 == 9 }.count
+        let cut = hit.column.lowerBound - indent > 40 ? hit.column.lowerBound - 16 : indent
+        return CodeText.line(text, language: CodeLanguage(path: hit.location.url.path), matches: [hit.column], from: cut, ellipsis: cut > indent)
     }
 }
 
-/// The selected match's file, read-only, with the match's line highlighted at a third of the height.
+/// The selected match's file in a read-only editor (line numbers, sticky lines, the server's name
+/// colors), the match's line banded a third of the way down and the symbol highlighted.
 private struct ReferencePreview: NSViewRepresentable {
     let lines: TextLines
     let url: URL
     let line: Int
+    let columns: Range<Int>
+    let tokens: ((URL, String) async -> [SemanticToken])?
 
-    final class Coordinator { var shownURL: URL?; var shownLine = -1; var highlighted: NSRange? }
+    final class Coordinator { var shownURL: URL?; var shownLine = -1 }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let (scroll, tv) = CodeTextView.make()
-        tv.isEditable = false
-        _ = tv
-        return scroll
+    func makeNSView(context: Context) -> CodeEditorView {
+        let v = CodeEditorView()
+        v.readOnly = true
+        return v
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let tv = scroll.documentView as? CodeTextView else { return }
+    func updateNSView(_ v: CodeEditorView, context: Context) {
         let c = context.coordinator
         if c.shownURL != url {
             c.shownURL = url
-            let display = (0..<lines.count).map { DiffLayout.DisplayLine.code($0) }
-            tv.textStorage?.setAttributedString(CodeText.attributed(lines, display, CodeLanguage(path: url.path)))
-            c.highlighted = nil
-        }
-        if c.shownLine != line || c.highlighted == nil {
-            c.shownLine = line
-            guard let storage = tv.textStorage, let start = tv.range(line: line, character: 0) else { return }
-            let lineRange = (storage.string as NSString).lineRange(for: start)
-            storage.beginEditing()
-            if let old = c.highlighted, NSMaxRange(old) <= storage.length { storage.removeAttribute(.backgroundColor, range: old) }
-            storage.addAttribute(.backgroundColor, value: NSColor.findHighlightColor.withAlphaComponent(0.28), range: lineRange)
-            storage.endEditing()
-            c.highlighted = lineRange
-            // After layout: put the match a third of the way down.
-            DispatchQueue.main.async {
-                tv.scrollRangeToVisible(lineRange)
-                guard let tlm = tv.textLayoutManager, let content = tlm.textContentManager,
-                      let loc = content.location(content.documentRange.location, offsetBy: lineRange.location) else { return }
-                tlm.ensureLayout(for: NSTextRange(location: loc))
-                guard let frag = tlm.textLayoutFragment(for: loc) else { return }
-                let y = frag.layoutFragmentFrame.minY + tv.textContainerInset.height - scroll.contentView.bounds.height / 3
-                scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, y)))
-                scroll.reflectScrolledClipView(scroll.contentView)
+            c.shownLine = -1
+            v.load(lines, language: CodeLanguage(path: url.path), force: true)
+            if let tokens {
+                let text = v.currentText, url = url
+                Task { @MainActor [weak v] in
+                    let found = await tokens(url, text)
+                    guard let v, v.currentText == text else { return }
+                    v.pane.applySemanticTokens(found, display: { $0 })
+                }
             }
+        }
+        if c.shownLine != line {
+            c.shownLine = line
+            let line = line, columns = columns
+            // After layout, so the line can sit a third of the way down.
+            DispatchQueue.main.async { [weak v] in v?.reveal(line: line, columns: columns) }
         }
     }
 }

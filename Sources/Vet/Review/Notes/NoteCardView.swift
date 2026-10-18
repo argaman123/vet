@@ -20,7 +20,7 @@ final class NoteCardView: NSView, NSTextViewDelegate {
         layer?.backgroundColor = DiffTheme.foldBand.cgColor
         title.stringValue = sent ? "\(label) · sent" : label
         title.font = .systemFont(ofSize: 11, weight: .medium)
-        title.textColor = DiffTheme.lineNumber
+        title.textColor = DiffTheme.foldLabel
         text.string = value
         text.isEditable = editing
         text.isSelectable = true
