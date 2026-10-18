@@ -5,4 +5,4 @@ cd "$(dirname "$0")/.."
 scripts/build-app.sh "${1:-release}"
 osascript -e 'quit app id "dev.vet.Vet"' 2>/dev/null || true
 sleep 0.5
-open build/Vet.app
+open build/app.noindex/Vet.app

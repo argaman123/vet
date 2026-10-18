@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds build/Vet.app from the Swift package and signs it.
+# Builds build/app.noindex/Vet.app from the Swift package and signs it.
 # Signs with the "Vet Local Development" identity when present so macOS keeps
 # the Accessibility permission across rebuilds (see setup-signing.sh).
 set -euo pipefail
@@ -13,11 +13,12 @@ cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
 swift build -c "$CONFIG" --product Vet "${EXTRA[@]}"
 BIN="$(swift build -c "$CONFIG" "${EXTRA[@]}" --show-bin-path)/Vet"
-APP=build/Vet.app
+APP=build/app.noindex/Vet.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Vet"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 if security find-identity -p codesigning 2>/dev/null | grep -q "Vet Local Development"; then
   codesign --force --sign "Vet Local Development" "$APP"
 else

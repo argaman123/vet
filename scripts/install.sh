@@ -7,5 +7,5 @@ osascript -e 'quit app id "dev.vet.Vet"' 2>/dev/null || true
 sleep 0.5
 mkdir -p ~/Applications
 rm -rf ~/Applications/Vet.app
-cp -R build/Vet.app ~/Applications/Vet.app
+cp -R build/app.noindex/Vet.app ~/Applications/Vet.app
 echo "Installed ~/Applications/Vet.app"
