@@ -80,29 +80,87 @@ final class ReviewModel {
 
     /// The checked-out branch (nil when detached or not a repo).
     private(set) var branch: String?
-    /// Local branches for the title menu.
-    private(set) var branches: [String] = []
+    /// Branches for the title menu: local ones first (current at the top), then remote ones no
+    /// local branch tracks.
+    private(set) var branches: [GitBranch] = []
+    /// A branch switch or commit is running.
+    private(set) var gitBusy = false
     /// Unified (one column) instead of side by side.
     var unified = UserDefaults.standard.bool(forKey: "unifiedDiff") {
         didSet { UserDefaults.standard.set(unified, forKey: "unifiedDiff"); diffVersion += 1 }
     }
 
     func refreshBranches() async {
-        guard let root else { branch = nil; branches = []; return }
-        let head = (try? String(contentsOf: GitRepo.gitDir(of: root).appendingPathComponent("HEAD"), encoding: .utf8)) ?? ""
-        branch = head.hasPrefix("ref: refs/heads/") ? String(head.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        guard let repo else { branch = nil; branches = []; return }
+        branch = (try? await repo.currentBranch()) ?? nil
+        branches = (try? await repo.branches()) ?? []
     }
 
+    /// Switches branches (never forced). Unsaved diff edits are asked about first; files git
+    /// would overwrite are listed instead of being touched.
     func checkout(_ name: String) {
-        show("Switching branches isn't wired up yet.")
+        guard let repo, !gitBusy, name != branch, confirmLeaveDiff() else { return }
+        gitBusy = true
+        Task {
+            defer { gitBusy = false }
+            do {
+                switch try await repo.checkout(name) {
+                case .done:
+                    selectedPath = nil
+                case .wouldOverwrite(let paths):
+                    Self.alert("Can't switch to \(name)",
+                               "Switching would overwrite your changes to:\n\(paths.prefix(12).joined(separator: "\n"))\(paths.count > 12 ? "\n…" : "")\n\nCommit or stash them first.")
+                case .failed(let message):
+                    Self.alert("Can't switch to \(name)", message)
+                }
+            } catch {
+                show("Couldn't switch branches: \(error)")
+            }
+            await refresh()
+        }
     }
 
-    func lastCommitMessage() async -> String? { nil }
+    func lastCommitMessage() async -> String? {
+        guard let repo else { return nil }
+        return (try? await repo.lastCommitMessage()) ?? nil
+    }
 
-    /// Commits what's staged (reviewed); optionally pushes. Returns whether it worked.
+    /// Commits what's staged (reviewed); optionally pushes. Returns whether the commit worked.
     func commit(message: String, amend: Bool, push: Bool) async -> Bool {
-        show("Committing isn't wired up yet.")
-        return false
+        guard let repo, !gitBusy else { return false }
+        gitBusy = true
+        defer { gitBusy = false }
+        do {
+            _ = try await repo.commit(message: message, amend: amend)
+        } catch let e as GitActionError {
+            Self.alert(e.message, e.output)
+            await refresh()
+            return false
+        } catch {
+            Self.alert("The commit failed.", "\(error)")
+            return false
+        }
+        await refresh()
+        guard push else { link?.flash("Committed"); return true }
+        do {
+            let summary = try await repo.push()
+            link?.flash(summary.isEmpty ? "Committed and pushed" : "Pushed: \(summary)")
+        } catch let e as GitActionError {
+            Self.alert("Committed, but the push failed. \(e.message)", e.output)
+        } catch {
+            Self.alert("Committed, but the push failed.", "\(error)")
+        }
+        await refreshBranches()
+        return true
+    }
+
+    /// A git refusal with its own output (a hook's output included) as the details.
+    private static func alert(_ title: String, _ details: String) {
+        let a = NSAlert()
+        a.messageText = title
+        let text = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        a.informativeText = text.count > 3000 ? String(text.prefix(3000)) + "\n…" : text
+        a.runModal()
     }
 
     func open(_ folder: URL?) {

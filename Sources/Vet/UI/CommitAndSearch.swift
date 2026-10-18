@@ -35,11 +35,11 @@ struct CommitPopover: View {
             HStack {
                 if working { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("Commit and Push…") { commit(push: true) }
-                    .disabled(working || (message.isEmpty && !amend))
+                Button("Commit and Push") { commit(push: true) }
+                    .disabled(working || review.gitBusy || (message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !amend))
                 Button("Commit") { commit(push: false) }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(working || (message.isEmpty && !amend))
+                    .disabled(working || review.gitBusy || (message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !amend))
             }
         }
         .padding(14)

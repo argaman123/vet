@@ -62,15 +62,23 @@ struct ProjectMenu: View {
             }
             Button("Open Folder…") { app.projects.showOpenPanel() }
         }
-        if !app.workspace.review.branches.isEmpty {
+        let review = app.workspace.review
+        let local = review.branches.filter { !$0.isRemote }, remote = review.branches.filter(\.isRemote)
+        if !local.isEmpty {
             Section("Branches") {
-                ForEach(app.workspace.review.branches, id: \.self) { name in
-                    Button { app.workspace.review.checkout(name) } label: {
-                        if name == app.workspace.review.branch { Label(name, systemImage: "checkmark") } else { Text(name) }
-                    }
+                ForEach(local, id: \.name) { b in branchButton(b) }
+                if !remote.isEmpty {
+                    Menu("Remote Branches") { ForEach(remote, id: \.name) { b in branchButton(b) } }
                 }
             }
         }
+    }
+
+    private func branchButton(_ b: GitBranch) -> some View {
+        Button { app.workspace.review.checkout(b.name) } label: {
+            if b.isCurrent { Label(b.name, systemImage: "checkmark") } else { Text(b.name) }
+        }
+        .disabled(app.workspace.review.gitBusy)
     }
 }
 
