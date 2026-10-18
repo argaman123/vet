@@ -13,6 +13,8 @@ import Foundation
 ///
 /// Ties go to the shorter name, then the shallower path, then the path in order.
 /// `score.matched` holds UTF-16 offsets into the whole `path` (folder and name parts alike).
+/// `score.value` follows the returned order but combines name and folder scores for a `/`
+/// query, so compare values only among the results of one call.
 public enum FileRanking {
     public static func rank(_ query: String, paths: [String], limit: Int) -> [(path: String, score: FuzzyScore)] {
         var q = query.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\\", with: "/")
