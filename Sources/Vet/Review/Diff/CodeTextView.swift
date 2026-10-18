@@ -23,6 +23,11 @@ final class CodeTextView: NSTextView {
     /// server and answers with `HoverPresenter.shared.show`.
     var onHover: ((Int, Int) -> Void)?
     private var hoverWork: DispatchWorkItem?
+    /// Inline hints and end-of-line lenses (see CodeDecorations.swift).
+    var inlayHints: [InlayHintMark] = [] { didSet { if oldValue != inlayHints { applyHintGaps() } } }
+    var lenses: [LineLensMark] = [] { didSet { if oldValue != lenses { needsDisplay = true } } }
+    var onLensClick: ((LineLensMark) -> Void)?
+    var lensRects: [(NSRect, LineLensMark)] = []
     private var hoverTracking: NSTrackingArea?
 
     static func make() -> (NSScrollView, CodeTextView) {
@@ -88,12 +93,23 @@ final class CodeTextView: NSTextView {
             m.color.withAlphaComponent(0.8).setFill()
             r.fill()
         }
+        if !inlayHints.isEmpty || !lenses.isEmpty { drawDecorations(in: rect) }
+    }
+
+    // A hint's gap is kerning on the character before it; typing there mustn't copy it.
+    override var typingAttributes: [NSAttributedString.Key: Any] {
+        get { var a = super.typingAttributes; a[.kern] = nil; a[.vetHint] = nil; return a }
+        set { var a = newValue; a[.kern] = nil; a[.vetHint] = nil; super.typingAttributes = a }
     }
 
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         if let id = foldLines[line(at: p)] {
             onFoldClick?(id)
+            return
+        }
+        if let lens = lens(at: p), let onLensClick {
+            onLensClick(lens)
             return
         }
         if event.modifierFlags.contains(.command), let onNavigate, let pos = position(at: p) {
@@ -136,11 +152,18 @@ final class CodeTextView: NSTextView {
     private func hoverRested(at p: NSPoint) {
         guard let window, window.isKeyWindow, let pos = position(at: p) else { return }
         let rect = symbolRect(line: pos.line, character: pos.character)
-        guard rect.insetBy(dx: -1, dy: -2).contains(p), word(line: pos.line, character: pos.character) != nil else { return }
-        let key = "\(ObjectIdentifier(self).hashValue):\(pos.line):\(Int(rect.minX))"
+        guard rect.insetBy(dx: -1, dy: -2).contains(p) else { return }
+        hover(line: pos.line, character: pos.character)
+    }
+
+    /// Asks for hover info on the symbol at (display line, column).
+    func hover(line: Int, character: Int) {
+        guard word(line: line, character: character) != nil else { return }
+        let rect = symbolRect(line: line, character: character)
+        let key = "\(ObjectIdentifier(self).hashValue):\(line):\(Int(rect.minX))"
         guard !HoverPresenter.shared.isShowing(key) else { return }
         HoverPresenter.shared.prepare(view: self, rect: rect, key: key)
-        onHover?(pos.line, pos.character)
+        onHover?(line, character)
     }
 
 

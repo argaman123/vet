@@ -7,7 +7,18 @@ final class LineNumberGutter: NSView {
     var offset: CGFloat = 0 { didSet { needsDisplay = true } }
     /// File line to emphasize (0-based), e.g. after jumping to a definition.
     var highlighted: Int? { didSet { needsDisplay = true } }
-    static let width: CGFloat = 52
+    /// Jump icons by display line: this overrides something (up) or is implemented/overridden (down).
+    var marks: [Int: JumpMark] = [:] { didSet { if oldValue != marks { needsDisplay = true } } }
+    var onMarkClick: ((Int, JumpMark, NSRect) -> Void)?
+    static let width: CGFloat = 66
+    /// Where line numbers end; the jump icons sit to their right, as in WebStorm.
+    static let numbersRight: CGFloat = 42
+
+    enum JumpMark: Equatable {
+        case overrides, implemented
+        var symbol: String { self == .overrides ? "arrow.up.circle" : "arrow.down.circle" }
+        var help: String { self == .overrides ? "Go to the overridden declaration" : "Go to implementations" }
+    }
 
     override var isFlipped: Bool { true }
 
@@ -23,7 +34,28 @@ final class LineNumberGutter: NSView {
             let s = NSAttributedString(string: "\(n + 1)", attributes: n == highlighted ? strong : attrs)
             let size = s.size()
             let y = DiffTheme.inset.height + CGFloat(i) * DiffTheme.lineHeight - offset
-            s.draw(at: NSPoint(x: bounds.width - 10 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2 + 1.5))
+            s.draw(at: NSPoint(x: Self.numbersRight - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2 + 1.5))
         }
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular).applying(.init(paletteColors: [.systemBlue]))
+        for (line, mark) in marks where line >= first && line < first + count {
+            guard let image = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: mark.help)?.withSymbolConfiguration(config) else { continue }
+            image.draw(in: iconRect(line, image.size))
+        }
+    }
+
+    private func iconRect(_ line: Int, _ size: NSSize = NSSize(width: 13, height: 13)) -> NSRect {
+        let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - offset
+        return NSRect(x: Self.numbersRight + 6, y: y + (DiffTheme.lineHeight - size.height) / 2, width: size.width, height: size.height)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        let line = Int(floor((p.y + offset - DiffTheme.inset.height) / DiffTheme.lineHeight))
+        guard let mark = marks[line], iconRect(line).insetBy(dx: -4, dy: -3).contains(p) else { return super.mouseDown(with: event) }
+        onMarkClick?(line, mark, iconRect(line))
+    }
+
+    override func resetCursorRects() {
+        for line in marks.keys { addCursorRect(iconRect(line).insetBy(dx: -4, dy: -3), cursor: .pointingHand) }
     }
 }

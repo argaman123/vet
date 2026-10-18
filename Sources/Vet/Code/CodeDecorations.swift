@@ -1,0 +1,129 @@
+import AppKit
+import VetCore
+
+/// An inline hint (a parameter name or an inferred type), drawn as a small pill in a gap opened
+/// in the text, as WebStorm and VS Code show them. The text itself doesn't change.
+struct InlayHintMark: Equatable {
+    let line: Int       // display line
+    let character: Int  // UTF-16 column the hint sits before
+    let label: String
+    let padLeft: Bool
+    let padRight: Bool
+}
+
+/// Grey text after a declaration's line: "3 usages · Dana". Clicking it shows the usages.
+struct LineLensMark: Equatable {
+    let line: Int       // display line
+    let character: Int  // where the declared name starts (for Find Usages)
+    let text: String
+}
+
+/// The hint carried by the character before its gap, so the pill moves with the text you type.
+final class HintBox: NSObject {
+    let label: String, padLeft: Bool, padRight: Bool
+    init(_ h: InlayHintMark) { label = h.label; padLeft = h.padLeft; padRight = h.padRight }
+
+    nonisolated(unsafe) static let font = NSFont.systemFont(ofSize: 10.5)
+    var labelSize: NSSize { (label as NSString).size(withAttributes: [.font: Self.font]) }
+    /// The gap opened in the text for the pill.
+    var gap: CGFloat { ceil(labelSize.width) + 10 + (padLeft ? 4 : 0) + (padRight ? 4 : 0) }
+}
+
+extension NSAttributedString.Key {
+    static let vetHint = NSAttributedString.Key("VetHint")
+}
+
+extension CodeTextView {
+    /// Opens a gap for each hint (kerning on the character before it) and remembers its label.
+    func applyHintGaps() {
+        guard let storage = textStorage else { return }
+        let all = NSRange(location: 0, length: storage.length)
+        let ns = storage.string as NSString
+        storage.beginEditing()
+        storage.removeAttribute(.kern, range: all)
+        storage.removeAttribute(.vetHint, range: all)
+        var starts: [Int] = [0], location = 0
+        let lastLine = inlayHints.map(\.line).max() ?? -1
+        while starts.count <= lastLine + 1 {
+            let r = ns.range(of: "\n", options: .literal, range: NSRange(location: location, length: ns.length - location))
+            if r.location == NSNotFound { break }
+            location = NSMaxRange(r)
+            starts.append(location)
+        }
+        for h in inlayHints where h.line < starts.count && h.character > 0 {
+            let lineEnd = h.line + 1 < starts.count ? starts[h.line + 1] - 1 : ns.length
+            let index = starts[h.line] + h.character
+            guard index <= lineEnd, index - 1 < ns.length else { continue }
+            let box = HintBox(h)
+            let r = NSRange(location: index - 1, length: 1)
+            storage.addAttribute(.kern, value: box.gap, range: r)
+            storage.addAttribute(.vetHint, value: box, range: r)
+        }
+        storage.endEditing()
+        needsDisplay = true
+    }
+
+    /// The frame of a character range in this view's coordinates (laid-out text only).
+    func segmentFrame(_ range: NSRange) -> NSRect? {
+        guard let tlm = textLayoutManager, let tcm = tlm.textContentManager,
+              let start = tcm.location(tcm.documentRange.location, offsetBy: range.location),
+              let end = tcm.location(start, offsetBy: range.length),
+              let textRange = NSTextRange(location: start, end: end) else { return nil }
+        var out: NSRect?
+        tlm.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, frame, _, _ in
+            out = out.map { $0.union(frame) } ?? frame
+            return true
+        }
+        return out.map { $0.offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y) }
+    }
+
+    /// Draws the hint pills and the end-of-line lenses in the visible part of the text.
+    func drawDecorations(in rect: NSRect) {
+        guard let storage = textStorage, storage.length > 0 else { lensRects = []; return }
+        let ns = storage.string as NSString
+        let firstLine = max(0, line(at: NSPoint(x: 0, y: rect.minY)))
+        let lastLine = line(at: NSPoint(x: 0, y: rect.maxY)) + 1
+        // Character range of the dirty rows.
+        var starts: [Int] = [0], location = 0
+        while starts.count <= lastLine + 1 {
+            let r = ns.range(of: "\n", options: .literal, range: NSRange(location: location, length: ns.length - location))
+            if r.location == NSNotFound { break }
+            location = NSMaxRange(r)
+            starts.append(location)
+        }
+        let lo = firstLine < starts.count ? starts[firstLine] : ns.length
+        let hi = lastLine + 1 < starts.count ? starts[lastLine + 1] : ns.length
+        if hi > lo {
+            storage.enumerateAttribute(.vetHint, in: NSRange(location: lo, length: hi - lo)) { value, r, _ in
+                guard let box = value as? HintBox, let frame = segmentFrame(r) else { return }
+                // TextKit 2 splits the kerning between this character's frame and the next one's,
+                // so the gap starts half a gap before this frame's end.
+                let size = box.labelSize
+                let pill = NSRect(x: frame.maxX - box.gap / 2 + (box.padLeft ? 4 : 0) + 1, y: frame.minY + (DiffTheme.lineHeight - 15) / 2,
+                                  width: ceil(size.width) + 8, height: 15)
+                NSColor.quaternaryLabelColor.withAlphaComponent(0.6).setFill()
+                NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
+                (box.label as NSString).draw(at: NSPoint(x: pill.minX + 4, y: pill.minY + (15 - size.height) / 2),
+                                             withAttributes: [.font: HintBox.font, .foregroundColor: NSColor.secondaryLabelColor])
+            }
+        }
+        var rects: [(NSRect, LineLensMark)] = []
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]
+        for lens in lenses where lens.line >= firstLine && lens.line <= lastLine && lens.line < starts.count {
+            let start = starts[lens.line]
+            let end = lens.line + 1 < starts.count ? starts[lens.line + 1] - 1 : ns.length
+            let lineEndX = end > start ? (segmentFrame(NSRange(location: start, length: end - start))?.maxX ?? 0) : textContainerOrigin.x
+            let size = (lens.text as NSString).size(withAttributes: attrs)
+            let r = NSRect(x: lineEndX + 18, y: y(ofLine: lens.line) + (DiffTheme.lineHeight - size.height) / 2 + 0.5,
+                           width: ceil(size.width), height: size.height)
+            (lens.text as NSString).draw(at: r.origin, withAttributes: attrs)
+            rects.append((r, lens))
+        }
+        lensRects = rects
+    }
+
+    /// The lens under a point, if any.
+    func lens(at point: NSPoint) -> LineLensMark? {
+        lensRects.first { $0.0.insetBy(dx: -2, dy: -2).contains(point) }?.1
+    }
+}

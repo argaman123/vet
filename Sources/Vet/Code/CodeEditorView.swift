@@ -141,3 +141,26 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 }
+
+// MARK: Test aids (driven by SnapshotHook in test runs)
+
+extension CodeEditorView {
+    /// Stand-in hints, a lens and jump icons on the first lines, to check how they draw.
+    func debugDecorate() {
+        textView.inlayHints = [InlayHintMark(line: 1, character: 9, label: "name:", padLeft: false, padRight: true),
+                               InlayHintMark(line: 2, character: 12, label: ": string", padLeft: false, padRight: false)]
+        textView.lenses = [LineLensMark(line: 3, character: 0, text: "3 usages · Dana")]
+        gutter.marks = [3: .implemented, 5: .overrides]
+    }
+
+    /// Writes the frames of characters on a line to VET_SNAPSHOT_DIR/frames.txt.
+    func debugFrames(line: Int) {
+        guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"], let r = textView.range(line: line, character: 0) else { return }
+        var out = "origin \(textView.textContainerOrigin)\n"
+        for i in 0..<14 { out += "\(i) \(textView.segmentFrame(NSRange(location: r.location + i, length: 1)).map { "\($0)" } ?? "nil")\n" }
+        try? out.write(toFile: dir + "/frames.txt", atomically: true, encoding: .utf8)
+    }
+
+    /// Rests the pointer on (line, column) without moving the mouse.
+    func debugHover(line: Int, character: Int) { textView.hover(line: line, character: character) }
+}

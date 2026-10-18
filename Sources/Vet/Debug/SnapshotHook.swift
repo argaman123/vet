@@ -14,6 +14,19 @@ enum SnapshotHook {
         DistributedNotificationCenter.default().addObserver(forName: .init("dev.vet.snapshot"), object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { snapshot(to: URL(fileURLWithPath: dir).appendingPathComponent("window.png")) }
         }
+        // "dev.vet.test" with object "name arg…" runs a registered test command.
+        DistributedNotificationCenter.default().addObserver(forName: .init("dev.vet.test"), object: nil, queue: .main) { note in
+            let words = (note.object as? String ?? "").split(separator: " ").map(String.init)
+            MainActor.assumeIsolated { if let name = words.first { commands[name]?(Array(words.dropFirst())) } }
+        }
+    }
+
+    /// Test commands (registered only in test runs): things a test can't do through Accessibility,
+    /// such as resting the pointer on a symbol.
+    static var commands: [String: ([String]) -> Void] = [:]
+    static func on(_ name: String, _ run: @escaping ([String]) -> Void) {
+        guard isTesting else { return }
+        commands[name] = run
     }
 
     private static func snapshot(to url: URL) {

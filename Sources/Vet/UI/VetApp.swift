@@ -36,6 +36,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { _ = await ShellEnvironment.load() } // warm up: Run and the language servers need it
         workspace.startLink()
         SnapshotHook.install()
+        SnapshotHook.on("open") { [weak self] args in
+            guard let self, let root = self.projects.current, let path = args.first else { return }
+            self.showFile(root.appendingPathComponent(path), line: args.count > 1 ? Int(args[1]) ?? 0 : 0)
+        }
+        SnapshotHook.on("frames") { [weak self] args in self?.workspace.files.editorView.debugFrames(line: Int(args.first ?? "0") ?? 0) }
+        SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
+        SnapshotHook.on("hover") { [weak self] args in
+            guard args.count == 2, let line = Int(args[0]), let character = Int(args[1]) else { return }
+            self?.workspace.files.editorView.debugHover(line: line, character: character)
+        }
         // Tests pin a throwaway project and never follow Claude into a real one.
         if let project = SnapshotHook.testProject { projects.open(project) }
         if !SnapshotHook.isTesting { NSApp.activate() } // tests run in the background, never stealing focus
