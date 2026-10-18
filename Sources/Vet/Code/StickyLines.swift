@@ -78,6 +78,7 @@ final class StickyLinesView: NSView {
         func isCode(_ i: Int) -> Bool {
             guard i < starts.count, starts[i] < ns.length else { return false }
             return storage.attribute(.vetFold, at: starts[i], effectiveRange: nil) == nil && storage.attribute(.vetNote, at: starts[i], effectiveRange: nil) == nil
+                && storage.attribute(.vetRemoved, at: starts[i], effectiveRange: nil) == nil
         }
         var picked: [Int] = []
         var scan = first

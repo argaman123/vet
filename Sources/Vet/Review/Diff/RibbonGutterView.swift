@@ -4,7 +4,8 @@ import VetCore
 /// The middle of the diff: left line numbers, the ribbons joining each section's two sides,
 /// a staging checkbox per section, and right line numbers. Dragging it resizes the panes.
 final class RibbonGutterView: NSView {
-    enum Mode { case split, rightOnly, leftOnly }
+    /// `unified`: one pane; both number columns (HEAD, working file) then the checkboxes.
+    enum Mode { case split, rightOnly, leftOnly, unified }
     static let numbersWidth: CGFloat = 40
     static let ribbonWidth: CGFloat = 44
 
@@ -18,6 +19,9 @@ final class RibbonGutterView: NSView {
     /// numbers of the lines scrolled under them.
     var leftPinned: [Int] = [] { didSet { if oldValue != leftPinned { needsDisplay = true } } }
     var rightPinned: [Int] = [] { didSet { if oldValue != rightPinned { needsDisplay = true } } }
+    /// Unified mode: each section's rows in the one pane, and its colored change bars.
+    var unifiedRanges: [Int: Range<Int>] = [:]
+    var unifiedBars: [(rows: Range<Int>, color: NSColor)] = []
     var leftOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes() } }
     var rightOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes() } }
     var onToggle: ((Int, Bool, String) -> Void)?
@@ -33,7 +37,7 @@ final class RibbonGutterView: NSView {
     override var isFlipped: Bool { true }
 
     static func width(for mode: Mode) -> CGFloat {
-        mode == .split ? numbersWidth * 2 + ribbonWidth : numbersWidth + ribbonWidth
+        mode == .split || mode == .unified ? numbersWidth * 2 + ribbonWidth : numbersWidth + ribbonWidth
     }
 
     func reload() {
@@ -76,12 +80,20 @@ final class RibbonGutterView: NSView {
         case .split: (Self.numbersWidth, Self.numbersWidth + Self.ribbonWidth)
         case .rightOnly: (0, Self.ribbonWidth)
         case .leftOnly: (Self.numbersWidth, Self.numbersWidth + Self.ribbonWidth)
+        case .unified: (Self.numbersWidth * 2, Self.numbersWidth * 2 + Self.ribbonWidth)
         }
     }
 
     private func placeCheckboxes() {
         let (x0, x1) = ribbonX
         for (id, b) in boxes {
+            if mode == .unified {
+                guard let r = unifiedRanges[id] else { b.isHidden = true; continue }
+                let cy = (y(r.lowerBound, left: false) + y(r.upperBound, left: false)) / 2
+                b.frame = NSRect(x: (x0 + x1) / 2 - 9, y: cy - 9, width: 18, height: 18)
+                b.isHidden = cy < -20 || cy > bounds.height + 20
+                continue
+            }
             guard let s = segment(for: id) else { b.isHidden = true; continue }
             let ly = (y(s.left.lowerBound, left: true) + y(s.left.upperBound, left: true)) / 2
             let ry = (y(s.right.lowerBound, left: false) + y(s.right.upperBound, left: false)) / 2
@@ -164,6 +176,14 @@ final class RibbonGutterView: NSView {
             numbers(rightNumbers, left: false, x: Self.numbersWidth + Self.ribbonWidth)
         case .rightOnly: numbers(rightNumbers, left: false, x: Self.ribbonWidth)
         case .leftOnly: numbers(leftNumbers, left: true, x: 0)
+        case .unified:
+            let x = Self.numbersWidth * 2 + 3
+            for bar in unifiedBars {
+                bar.color.setFill()
+                NSRect(x: x, y: y(bar.rows.lowerBound, left: false), width: 3, height: CGFloat(bar.rows.count) * DiffTheme.lineHeight).fill()
+            }
+            numbers(leftNumbers, left: true, x: 0)
+            numbers(rightNumbers, left: false, x: Self.numbersWidth)
         }
         _ = diffLayout
     }

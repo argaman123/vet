@@ -103,8 +103,8 @@ struct MainToolbar: ToolbarContent {
             }
             ToolbarItem(placement: .principal) {
                 Picker("Layout", selection: Bindable(review).unified) {
-                    Label("Side by Side", systemImage: "rectangle.split.2x1").tag(false)
-                    Label("Unified", systemImage: "rectangle").tag(true)
+                    Image(systemName: "rectangle.split.2x1").accessibilityLabel("Side by Side").help("Side by Side").tag(false)
+                    Image(systemName: "rectangle.grid.1x2").accessibilityLabel("Unified").help("Unified").tag(true)
                 }
                 .pickerStyle(.segmented)
                 .help("Diff Layout")

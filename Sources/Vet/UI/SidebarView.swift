@@ -13,7 +13,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             Picker("Tool", selection: Bindable(ui).tool) {
                 ForEach(UIState.Tool.allCases) { tool in
-                    Image(systemName: tool.symbol).help(tool.title).tag(tool)
+                    Image(systemName: tool.symbol).accessibilityLabel(tool.title).help(tool.title).tag(tool)
                 }
             }
             .pickerStyle(.segmented)

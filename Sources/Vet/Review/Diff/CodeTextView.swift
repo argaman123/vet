@@ -58,6 +58,8 @@ final class CodeTextView: NSTextView {
         let p = NSMutableParagraphStyle()
         p.minimumLineHeight = DiffTheme.lineHeight
         p.maximumLineHeight = DiffTheme.lineHeight
+        // Code reads left to right even when a line starts with a Hebrew or Arabic string.
+        p.baseWritingDirection = .leftToRight
         return p
     }
 
@@ -220,6 +222,7 @@ final class CodeTextView: NSTextView {
         func protected(_ i: Int) -> Bool {
             guard i >= 0, i < storage.length else { return false }
             return storage.attribute(.vetFold, at: i, effectiveRange: nil) != nil || storage.attribute(.vetNote, at: i, effectiveRange: nil) != nil
+                || storage.attribute(.vetRemoved, at: i, effectiveRange: nil) != nil
         }
         var refuse = false
         if range.length == 0 {

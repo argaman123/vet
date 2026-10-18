@@ -128,4 +128,6 @@ extension NSAttributedString.Key {
     static let vetFold = NSAttributedString.Key("VetFold")
     /// Marks the rows reserved for a review note card; their value is the note id.
     static let vetNote = NSAttributedString.Key("VetNote")
+    /// Marks a HEAD line shown in the unified diff: read-only and not part of the file.
+    static let vetRemoved = NSAttributedString.Key("VetRemoved")
 }

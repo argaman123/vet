@@ -40,6 +40,7 @@ struct RibbonDiffView: NSViewRepresentable {
         }
         if view.shownVersion != version {
             view.shownVersion = version
+            view.unified = model.unified
             view.notes = model.notesForOpenFile()
             view.editingNoteID = model.editingNoteID
             view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
@@ -96,6 +97,13 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private var mode: RibbonGutterView.Mode = .split
     private var shownPath: String?
     private var shownLines: (head: TextLines, work: TextLines)?
+    /// Show changed files in one pane (HEAD lines above the new ones) instead of side by side.
+    var unified = false
+    /// Unified mode: which side and display line each row of the one pane shows.
+    private var unifiedRows: [(left: Bool, display: Int)]?
+    /// Unified mode: right-side display line → its row in the one pane.
+    private var unifiedOfRight: [Int: Int] = [:]
+    private var unifiedHunks: [Int: Range<Int>] = [:]
 
     private struct Anchor { let left: Bool; let line: Int; let text: Substring; let offset: CGFloat }
     private var syncing = false
@@ -168,7 +176,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         mode = switch doc.change.kind {
         case .added, .untracked: .rightOnly
         case .deleted: .leftOnly
-        default: staging.head.count == 0 ? .rightOnly : .split
+        default: staging.head.count == 0 ? .rightOnly : unified ? .unified : .split
         }
         let layout = DiffLayout(headCount: staging.head.count, workCount: staging.work.count,
                                 hunks: staging.hunks, folding: folding, expanded: expanded,
@@ -183,9 +191,18 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftWords.merge(h.headCols) { $1 }
             rightWords.merge(h.workCols) { $1 }
         }
-        leftText.textStorage?.setAttributedString(Self.text(staging.head, layout.left, doc.language, words: leftWords, color: DiffTheme.removed, foldStarts: layout.foldHead.mapValues(\.lowerBound)))
+        let leftAttr = Self.text(staging.head, layout.left, doc.language, words: leftWords, color: DiffTheme.removed, foldStarts: layout.foldHead.mapValues(\.lowerBound))
+        let rightAttr = Self.text(staging.work, layout.right, doc.language, words: rightWords, color: DiffTheme.added, foldStarts: layout.foldWork.mapValues(\.lowerBound))
+        leftText.textStorage?.setAttributedString(leftAttr)
         defer { rightText.undoManager?.removeAllActions(withTarget: rightText.textStorage as Any) }
-        rightText.textStorage?.setAttributedString(Self.text(staging.work, layout.right, doc.language, words: rightWords, color: DiffTheme.added, foldStarts: layout.foldWork.mapValues(\.lowerBound)))
+        if mode == .unified {
+            buildUnified(layout, staging: staging, states: states, left: leftAttr, right: rightAttr)
+        } else {
+            unifiedRows = nil
+            unifiedOfRight = [:]
+            unifiedHunks = [:]
+            rightText.textStorage?.setAttributedString(rightAttr)
+        }
 
         var leftBands: [CodeTextView.Band] = [], rightBands: [CodeTextView.Band] = []
         var leftMarkers: [(Int, NSColor)] = [], rightMarkers: [(Int, NSColor)] = []
@@ -212,6 +229,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         leftText.markers = leftMarkers.map { (line: $0.0, color: $0.1) }
         rightText.markers = rightMarkers.map { (line: $0.0, color: $0.1) }
         leftText.foldLines = leftFolds; rightText.foldLines = rightFolds
+        if mode == .unified { applyUnifiedDecorations(layout, staging: staging, states: states) }
         placeCards(layout)
         leftText.window?.invalidateCursorRects(for: leftText)
         rightText.window?.invalidateCursorRects(for: rightText)
@@ -223,16 +241,35 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         gutter.snapshotID = staging.snapshotID
         gutter.leftNumbers = layout.left.map { if case .code(let l) = $0 { l } else { nil } }
         gutter.rightNumbers = layout.right.map { if case .code(let l) = $0 { l } else { nil } }
+        if let rows = unifiedRows {
+            // Both columns run down the one pane; context lines show both numbers.
+            var old: [Int?] = [], new: [Int?] = []
+            for seg in layout.segments {
+                switch seg.kind {
+                case .hunk:
+                    for d in seg.left { old.append(gutter.leftNumbers[d]); new.append(nil) }
+                    for d in seg.right { old.append(nil); new.append(gutter.rightNumbers[d]) }
+                case .same:
+                    for (k, d) in seg.right.enumerated() { old.append(gutter.leftNumbers[seg.left.lowerBound + k]); new.append(gutter.rightNumbers[d]) }
+                case .fold, .note:
+                    for _ in seg.right { old.append(nil); new.append(nil) }
+                }
+            }
+            assert(old.count == rows.count)
+            gutter.leftNumbers = old
+            gutter.rightNumbers = new
+        }
+        gutter.unifiedRanges = unifiedHunks
         gutter.reload()
 
         // Every line is 18 pt, so the exact document height is known now; setting it up front
         // means restoring the scroll position isn't clamped by a half-laid-out text view.
-        for (scroll, tv, count) in [(leftScroll, leftText, layout.left.count), (rightScroll, rightText, layout.right.count)] {
+        for (scroll, tv, count) in [(leftScroll, leftText, layout.left.count), (rightScroll, rightText, unifiedRows?.count ?? layout.right.count)] {
             let height = DiffTheme.inset.height * 2 + CGFloat(count) * DiffTheme.lineHeight
             tv.minSize = NSSize(width: 0, height: height)
             tv.setFrameSize(NSSize(width: max(tv.frame.width, scroll.contentSize.width), height: max(height, scroll.contentSize.height)))
         }
-        leftScroll.isHidden = mode == .rightOnly
+        leftScroll.isHidden = mode == .rightOnly || mode == .unified
         rightScroll.isHidden = mode == .leftOnly
         gutter.isHidden = false
         needsLayout = true
@@ -248,7 +285,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftScroll.contentView.scroll(to: .zero)
             rightScroll.contentView.scroll(to: .zero)
             if let first = layout.segments.first(where: { if case .hunk = $0.kind { true } else { false } }) {
-                scrollRight(toLine: max(0, first.right.lowerBound - 4))
+                var line = first.right.lowerBound
+                if case .hunk(let id) = first.kind, let r = unifiedHunks[id] { line = r.lowerBound }
+                scrollRight(toLine: max(0, line - 4))
             }
         }
         leftScroll.reflectScrolledClipView(leftScroll.contentView)
@@ -269,21 +308,24 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         cardPlaces = []
         for seg in layout.segments {
             guard case .note(let id) = seg.kind, let note = notes.first(where: { $0.id == id }) else { continue }
-            let tv = note.left ? leftText : rightText
-            if (note.left && mode == .rightOnly) || (!note.left && mode == .leftOnly) { continue } // that side isn't shown
-            let rows = note.left ? seg.left : seg.right
+            // In the unified pane every card sits in the one pane, under the note's line.
+            let onLeft = note.left && unifiedRows == nil
+            let tv = onLeft ? leftText : rightText
+            if unifiedRows == nil, (note.left && mode == .rightOnly) || (!note.left && mode == .leftOnly) { continue } // that side isn't shown
+            var rows = note.left ? seg.left : seg.right
+            if unifiedRows != nil, let start = unifiedOfRight[seg.right.lowerBound] { rows = start..<(start + seg.right.count) }
             let editing = id == editingNoteID
             let card = NoteCardView(title: "Note on line \(note.line + 1)", text: note.text, editing: editing, sent: note.sent)
             card.onSave = { [weak self] text in self?.noteActions?.save(id, text) }
             card.onCancel = { [weak self] in self?.noteActions?.cancel(id) }
             card.onEdit = { [weak self] in self?.noteActions?.edit(id) }
             card.onDelete = { [weak self] in self?.noteActions?.delete(id) }
-            let width = max(260, ((note.left ? leftScroll : rightScroll).contentSize.width) - 28)
+            let width = max(260, ((onLeft ? leftScroll : rightScroll).contentSize.width) - 28)
             // An overlay above both panes (TextKit 2's own views would cover a text view's subviews,
             // and the clip view routes clicks to its document); repositioned whenever a pane scrolls.
             addSubview(card)
             cards.append(card)
-            cardPlaces.append((card, note.left, NSRect(x: 14, y: tv.y(ofLine: rows.lowerBound) + 3, width: min(width, 760),
+            cardPlaces.append((card, onLeft, NSRect(x: 14, y: tv.y(ofLine: rows.lowerBound) + 3, width: min(width, 760),
                                                        height: CGFloat(rows.count) * DiffTheme.lineHeight - 6)))
             if editing { DispatchQueue.main.async { card.focus() } }
         }
@@ -298,25 +340,127 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         }
     }
 
-    private func fileLine(left: Bool, displayLine d: Int) -> Int? {
+    /// The file line a pane's display line shows, and which side it's from (in the unified
+    /// pane a row can be a HEAD line).
+    private func resolve(left: Bool, displayLine d: Int) -> (left: Bool, line: Int)? {
         guard let layout = diffLayout else { return nil }
-        let display = left ? layout.left : layout.right
-        guard d >= 0, d < display.count, case .code(let l) = display[d] else { return nil }
-        return l
+        var side = left, index = d
+        if let rows = unifiedRows, !left {
+            guard d >= 0, d < rows.count else { return nil }
+            (side, index) = rows[d]
+        }
+        let display = side ? layout.left : layout.right
+        guard index >= 0, index < display.count, case .code(let l) = display[index] else { return nil }
+        return (side, l)
+    }
+
+    /// What a pane shows, row by row (unified HEAD rows read as non-code rows).
+    private func paneDisplay(left: Bool, _ layout: DiffLayout) -> [DiffLayout.DisplayLine] {
+        guard let rows = unifiedRows, !left else { return left ? layout.left : layout.right }
+        return rows.map { $0.left ? .note(id: "", row: 0) : layout.right[$0.display] }
     }
 
     private func navigate(_ kind: CodeTextView.Navigation, left: Bool, displayLine: Int, character: Int) {
-        guard let line = fileLine(left: left, displayLine: displayLine) else { return }
-        onNavigate?(kind, left, line, character)
+        guard let (side, line) = resolve(left: left, displayLine: displayLine) else { return }
+        onNavigate?(kind, side, line, character)
+    }
+
+    // MARK: Unified layout
+
+    /// One pane: unchanged and new lines from the working file, each section's HEAD lines
+    /// above its new ones (read-only).
+    private func buildUnified(_ layout: DiffLayout, staging: SectionStaging, states: [Int: StageState],
+                              left: NSAttributedString, right: NSAttributedString) {
+        func lineRanges(_ s: NSAttributedString) -> [NSRange] {
+            let ns = s.string as NSString
+            var out: [NSRange] = [], loc = 0
+            while loc <= ns.length {
+                let r = ns.range(of: "\n", options: .literal, range: NSRange(location: loc, length: ns.length - loc))
+                let end = r.location == NSNotFound ? ns.length : r.location
+                out.append(NSRange(location: loc, length: end - loc))
+                if r.location == NSNotFound { break }
+                loc = end + 1
+            }
+            return out
+        }
+        let leftLines = lineRanges(left), rightLines = lineRanges(right)
+        var rows: [(left: Bool, display: Int)] = []
+        var ofRight: [Int: Int] = [:], hunks: [Int: Range<Int>] = [:]
+        for seg in layout.segments {
+            let start = rows.count
+            if case .hunk(let id) = seg.kind {
+                rows += seg.left.map { (true, $0) }
+                for d in seg.right { ofRight[d] = rows.count; rows.append((false, d)) }
+                hunks[id] = start..<rows.count
+            } else {
+                for d in seg.right { ofRight[d] = rows.count; rows.append((false, d)) }
+            }
+        }
+        let out = NSMutableAttributedString()
+        out.beginEditing()
+        for (i, row) in rows.enumerated() {
+            let source = row.left ? left : right
+            let ranges = row.left ? leftLines : rightLines
+            guard row.display < ranges.count else { continue }
+            let at = out.length
+            let line = source.attributedSubstring(from: ranges[row.display])
+            out.append(line)
+            if i < rows.count - 1 {
+                let attrs = line.length > 0 ? line.attributes(at: line.length - 1, effectiveRange: nil) : CodeText.baseAttributes
+                out.append(NSAttributedString(string: "\n", attributes: attrs.filter { $0.key != .backgroundColor }))
+            }
+            if row.left { out.addAttribute(.vetRemoved, value: true, range: NSRange(location: at, length: out.length - at)) }
+        }
+        out.endEditing()
+        rightText.textStorage?.setAttributedString(out)
+        unifiedRows = rows
+        unifiedOfRight = ofRight
+        unifiedHunks = hunks
+    }
+
+    /// The one pane's section colors (HEAD lines red, new lines green), fold rows and the
+    /// gutter's change bars.
+    private func applyUnifiedDecorations(_ layout: DiffLayout, staging: SectionStaging, states: [Int: StageState]) {
+        guard let rows = unifiedRows else { return }
+        var bands: [CodeTextView.Band] = [], bars: [(rows: Range<Int>, color: NSColor)] = []
+        var folds: [Int: Int] = [:]
+        for seg in layout.segments {
+            switch seg.kind {
+            case .hunk(let id):
+                guard let r = unifiedHunks[id] else { continue }
+                let staged = states[id] == .staged
+                let removed = r.lowerBound..<(r.lowerBound + seg.left.count), added = removed.upperBound..<r.upperBound
+                if !removed.isEmpty {
+                    bands.append(.init(lines: removed, color: DiffTheme.solid(DiffTheme.removed, staged ? 0.07 : 0.16)))
+                    bars.append((removed, DiffTheme.removed))
+                }
+                if !added.isEmpty {
+                    bands.append(.init(lines: added, color: DiffTheme.solid(DiffTheme.added, staged ? 0.07 : 0.16)))
+                    bars.append((added, DiffTheme.added))
+                }
+            case .fold(let id):
+                guard let u = unifiedOfRight[seg.right.lowerBound] else { continue }
+                bands.append(.init(lines: u..<(u + 1), color: DiffTheme.foldBand))
+                folds[u] = id
+            case .same, .note: break
+            }
+        }
+        _ = rows
+        rightText.bands = bands
+        rightText.markers = []
+        rightText.foldLines = folds
+        gutter.unifiedBars = bars
+        rightText.window?.invalidateCursorRects(for: rightText)
     }
 
     /// The diff's right-click menu, exactly as designed (spec §2.3).
     private func menuItems(left: Bool, displayLine: Int, character: Int) -> [NSMenuItem] {
-        guard let staging = shownStaging, let line = fileLine(left: left, displayLine: displayLine) else { return [] }
+        guard let staging = shownStaging, let (side, line) = resolve(left: left, displayLine: displayLine) else { return [] }
         let tv = left ? leftText : rightText
-        let lines = left ? staging.head : staging.work
+        let lines = side ? staging.head : staging.work
         let selection = tv.displayLines(of: tv.selectedRange())
-        let fileLines = selection.compactMap { fileLine(left: left, displayLine: $0) }
+        let fileLines = selection.compactMap { resolve(left: left, displayLine: $0) }.filter { $0.left == side }.map(\.line)
+        let left = side
         let span = (fileLines.min() ?? line)...(fileLines.max() ?? line)
         let code = span.map { String(lines.lines[$0].text) }.joined(separator: "\n")
         let path = shownPath ?? ""
@@ -391,6 +535,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
                     if r.location == location { fold = id } else { foldElsewhere = true }
                 }
                 storage.enumerateAttribute(.vetNote, in: range) { value, _, _ in if value != nil { note = true } }
+                storage.enumerateAttribute(.vetRemoved, in: range) { value, _, _ in if value != nil { note = true } }
             }
             if foldElsewhere { return nil }
             if let fold {
@@ -421,7 +566,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         guard let layout = diffLayout, let lines = shownLines else { return nil }
         let useLeft = mode == .leftOnly
         let scroll = useLeft ? leftScroll : rightScroll
-        let display = useLeft ? layout.left : layout.right
+        let display = paneDisplay(left: useLeft, layout)
         let top = scroll.contentView.bounds.minY
         let first = max(0, Int((top - DiffTheme.inset.height) / DiffTheme.lineHeight))
         guard first < display.count else { return nil }
@@ -438,7 +583,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// Scrolls so the anchored line (found by its text near its old number) is back where it was.
     private func restore(_ a: Anchor, staging: SectionStaging, layout: DiffLayout) {
         let lines = a.left ? staging.head : staging.work
-        let display = a.left ? layout.left : layout.right
+        let display = paneDisplay(left: a.left, layout)
         guard lines.count > 0 else { return }
         var target = min(a.line, lines.count - 1)
         if lines.lines[target].text != a.text {
@@ -481,7 +626,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftScroll.frame = NSRect(x: 0, y: 0, width: lw, height: h)
             gutter.frame = NSRect(x: lw, y: 0, width: gw, height: h)
             rightScroll.frame = NSRect(x: lw + gw, y: 0, width: w - lw - gw, height: h)
-        case .rightOnly:
+        case .rightOnly, .unified:
             gutter.frame = NSRect(x: 0, y: 0, width: gw, height: h)
             rightScroll.frame = NSRect(x: gw, y: 0, width: w - gw, height: h)
         case .leftOnly:
@@ -543,7 +688,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     private func syncGutter() {
-        gutter.leftOffset = leftScroll.contentView.bounds.origin.y
+        gutter.leftOffset = mode == .unified ? rightScroll.contentView.bounds.origin.y : leftScroll.contentView.bounds.origin.y
         gutter.rightOffset = rightScroll.contentView.bounds.origin.y
         positionCards()
         updateSticky()
@@ -551,7 +696,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     /// Each pane pins the enclosing declarations of its first visible line.
     private func updateSticky() {
-        for (sticky, scroll, tv, visible) in [(leftSticky, leftScroll, leftText, mode != .rightOnly), (rightSticky, rightScroll, rightText, mode != .leftOnly)] {
+        defer { if mode == .unified { gutter.leftPinned = rightSticky.rows.map(\.line) } }
+        for (sticky, scroll, tv, visible) in [(leftSticky, leftScroll, leftText, mode == .split || mode == .leftOnly), (rightSticky, rightScroll, rightText, mode != .leftOnly)] {
             defer { if sticky === leftSticky { gutter.leftPinned = sticky.rows.map(\.line) } else { gutter.rightPinned = sticky.rows.map(\.line) } }
             guard visible, let storage = tv.textStorage, storage.length > 0 else { sticky.show([]); continue }
             let clip = scroll.contentView.bounds
@@ -585,7 +731,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
         let current = Int((scroll.contentView.bounds.minY + scroll.contentView.bounds.height / 3 - DiffTheme.inset.height) / DiffTheme.lineHeight)
         let starts = layout.segments.compactMap { s -> Int? in
-            guard case .hunk = s.kind else { return nil }
+            guard case .hunk(let id) = s.kind else { return nil }
+            if let r = unifiedHunks[id] { return r.lowerBound }
             return mode == .leftOnly ? s.left.lowerBound : s.right.lowerBound
         }
         let target = forward ? starts.first { $0 > current + 1 } : starts.last { $0 < current - 1 }
