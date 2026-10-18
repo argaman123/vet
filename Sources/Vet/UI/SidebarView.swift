@@ -45,7 +45,6 @@ struct ChangesTool: View {
                     ToolButton("arrow.up.left.and.arrow.down.right", "Expand All") { review.expandAll() }
                 }
             }
-            ClaudeLinkRow(app: app)
             if app.projects.current == nil {
                 EmptyToolState(title: "No Project", message: "Open a project folder to review its changes.") {
                     Button("Open Folder…") { app.projects.showOpenPanel() }
@@ -179,8 +178,6 @@ struct ChangeMenu: View {
             Button("Quick Look") { quickLook = review.url(for: node.path) }
             Divider()
         }
-        Button(node.isFolder ? "Ask Claude About This Folder" : "Ask Claude About This File") { review.askClaude(aboutFile: node.path) }
-        Divider()
         Button(review.isDirectlyMarked(node.path) ? "Remove Unimportant Mark" : "Mark as Unimportant") { review.toggleMark(node) }
             .disabled(!review.isDirectlyMarked(node.path) && review.isMarked(node.path))
         Button("Unstage") { review.setStaged(node, false) }.disabled(review.stage(of: node) == .unstaged)
@@ -252,43 +249,6 @@ struct EmptyToolState<Actions: View>: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-/// Whether drafts reach Claude; installs the Claude Code mod on request.
-struct ClaudeLinkRow: View {
-    let app: AppDelegate
-    @State private var installing = false
-    @State private var installMessage: String?
-
-    var body: some View {
-        let link = app.workspace.link, review = app.workspace.review
-        let notes = review.unsentNotes.count
-        if !link.connected || notes > 0 {
-            HStack(spacing: 6) {
-                Circle().fill(link.connected ? Color.green : Color.secondary.opacity(0.5)).frame(width: 6, height: 6)
-                Text(link.connected ? "Claude linked" : "Claude not linked").foregroundStyle(.secondary)
-                Spacer()
-                if notes > 0 {
-                    Button("Send \(notes) Note\(notes == 1 ? "" : "s")") { review.sendNotes() }
-                        .help("Puts all unsent notes into Claude's message box as one draft")
-                } else if !link.connected {
-                    Button(installing ? "Connecting…" : "Connect") {
-                        installing = true
-                        Task { installMessage = await link.installMod(); installing = false }
-                    }
-                    .disabled(installing)
-                    .help("Installs the small vet-bridge mod into Claude Code so Vet can put drafts into your chat")
-                }
-            }
-            .font(.caption)
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 14)
-            .frame(height: 22)
-            .alert("Claude link", isPresented: Binding(get: { installMessage != nil }, set: { if !$0 { installMessage = nil } })) {
-                Button("OK") { installMessage = nil }
-            } message: { Text(installMessage ?? "") }
-        }
     }
 }
 

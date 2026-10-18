@@ -129,7 +129,6 @@ struct DiffHeader: View {
             Menu {
                 Button("Open in Editor") { if let url = review.url(for: change.path) { app.showFile(url) } }
                 Button(review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { review.folding.toggle() }
-                Button("Ask Claude About This File") { review.askClaude(aboutFile: change.path) }
                 Divider()
                 Button("Show in Finder") { if let url = review.url(for: change.path) { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
                 Button("Copy Path") {

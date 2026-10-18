@@ -21,11 +21,6 @@ struct RibbonDiffView: NSViewRepresentable {
                               cancel: { [weak model] id in model?.cancelNote(id) },
                               edit: { [weak model] id in model?.editNote(id) },
                               delete: { [weak model] id in model?.deleteNote(id) })
-        v.onAddNote = { [weak model] left, line, text in model?.addNote(left: left, line: line, lineText: text) }
-        v.onAsk = { [weak model] left, lines, code in
-            guard let model, let path = model.diff?.change.path else { return }
-            model.askClaude(path: path, lines: lines, code: code, old: left)
-        }
         v.onStageLines = { [weak model] lines, snapshot in model?.stageLines(lines, snapshot: snapshot) }
         v.onNavigate = { [weak model] kind, left, line, character in model?.navigate(kind, left: left, line: line, character: character) }
         v.onHover = { [weak model] line, character in model?.hover(line: line, character: character) }
@@ -43,7 +38,7 @@ struct RibbonDiffView: NSViewRepresentable {
             view.shownVersion = version
             view.unified = model.unified
             view.pendingHunks = model.pendingHunks
-            view.notes = model.notesForOpenFile()
+            view.notes = []
             view.editingNoteID = model.editingNoteID
             view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
             model.readingAids?(view)
@@ -533,9 +528,6 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             return i
         }
         var items: [NSMenuItem] = [
-            item("Add note") { [weak self] in self?.onAddNote?(left, line, String(lines.lines[line].text)) },
-            item("Ask Claude about this") { [weak self] in self?.onAsk?(left, span, code) },
-            .separator(),
             item("Go to definition") { [weak self] in self?.onNavigate?(.definition, left, line, character) },
             item("Go to implementation") { [weak self] in self?.onNavigate?(.implementation, left, line, character) },
             item("Find references") { [weak self] in self?.onNavigate?(.references, left, line, character) },
@@ -553,7 +545,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString("\(path):\(span.lowerBound + 1)\(span.count > 1 ? "-\(span.upperBound + 1)" : "")", forType: .string)
         })
-        items[3].toolTip = "⌘-click"
+        items[0].toolTip = "⌘-click"
         return items
     }
 

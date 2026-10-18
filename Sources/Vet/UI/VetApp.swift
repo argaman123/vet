@@ -38,7 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         projects.mayLeave = { [weak self] in self?.workspace.confirmLeave() ?? true }
         workspace.onOpenFile = { [weak self] url, line in self?.ui.show(.file(url: url, line: line)) }
         Task { _ = await ShellEnvironment.load() } // warm up: Run and the language servers need it
-        workspace.startLink()
         SnapshotHook.install()
         SnapshotHook.on("open") { [weak self] args in
             guard let self, let root = self.projects.current, let path = args.first else { return }
@@ -53,24 +52,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let out = "query=\(self.ui.search)\n" + self.searchEverywhere.items.map { "\($0.kind) \($0.id) | \($0.title) | \($0.detail)" }.joined(separator: "\n")
                 if let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] { try? out.write(toFile: dir + "/search.txt", atomically: true, encoding: .utf8) }
             }
-        }
-        SnapshotHook.on("note") { [weak self] args in
-            // note <line> [text…]: a note on a working-file line of the open diff (left editing without text)
-            guard let self, let line = Int(args.first ?? ""), let staging = self.workspace.review.diff?.staging, line < staging.work.count else { return }
-            let review = self.workspace.review
-            review.addNote(left: false, line: line, lineText: String(staging.work.lines[line].text))
-            if args.count > 1, let id = review.editingNoteID { review.saveNote(id, text: args.dropFirst().joined(separator: " ")) }
-        }
-        SnapshotHook.on("checkout") { [weak self] args in if let b = args.first { self?.workspace.review.checkout(b) } }
-        SnapshotHook.on("usages") { [weak self] args in
-            // usages <line> <character>: Find Usages from the open editor file
-            guard let self, args.count == 2, let line = Int(args[0]), let ch = Int(args[1]), let url = self.workspace.files.openURL else { return }
-            let view = self.workspace.files.editorView
-            if let r = view.pane.range(line: line, character: ch) { _ = r; NavigationAnchor.set(view.pane, view.pane.symbolRect(line: line, character: ch)) }
-            self.workspace.navigate(.references, url: url, text: view.currentText, line: line, character: ch)
-        }
-        SnapshotHook.on("center") { _ in
-            for w in NSApp.windows where w.isVisible && w.frame.width > 400 { w.setFrame(NSRect(x: 218, y: 92, width: 1440, height: 900), display: true) }
         }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
@@ -149,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var list: [(String, String)] = [
             ("openFolder", "Open Folder…"), ("save", "Save"), ("back", "Back"), ("forward", "Forward"),
             ("findInFiles", "Find in Files…"), ("previousChange", "Previous Change"), ("nextChange", "Next Change"),
-            ("nextUnreviewed", "Next Unreviewed File"), ("commit", "Commit…"), ("sendNotes", "Send Notes to Claude"),
+            ("nextUnreviewed", "Next Unreviewed File"), ("commit", "Commit…"),
             ("rules", "Unimportant Files…"), ("refresh", "Refresh"), ("runConfigs", "Edit Run Configurations…"),
             // Both directions of each switch, so either name finds it.
             ("output.show", "Show Run Output"), ("output.hide", "Hide Run Output"),
@@ -176,7 +157,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "nextChange": review.jumpToChange(forward: true)
         case "nextUnreviewed": review.nextUnreviewed(); if let p = review.selectedPath { ui.show(.diff(path: p)) }
         case "commit": ui.showCommit = true
-        case "sendNotes": review.sendNotes()
         case "rules": ui.editingRules = true
         case "refresh": Task { await review.refresh() }
         case "runConfigs": ui.editingRunConfigs = true
@@ -283,7 +263,6 @@ struct VetCommands: Commands {
             Divider()
             Button("Commit…") { app.ui.showCommit = true }.keyboardShortcut("k")
             Divider()
-            Button("Send Notes to Claude") { app.workspace.review.sendNotes() }.disabled(app.workspace.review.unsentNotes.isEmpty)
             Button("Unimportant Files…") { app.ui.editingRules = true }
             Button("Refresh") { Task { await app.workspace.review.refresh() } }.keyboardShortcut("r", modifiers: [.command, .option])
         }
