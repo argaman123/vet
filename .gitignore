@@ -5,3 +5,6 @@ node_modules/
 .superpowers/
 .swiftpm/
 .claude/worktrees/
+
+# Reference screenshots of other IDEs (local study material)
+docs/reference/
