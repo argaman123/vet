@@ -342,13 +342,18 @@ actor GitRepo {
                 .first { $0.count == 2 && $0[1] == "refs/remotes/\(branch)" }
             args = twin.map { ["switch", String($0[0].dropFirst("refs/heads/".count))] } ?? ["switch", "--track", branch]
         }
+        let before = try currentBranch()
         do {
             _ = try runAction(args, env: env)
             return .done
         } catch let e as GitError {
             let paths = Self.overwrittenPaths(e.stderr)
             if !paths.isEmpty { return .wouldOverwrite(paths: paths) }
-            let text = e.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = Self.output(e)
+            // A failing post-checkout hook fails the command after the switch already happened.
+            if let now = try currentBranch(), now != before {
+                return .failed("Switched to \(now), but the post-checkout hook failed:\n\(text)")
+            }
             return .failed(text.isEmpty ? "git switch failed (\(e.status))." : text)
         }
     }
