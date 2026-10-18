@@ -115,7 +115,11 @@ public enum LSPURI {
 /// The JSON Vet sends and the replies it gives, independent of any process.
 public enum LSPProtocol {
     /// `initialize` params: one workspace folder, the project root, and the client
-    /// capabilities navigation needs (location links, configuration, progress).
+    /// capabilities navigation and reading need (location links, hover, semantic tokens, inlay
+    /// hints, code lenses, symbols, configuration, progress). Servers only offer some of these
+    /// when the client declares them: typescript-language-server makes no code lenses without
+    /// `codeLens` and flat symbols without `hierarchicalDocumentSymbolSupport`; pyright sends
+    /// plain-text hovers without markdown in `contentFormat`.
     public static func initializeParams(processID: Int32, root: URL, initializationOptions: JSONValue?) -> JSONValue {
         let rootURI = LSPURI.string(for: root)
         var params: [String: JSONValue] = [
@@ -135,14 +139,51 @@ public enum LSPProtocol {
                     "typeDefinition": ["dynamicRegistration": false, "linkSupport": true],
                     "implementation": ["dynamicRegistration": false, "linkSupport": true],
                     "references": ["dynamicRegistration": false],
+                    "hover": ["dynamicRegistration": false, "contentFormat": ["markdown", "plaintext"]],
+                    "documentSymbol": [
+                        "dynamicRegistration": false,
+                        "hierarchicalDocumentSymbolSupport": true,
+                        "symbolKind": ["valueSet": symbolKinds],
+                    ],
+                    "semanticTokens": [
+                        "dynamicRegistration": false,
+                        "requests": ["full": true, "range": true],
+                        "tokenTypes": .array(semanticTokenTypes.map(JSONValue.string)),
+                        "tokenModifiers": .array(semanticTokenModifiers.map(JSONValue.string)),
+                        "formats": ["relative"],
+                        "overlappingTokenSupport": false,
+                        "multilineTokenSupport": false,
+                        "augmentsSyntaxTokens": true,
+                    ],
+                    "inlayHint": ["dynamicRegistration": false],
+                    "codeLens": ["dynamicRegistration": false],
                 ],
-                "workspace": ["configuration": true, "workspaceFolders": true],
+                "workspace": [
+                    "configuration": true,
+                    "workspaceFolders": true,
+                    "didChangeConfiguration": ["dynamicRegistration": false],
+                    "symbol": ["dynamicRegistration": false, "symbolKind": ["valueSet": symbolKinds]],
+                ],
                 "window": ["workDoneProgress": true],
             ],
         ]
         if let initializationOptions { params["initializationOptions"] = initializationOptions }
         return .object(params)
     }
+
+    /// Every LSP SymbolKind (File = 1 … TypeParameter = 26), so servers don't fall back to old kinds.
+    private static let symbolKinds: JSONValue = .array((1...26).map { .int($0) })
+
+    /// The standard token types and modifiers (LSP 3.17), offered to servers that choose from them.
+    private static let semanticTokenTypes = [
+        "namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable",
+        "property", "enumMember", "event", "function", "method", "macro", "keyword", "modifier", "comment",
+        "string", "number", "regexp", "operator", "decorator",
+    ]
+    private static let semanticTokenModifiers = [
+        "declaration", "definition", "readonly", "static", "deprecated", "abstract", "async", "modification",
+        "documentation", "defaultLibrary",
+    ]
 
     public static func workspaceFolders(_ root: URL) -> JSONValue {
         [["uri": .string(LSPURI.string(for: root)), "name": .string(root.lastPathComponent)]]
@@ -160,11 +201,14 @@ public enum LSPProtocol {
 
     /// Replies to requests a server sends the client. Servers wait on some of these
     /// (pyright on `workspace/configuration`), so each gets an answer, even if it's "no".
-    public static func reply(to method: String, params: JSONValue?, root: URL) -> Result<JSONValue, RPCError> {
+    /// `settings` is the server's configuration tree, shaped like VS Code's settings
+    /// (`{"typescript": {"referencesCodeLens": {"enabled": true}}}`).
+    public static func reply(to method: String, params: JSONValue?, root: URL,
+                             settings: JSONValue? = nil) -> Result<JSONValue, RPCError> {
         switch method {
         case "workspace/configuration":
-            // One entry per requested item; null means "use your defaults".
-            .success(.array((params?["items"]?.array ?? []).map { _ in .null }))
+            // One entry per requested item: its section of the settings, or null for "use your defaults".
+            .success(.array((params?["items"]?.array ?? []).map { configuration(settings, section: $0["section"]?.string) }))
         case "client/registerCapability", "client/unregisterCapability", "window/workDoneProgress/create",
              "window/showMessageRequest":
             .success(.null)
@@ -180,5 +224,16 @@ public enum LSPProtocol {
         default:
             .failure(RPCError(code: RPCError.methodNotFound, message: "Unhandled method \(method)"))
         }
+    }
+
+    /// A dotted section (`python.analysis`) of a settings tree, or the whole tree without one;
+    /// null when it isn't there.
+    public static func configuration(_ settings: JSONValue?, section: String?) -> JSONValue {
+        guard var value = settings else { return .null }
+        for key in (section ?? "").split(separator: ".") {
+            guard let next = value[String(key)] else { return .null }
+            value = next
+        }
+        return value
     }
 }
