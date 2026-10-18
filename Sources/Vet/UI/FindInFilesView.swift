@@ -208,6 +208,8 @@ struct FindPopup: View {
                 .frame(minHeight: 160, idealHeight: 300)
             }
         }
+        .background(Color(nsColor: DiffTheme.sidebar))
+        .tint(Color(nsColor: DiffTheme.accent))
         .onAppear { focused = true }
         .onKeyPress(.upArrow) { find.move(-1); return .handled }
         .onKeyPress(.downArrow) { find.move(1); return .handled }

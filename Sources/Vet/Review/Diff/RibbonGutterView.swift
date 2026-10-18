@@ -32,7 +32,7 @@ final class RibbonGutterView: NSView {
     var snapshotID = ""
     var onDrag: ((CGFloat) -> Void)?
     var onResetSplit: (() -> Void)?
-    private var boxes: [Int: NSButton] = [:]
+    private var boxes: [Int: StageToggle] = [:]
     /// Section id → its display segment, so drawing doesn't scan every segment per section.
     private var segments: [Int: DiffLayout.Segment] = [:]
     private var dragStart: CGFloat?
@@ -53,11 +53,7 @@ final class RibbonGutterView: NSView {
         segments = [:]
         for seg in diffLayout?.segments ?? [] { if case .hunk(let id) = seg.kind { segments[id] = seg } }
         for h in hunks {
-            let b = NSButton(checkboxWithTitle: "", target: self, action: #selector(toggled(_:)))
-            b.allowsMixedState = true
-            b.controlSize = .small
-            b.tag = h.id
-            b.toolTip = "Stage this section (mark it reviewed)"
+            let b = StageToggle(id: h.id) { [weak self] id in self?.toggled(id) }
             addSubview(b)
             boxes[h.id] = b
         }
@@ -67,21 +63,20 @@ final class RibbonGutterView: NSView {
     }
 
     func updateStates() {
-        for (id, b) in boxes {
-            b.state = switch states[id] ?? .unstaged { case .staged: .on; case .unstaged: .off; case .partial: .mixed }
-        }
+        for (id, b) in boxes { b.state = states[id] ?? .unstaged }
         needsDisplay = true
     }
 
     /// A click flips the section between staged and not (a mixed box stages the rest), from the
     /// state on screen, and shows the result at once; the button's own off→mixed→on cycle would
     /// read a quick second click as "stage" again.
-    @objc private func toggled(_ sender: NSButton) {
-        let stage = states[sender.tag] != .staged
-        states[sender.tag] = stage ? .staged : .unstaged
-        sender.state = stage ? .on : .off
-        onToggle?(sender.tag, stage, snapshotID)
+    private func toggled(_ id: Int) {
+        let stage = states[id] != .staged
+        states[id] = stage ? .staged : .unstaged
+        boxes[id]?.state = states[id]!
+        onToggle?(id, stage, snapshotID)
     }
+
 
     private func y(_ line: Int, left: Bool) -> CGFloat {
         DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - (left ? leftOffset : rightOffset)
@@ -143,13 +138,16 @@ final class RibbonGutterView: NSView {
             let (x0, x1) = ribbonX
             for h in hunks {
                 guard let s = segment(for: h.id) else { continue }
-                let l0 = y(s.left.lowerBound, left: true), l1 = max(y(s.left.upperBound, left: true), l0 + 1.5)
-                let r0 = y(s.right.lowerBound, left: false), r1 = max(y(s.right.upperBound, left: false), r0 + 1.5)
+                // A side with no lines ends in a short notch around its marker, not a hairline.
+                var l0 = y(s.left.lowerBound, left: true), l1 = y(s.left.upperBound, left: true)
+                if s.left.isEmpty { l0 -= 2; l1 = l0 + 4 }
+                var r0 = y(s.right.lowerBound, left: false), r1 = y(s.right.upperBound, left: false)
+                if s.right.isEmpty { r0 -= 2; r1 = r0 + 4 }
                 if max(l1, r1) < dirtyRect.minY || min(l0, r0) > dirtyRect.maxY { continue } // off screen
                 let staged = states[h.id] == .staged
                 // WebStorm's curve: control points at 30% and 70% across the ribbon.
                 let path = NSBezierPath()
-                let c1 = x0 + (x1 - x0) * 0.3, c2 = x0 + (x1 - x0) * 0.7
+                let c1 = x0 + (x1 - x0) * 0.45, c2 = x0 + (x1 - x0) * 0.55
                 path.move(to: NSPoint(x: 0, y: l0))
                 path.line(to: NSPoint(x: x0, y: l0))
                 path.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: c1, y: l0), controlPoint2: NSPoint(x: c2, y: r0))
@@ -253,3 +251,56 @@ final class RibbonGutterView: NSView {
         if mode == .split { addCursorRect(bounds, cursor: .resizeLeftRight) }
     }
 }
+
+/// A section's review toggle: a ring (not reviewed), a ring with a dash (partly), a filled green
+/// dot with a check (reviewed). Drawn in the theme's colors; acts as a checkbox for Accessibility.
+final class StageToggle: NSView {
+    let id: Int
+    let onToggle: (Int) -> Void
+    var state: StageState = .unstaged { didSet { if oldValue != state { needsDisplay = true; setAccessibilityValue(state == .staged ? 1 : state == .partial ? 2 : 0) } } }
+    private var hovering = false { didSet { needsDisplay = true } }
+
+    init(id: Int, onToggle: @escaping (Int) -> Void) {
+        self.id = id
+        self.onToggle = onToggle
+        super.init(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
+        toolTip = "Stage this section (mark it reviewed)"
+        setAccessibilityElement(true)
+        setAccessibilityRole(.checkBox)
+        setAccessibilityLabel("Stage this section (mark it reviewed)")
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func accessibilityPerformPress() -> Bool { onToggle(id); return true }
+    override func mouseDown(with event: NSEvent) { onToggle(id) }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 1.5))
+        switch state {
+        case .staged:
+            DiffTheme.added.setFill()
+            circle.fill()
+            let check = NSBezierPath()
+            check.move(to: NSPoint(x: 4.8, y: 8.2)); check.line(to: NSPoint(x: 7.0, y: 5.8)); check.line(to: NSPoint(x: 11.4, y: 10.6))
+            check.lineWidth = 1.8; check.lineCapStyle = .round; check.lineJoinStyle = .round
+            NSColor.white.setStroke(); check.stroke()
+        case .partial, .unstaged:
+            DiffTheme.background.withAlphaComponent(0.85).setFill()
+            circle.fill()
+            circle.lineWidth = 1.5
+            (hovering ? DiffTheme.text : DiffTheme.foldLabel).setStroke()
+            circle.stroke()
+            if state == .partial {
+                let dash = NSBezierPath()
+                dash.move(to: NSPoint(x: 5, y: 8)); dash.line(to: NSPoint(x: 11, y: 8))
+                dash.lineWidth = 1.8; dash.lineCapStyle = .round
+                DiffTheme.added.setStroke(); dash.stroke()
+            }
+        }
+    }
+}
+

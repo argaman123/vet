@@ -18,7 +18,7 @@ struct SidebarView: View {
         }
         .frame(maxHeight: .infinity)
         // IDE trees want dense rows (Xcode's navigators use the small size too).
-        .environment(\.sidebarRowSize, .small)
+        .environment(\.sidebarRowSize, .medium)
     }
 }
 
@@ -87,6 +87,7 @@ struct ChangesTool: View {
         }
         .onChange(of: review.selectedPath) { _, path in row = path }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 }
 
@@ -147,7 +148,7 @@ struct ChangeNodeRow: View {
             } label: {
                 HStack(spacing: 6) {
                     TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }
-                    Label(item.name, systemImage: "folder")
+                    Label { Text(item.name) } icon: { Image(systemName: "folder.fill").foregroundStyle(Color(nsColor: DiffTheme.folder)) }
                         .lineLimit(1)
                         .opacity(review.stage(of: node) == .staged ? 0.65 : 1) // reviewed names recede
                     Spacer(minLength: 0)
@@ -255,13 +256,73 @@ struct EmptyToolState<Actions: View>: View {
 @MainActor
 enum FileIcons {
     private static var cache: [String: NSImage] = [:]
-    /// The Finder icon for a file name's type (cached per extension).
+
+    /// A file's icon, in the spirit of VS Code's Material icon theme: a small colored badge with
+    /// the language's mark (TS, JS, {}, #…), or a symbol for images and plain files. Cached.
     static func icon(for name: String) -> NSImage {
-        let ext = (name as NSString).pathExtension.lowercased()
-        if let i = cache[ext] { return i }
-        let i = NSWorkspace.shared.icon(for: UTType(filenameExtension: ext) ?? .plainText)
-        cache[ext] = i
+        let lower = (name as NSString).lastPathComponent.lowercased()
+        let ext = (lower as NSString).pathExtension
+        let key = special[lower] != nil ? lower : ext
+        if let i = cache[key] { return i }
+        let style = special[lower] ?? styles[ext] ?? Style(mark: nil, symbol: "doc.text", color: 0x8A93A6)
+        let i = draw(style)
+        cache[key] = i
         return i
+    }
+
+    struct Style { let mark: String?; let symbol: String?; let color: UInt32 }
+    private static let styles: [String: Style] = [
+        "ts": .init(mark: "TS", symbol: nil, color: 0x3178C6), "tsx": .init(mark: "TS", symbol: nil, color: 0x3178C6),
+        "js": .init(mark: "JS", symbol: nil, color: 0xE8C730), "jsx": .init(mark: "JS", symbol: nil, color: 0xE8C730),
+        "mjs": .init(mark: "JS", symbol: nil, color: 0xE8C730), "cjs": .init(mark: "JS", symbol: nil, color: 0xE8C730),
+        "json": .init(mark: "{}", symbol: nil, color: 0xD9A13B), "jsonc": .init(mark: "{}", symbol: nil, color: 0xD9A13B),
+        "html": .init(mark: "<>", symbol: nil, color: 0xE44D26), "css": .init(mark: "#", symbol: nil, color: 0x42A5F5),
+        "scss": .init(mark: "#", symbol: nil, color: 0xCD6799), "less": .init(mark: "#", symbol: nil, color: 0x5C8DBF),
+        "md": .init(mark: "M", symbol: nil, color: 0x5C8DBF), "py": .init(mark: "Py", symbol: nil, color: 0x3C78AA),
+        "kt": .init(mark: "K", symbol: nil, color: 0xA97BFF), "kts": .init(mark: "K", symbol: nil, color: 0xA97BFF),
+        "swift": .init(mark: nil, symbol: "swift", color: 0xF05138), "java": .init(mark: "J", symbol: nil, color: 0xE76F00),
+        "go": .init(mark: "Go", symbol: nil, color: 0x00ADD8), "rs": .init(mark: "Rs", symbol: nil, color: 0xDEA584),
+        "sh": .init(mark: nil, symbol: "terminal", color: 0x4CAF50), "zsh": .init(mark: nil, symbol: "terminal", color: 0x4CAF50),
+        "yml": .init(mark: "Y", symbol: nil, color: 0xCB4B4B), "yaml": .init(mark: "Y", symbol: nil, color: 0xCB4B4B),
+        "xml": .init(mark: "<>", symbol: nil, color: 0x8BC34A), "svg": .init(mark: nil, symbol: "scribble", color: 0xFFB13B),
+        "png": .init(mark: nil, symbol: "photo", color: 0x26A69A), "jpg": .init(mark: nil, symbol: "photo", color: 0x26A69A),
+        "jpeg": .init(mark: nil, symbol: "photo", color: 0x26A69A), "gif": .init(mark: nil, symbol: "photo", color: 0x26A69A),
+        "webp": .init(mark: nil, symbol: "photo", color: 0x26A69A), "ico": .init(mark: nil, symbol: "photo", color: 0x26A69A),
+        "txt": .init(mark: nil, symbol: "doc.text", color: 0x8A93A6), "lock": .init(mark: nil, symbol: "lock", color: 0x8A93A6),
+        "sql": .init(mark: nil, symbol: "cylinder", color: 0xE38C00), "ps1": .init(mark: nil, symbol: "terminal", color: 0x5391FE),
+    ]
+    private static let special: [String: Style] = [
+        "package.json": .init(mark: nil, symbol: "shippingbox", color: 0x8BC34A),
+        "package-lock.json": .init(mark: nil, symbol: "lock", color: 0x8BC34A),
+        ".gitignore": .init(mark: nil, symbol: "eye.slash", color: 0xF4511E),
+        ".gitattributes": .init(mark: nil, symbol: "arrow.triangle.branch", color: 0xF4511E),
+        "dockerfile": .init(mark: nil, symbol: "shippingbox.fill", color: 0x2496ED),
+        "readme.md": .init(mark: nil, symbol: "info.circle.fill", color: 0x42A5F5),
+        "claude.md": .init(mark: nil, symbol: "sparkle", color: 0xD97757),
+        "agents.md": .init(mark: nil, symbol: "sparkle", color: 0xD97757),
+    ]
+
+    private static func draw(_ style: Style) -> NSImage {
+        let size = NSSize(width: 16, height: 16)
+        return NSImage(size: size, flipped: false) { rect in
+            let color = DiffTheme.hex(style.color)
+            if let mark = style.mark {
+                // A rounded badge in the language color with its mark in white.
+                let badge = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1.5), xRadius: 3.5, yRadius: 3.5)
+                color.setFill()
+                badge.fill()
+                let font = NSFont.systemFont(ofSize: mark.count > 1 ? 7.5 : 9, weight: .heavy)
+                let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+                let t = mark as NSString, ts = t.size(withAttributes: attrs)
+                t.draw(at: NSPoint(x: rect.midX - ts.width / 2, y: rect.midY - ts.height / 2 + 0.3), withAttributes: attrs)
+            } else if let symbol = style.symbol,
+                      let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                        .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold).applying(.init(paletteColors: [color]))) {
+                let s = image.size
+                image.draw(in: NSRect(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2, width: s.width, height: s.height))
+            }
+            return true
+        }
     }
 }
 

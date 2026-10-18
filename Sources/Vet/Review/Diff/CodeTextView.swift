@@ -71,6 +71,16 @@ final class CodeTextView: NSTextView {
         tv.insertionPointColor = DiffTheme.text
         tv.usesFindBar = true
         tv.textLayoutManager?.delegate = tv
+        // A new theme: new surfaces at once (the owners rebuild the colored text).
+        NotificationCenter.default.addObserver(forName: .vetThemeChanged, object: nil, queue: .main) { [weak tv, weak scroll] _ in
+            MainActor.assumeIsolated {
+                tv?.backgroundColor = DiffTheme.background
+                tv?.insertionPointColor = DiffTheme.text
+                tv?.selectedTextAttributes = [.backgroundColor: DiffTheme.selection]
+                scroll?.backgroundColor = DiffTheme.background
+                tv?.needsDisplay = true
+            }
+        }
         scroll.documentView = tv
         return (scroll, tv)
     }
@@ -99,9 +109,9 @@ final class CodeTextView: NSTextView {
             r.fill()
         }
         for m in markers {
-            let r = NSRect(x: 0, y: y(ofLine: m.line) - 1, width: width, height: 2)
+            let r = NSRect(x: 0, y: y(ofLine: m.line) - 1.5, width: width, height: 3)
             guard r.intersects(rect) else { continue }
-            m.color.withAlphaComponent(0.8).setFill()
+            m.color.withAlphaComponent(0.85).setFill()
             r.fill()
         }
         drawWordHighlights(in: rect)

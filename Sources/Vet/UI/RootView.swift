@@ -9,9 +9,11 @@ struct RootView: View {
         let ws = app.workspace, ui = app.ui
         NavigationSplitView {
             SidebarView(app: app)
+                .background(Color(nsColor: DiffTheme.sidebar))
                 .navigationSplitViewColumnWidth(min: 230, ideal: 290, max: 460)
         } detail: {
             MainArea(app: app)
+                .background(Color(nsColor: DiffTheme.background))
                 .navigationTitle(app.projects.current?.lastPathComponent ?? "Vet")
                 .navigationSubtitle(subtitle)
                 .toolbarTitleMenu { ProjectMenu(app: app) }
@@ -20,6 +22,9 @@ struct RootView: View {
                 .searchSuggestions { SearchEverywhereSuggestions(app: app) }
         }
         .onChange(of: ui.search) { _, query in app.searchEverywhere.update(query) }
+        .tint(Color(nsColor: DiffTheme.accent)) // the theme's accent on every control
+        .id(ui.themeID) // a new theme redraws everything with its colors
+        .background(WindowTint())
         .task(id: app.projects.current) {
             app.ui.reset()
             app.find.reset()
@@ -143,3 +148,14 @@ struct MainToolbar: ToolbarContent {
         }
     }
 }
+
+/// Gives the window the theme's background (seen under the toolbar and around the panes).
+private struct WindowTint: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { v.window?.backgroundColor = DiffTheme.window }
+        return v
+    }
+    func updateNSView(_ v: NSView, context: Context) { v.window?.backgroundColor = DiffTheme.window }
+}
+

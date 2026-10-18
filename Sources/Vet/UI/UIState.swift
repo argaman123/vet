@@ -19,6 +19,9 @@ final class UIState {
     }
 
     var tool: Tool = .changes
+    /// The theme and code font (menus read these; DiffTheme holds the colors).
+    var themeID = DiffTheme.palette.id
+    var codeFont = DiffTheme.codeFont
     private(set) var location: Location?
     private(set) var back: [Location] = []
     private(set) var forward: [Location] = []

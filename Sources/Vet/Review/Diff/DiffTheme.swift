@@ -1,8 +1,7 @@
 import AppKit
 import VetCore
 
-/// Colors and metrics of code panes. Surfaces are the system's own (they follow light/dark,
-/// increased contrast and the accent color); code colors are WebStorm's light and dark schemes.
+/// Colors and metrics of the app and its code panes, from the chosen theme (CodeThemes.swift).
 @MainActor
 enum DiffTheme {
     nonisolated static func hex(_ v: UInt32, _ a: CGFloat = 1) -> NSColor {
@@ -16,53 +15,71 @@ enum DiffTheme {
         }
     }
 
-    // IntelliJ's own colors: the Islands Dark scheme (WebStorm's default, and the user's) with the
-    // Darcula diff colors it inherits; IntelliJ Light for light mode.
-    static let background = dynamic(light: hex(0xFFFFFF), dark: hex(0x191A1C))
-    static let gutter = background
-    /// Folded unchanged lines (IntelliJ's diff separators) and note cards.
-    static let foldBand = dynamic(light: hex(0xE4E6EB), dark: hex(0x2B2D30))
-    static let foldLabel = dynamic(light: hex(0x6C707E), dark: hex(0x868991))
-    /// The folded-lines button and the wave behind it.
-    static let foldPill = dynamic(light: hex(0xEBECF0), dark: hex(0x2B2D30))
-    static let foldPillHover = dynamic(light: hex(0xDFE1E5), dark: hex(0x393B40))
-    static let foldPillBorder = dynamic(light: hex(0xD3D5DB), dark: hex(0x43454A))
-    static let foldWave = dynamic(light: hex(0xC9CCD6), dark: hex(0x43454A))
-    static let text = dynamic(light: hex(0x080808), dark: hex(0xBCBEC4))
-    static let lineNumber = dynamic(light: hex(0xAEB3C2), dark: hex(0x4B5059))
-    static let lineNumberCurrent = dynamic(light: hex(0x767A8A), dark: hex(0xA1A3AB))
+    // MARK: Theme (Settings ▸ Theme; see CodeThemes.swift)
+
+    nonisolated(unsafe) private static var current: Palette = Palette.all.first { $0.id == UserDefaults.standard.string(forKey: "theme") } ?? .vet
+    static var palette: Palette { current }
+    static func setTheme(_ id: String) {
+        guard let p = Palette.all.first(where: { $0.id == id }), p.id != current.id else { return }
+        current = p
+        UserDefaults.standard.set(id, forKey: "theme")
+        resolved = [:]
+        NotificationCenter.default.post(name: .vetThemeChanged, object: nil)
+    }
+    nonisolated(unsafe) private static var resolved: [String: NSColor] = [:]
+    /// A palette color as a light/dark color (cached until the theme changes).
+    nonisolated private static func color(_ key: String, _ value: (Palette) -> UInt32) -> NSColor {
+        if let c = resolved[key] { return c }
+        let c = dynamic(light: hex(value(.light)), dark: hex(value(current)))
+        resolved[key] = c
+        return c
+    }
+
+    static var window: NSColor { color("window") { $0.window } }
+    static var accent: NSColor { color("accent") { $0.accent } }
+    static var folder: NSColor { color("folder") { $0.folder } }
+    static var sidebar: NSColor { color("sidebar") { $0.sidebar } }
+    static var header: NSColor { color("header") { $0.header } }
+    static var background: NSColor { color("background") { $0.background } }
+    static var gutter: NSColor { background }
+    static var foldLabel: NSColor { color("foldLabel") { $0.foldLabel } }
+    static var foldPill: NSColor { color("foldPill") { $0.foldPill } }
+    static var foldPillHover: NSColor { color("foldPillHover") { $0.foldPillHover } }
+    static var foldPillBorder: NSColor { color("foldPillBorder") { $0.foldPillBorder } }
+    static var foldWave: NSColor { color("foldWave") { $0.foldWave } }
+    static var foldBand: NSColor { foldPill }
+    static var text: NSColor { color("text") { $0.text } }
+    static var lineNumber: NSColor { color("lineNumber") { $0.lineNumber } }
+    static var lineNumberCurrent: NSColor { color("lineNumberCurrent") { $0.lineNumberCurrent } }
     static let border = NSColor.separatorColor
-    static let selection = dynamic(light: hex(0xA6D2FF), dark: hex(0x214283))
-    /// Inline hints: IntelliJ's inlay colors.
-    static let inlayBackground = dynamic(light: hex(0xEDEDED), dark: hex(0x393B40))
-    static let inlayText = dynamic(light: hex(0x7A7A7A), dark: hex(0x868A91))
-    /// "N usages · author" after a declaration.
-    static let lensText = dynamic(light: hex(0x7A7A7A), dark: hex(0x868A91))
-    /// A search match (Find in Files, usages): IntelliJ's text-search highlight.
-    static let searchMatch = dynamic(light: hex(0xFCD47E), dark: hex(0x114957))
+    static var selection: NSColor { color("selection") { $0.selection } }
+    static var inlayBackground: NSColor { color("inlayBackground") { $0.inlayBackground } }
+    static var inlayText: NSColor { color("inlayText") { $0.inlayText } }
+    static var lensText: NSColor { color("lensText") { $0.lensText } }
+    static var searchMatch: NSColor { color("searchMatch") { $0.searchMatch } }
 
     /// Change markers (gutter bars, the thin line where the other side has nothing).
-    static let added = dynamic(light: hex(0x7FC784), dark: hex(0x549159))
-    static let modified = dynamic(light: hex(0x88ADF7), dark: hex(0x375FAD))
-    static let removed = dynamic(light: hex(0xE55B5B), dark: hex(0xC75450))
+    static var added: NSColor { color("addedMark") { $0.addedMark } }
+    static var modified: NSColor { color("modifiedMark") { $0.modifiedMark } }
+    static var removed: NSColor { color("removedMark") { $0.removedMark } }
 
-    /// IntelliJ's diff blocks: inserted green, modified blue, deleted gray.
+    /// Diff blocks: inserted green, modified blue, deleted red.
     enum Change { case inserted, modified, deleted }
     static func block(_ change: Change) -> NSColor {
         switch change {
-        case .inserted: dynamic(light: hex(0xBEE6BE), dark: hex(0x294436))
-        case .modified: dynamic(light: hex(0xC2D8F2), dark: hex(0x385570))
-        case .deleted: dynamic(light: hex(0xD6D6D6), dark: hex(0x484A4A))
+        case .inserted: color("inserted") { $0.inserted }
+        case .modified: color("modified") { $0.modified }
+        case .deleted: color("deleted") { $0.deleted }
         }
     }
     static func change(head: Range<Int>, work: Range<Int>) -> Change {
         head.isEmpty ? .inserted : work.isEmpty ? .deleted : .modified
     }
     /// Unified layout: HEAD lines red, new lines green, so the two read apart in one column.
-    static let unifiedRemoved = dynamic(light: hex(0xF6D5D5), dark: hex(0x4A2A2C))
-    static let unifiedAdded = block(.inserted)
-    static let unifiedRemovedWord = dynamic(light: hex(0xEDAFAF), dark: hex(0x7A3A3D))
-    static let unifiedAddedWord = dynamic(light: hex(0x93D193), dark: hex(0x3E7050))
+    static var unifiedRemoved: NSColor { block(.deleted) }
+    static var unifiedAdded: NSColor { block(.inserted) }
+    static var unifiedRemovedWord: NSColor { color("deletedWord") { $0.deletedWord } }
+    static var unifiedAddedWord: NSColor { color("insertedWord") { $0.insertedWord } }
 
     // Code text size: pinch a code pane, or ⌘+ / ⌘− / ⌘0. Rows are 1.5× the font size.
     static let defaultFontSize: CGFloat = 12
@@ -78,10 +95,17 @@ enum DiffTheme {
         NotificationCenter.default.post(name: .vetCodeFontChanged, object: nil)
     }
     private static var cached: (size: CGFloat, font: NSFont, number: NSFont, line: CGFloat)?
+    static var codeFont: CodeFont { CodeFont(rawValue: UserDefaults.standard.string(forKey: "codeFont") ?? "") ?? .sfMono }
+    static func setCodeFont(_ f: CodeFont) {
+        guard f != codeFont else { return }
+        UserDefaults.standard.set(f.rawValue, forKey: "codeFont")
+        cached = nil
+        NotificationCenter.default.post(name: .vetCodeFontChanged, object: nil)
+    }
     private static var metrics: (size: CGFloat, font: NSFont, number: NSFont, line: CGFloat) {
         if let c = cached, c.size == fontSize { return c }
         let s = fontSize
-        let m = (s, NSFont.monospacedSystemFont(ofSize: s, weight: .regular),
+        let m = (s, codeFont.font(size: s),
                  NSFont.monospacedDigitSystemFont(ofSize: max(9, s - 1.5), weight: .regular), (s * 1.5).rounded())
         cached = m
         return m
@@ -93,31 +117,28 @@ enum DiffTheme {
 
     static func token(_ kind: TokenKind) -> NSColor {
         switch kind {
-        case .keyword: dynamic(light: hex(0x0033B3), dark: hex(0xCF8E6D))
-        case .string: dynamic(light: hex(0x067D17), dark: hex(0x6AAB73))
-        case .comment: dynamic(light: hex(0x8C8C8C), dark: hex(0x7A7E85))
-        case .number: dynamic(light: hex(0x1750EB), dark: hex(0x2AACB8))
-        case .type: dynamic(light: hex(0x000000), dark: hex(0xBCBEC4))
-        case .decorator: dynamic(light: hex(0x9E880D), dark: hex(0xB3AE60))
-        case .tag: dynamic(light: hex(0x0033B3), dark: hex(0xD5B778))
-        case .attribute: dynamic(light: hex(0x174AD4), dark: hex(0xBABABA))
+        case .keyword: color("keyword") { $0.keyword }
+        case .string: color("string") { $0.string }
+        case .comment: color("comment") { $0.comment }
+        case .number: color("number") { $0.number }
+        case .type: color("type") { $0.type }
+        case .decorator: color("decorator") { $0.decorator }
+        case .tag: color("tag") { $0.tag }
+        case .attribute: color("attribute") { $0.attribute }
         }
     }
 
-    /// Semantic token colors (from the language server), WebStorm's scheme.
+    /// Semantic token colors (from the language server).
     static func semantic(_ type: String, modifiers: Set<String>) -> NSColor? {
         switch type {
-        case "function", "method":
-            return modifiers.contains("declaration") || modifiers.contains("definition")
-                ? dynamic(light: hex(0x00627A), dark: hex(0x56A8F5))
-                : dynamic(light: hex(0x00627A), dark: hex(0x57AAF7))
-        case "property", "enumMember":
-            return dynamic(light: hex(0x871094), dark: hex(0xC77DBB))
-        case "parameter": return dynamic(light: hex(0x000000), dark: hex(0xBCBEC4))
-        case "class", "interface", "enum", "type", "typeParameter", "namespace":
-            return dynamic(light: hex(0x000000), dark: hex(0xBCBEC4))
+        case "function", "method": return color("function") { $0.function }
+        case "property": return color("property") { $0.property }
+        case "enumMember": return color("constant") { $0.constant }
+        case "parameter": return color("parameter") { $0.parameter }
+        case "class", "interface", "enum", "type", "typeParameter": return color("classType") { $0.classType }
+        case "namespace": return color("namespace") { $0.namespace }
         case "variable":
-            return modifiers.contains("readonly") && modifiers.contains("static") ? dynamic(light: hex(0x871094), dark: hex(0xC77DBB)) : nil
+            return modifiers.contains("readonly") && (modifiers.contains("static") || modifiers.contains("defaultLibrary")) ? color("constant") { $0.constant } : nil
         case "decorator": return token(.decorator)
         default: return nil
         }
@@ -146,7 +167,7 @@ enum DiffTheme {
         staged ? solid(base, 0.35) : base
     }
     /// Changed words inside a modified section: a brighter shade of it, so they stand out.
-    static let modifiedWord = dynamic(light: hex(0x9DBFF0), dark: hex(0x4B70A3))
+    static var modifiedWord: NSColor { color("modifiedWord") { $0.modifiedWord } }
     /// Changed words (faded once reviewed).
     static func word(_ base: NSColor, staged: Bool) -> NSColor { staged ? solid(base, 0.5) : base }
 
@@ -155,19 +176,17 @@ enum DiffTheme {
         switch change {
         case .inserted: added
         case .modified: modified
-        case .deleted: dynamic(light: hex(0x767A8A), dark: hex(0x868A91))
+        case .deleted: removed
         }
     }
 
     /// File names by change, as IntelliJ colors them in the commit tree and project view.
     nonisolated static func fileStatus(_ kind: ChangeKind) -> NSColor {
         switch kind {
-        case .modified: dynamic(light: hex(0x0033B3), dark: hex(0x70AEFF))
-        case .renamed: dynamic(light: hex(0x0033B3), dark: hex(0x70AEFF))
-        case .added: dynamic(light: hex(0x067D17), dark: hex(0x73BD79))
-        case .untracked: dynamic(light: hex(0x067D17), dark: hex(0x73BD79)) // new is new, in git or not
-        case .deleted: dynamic(light: hex(0x6C707E), dark: hex(0x6F737A))
-        case .conflicted: dynamic(light: hex(0xC4221D), dark: hex(0xDE6A66))
+        case .modified, .renamed: color("fileModified") { $0.fileModified }
+        case .added, .untracked: color("fileAdded") { $0.fileAdded } // new is new, in git or not
+        case .deleted: color("fileDeleted") { $0.fileDeleted }
+        case .conflicted: color("fileConflict") { $0.fileConflict }
         }
     }
 }
@@ -175,4 +194,6 @@ enum DiffTheme {
 extension Notification.Name {
     /// The code text size changed (every code pane re-lays out).
     static let vetCodeFontChanged = Notification.Name("VetCodeFontChanged")
+    /// The color theme changed (every view redraws with the new palette).
+    static let vetThemeChanged = Notification.Name("VetThemeChanged")
 }

@@ -50,6 +50,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(fontChanged), name: .vetCodeFontChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged), name: .vetThemeChanged, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -155,6 +156,15 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         let height = DiffTheme.inset.height * 2 + CGFloat(lineCount) * DiffTheme.lineHeight
         textView.minSize = NSSize(width: 0, height: height)
         textView.setFrameSize(NSSize(width: max(textView.frame.width, scroll.contentSize.width), height: max(height, scroll.contentSize.height)))
+    }
+
+    /// New theme: recolor the code (keeping edits), then the reading aids color names again.
+    @objc private func themeChanged() {
+        if let storage = textView.textStorage { CodeText.rehighlight(storage, language: language) }
+        gutter.needsDisplay = true
+        sticky.needsDisplay = true
+        needsDisplay = true
+        onTextSettled?()
     }
 
     @objc private func fontChanged() {

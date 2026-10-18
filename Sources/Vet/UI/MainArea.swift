@@ -212,7 +212,7 @@ struct HeaderBar<Content: View>: View {
             .buttonStyle(.borderless)
             .padding(.horizontal, 14)
             .frame(height: 32)
-            .background(.bar)
+            .background(Color(nsColor: DiffTheme.header))
             .overlay(alignment: .bottom) { Divider() }
     }
 }

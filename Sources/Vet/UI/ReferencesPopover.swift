@@ -184,6 +184,8 @@ struct ReferencesView: View {
                 .frame(minWidth: 260, idealWidth: 340, maxWidth: 520)
             }
         }
+        .background(Color(nsColor: DiffTheme.sidebar))
+        .tint(Color(nsColor: DiffTheme.accent))
         .onKeyPress(.upArrow) { model.move(-1); return .handled }
         .onKeyPress(.downArrow) { model.move(1); return .handled }
     }

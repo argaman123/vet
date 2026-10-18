@@ -32,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quitting = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Vet is a dark app with its own surfaces (the theme's window, sidebar and bar colors).
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        CodeFont.registerBundled()
         searchEverywhere.app = self
         find.app = self
         workspace.onOpenProject = { [weak self] url in self?.projects.open(url) }
@@ -52,6 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let out = "query=\(self.ui.search)\n" + self.searchEverywhere.items.map { "\($0.kind) \($0.id) | \($0.title) | \($0.detail)" }.joined(separator: "\n")
                 if let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] { try? out.write(toFile: dir + "/search.txt", atomically: true, encoding: .utf8) }
             }
+        }
+        SnapshotHook.on("theme") { [weak self] args in if let id = args.first { DiffTheme.setTheme(id); self?.ui.themeID = id } }
+        SnapshotHook.on("font") { [weak self] args in
+            if let f = CodeFont(rawValue: args.joined(separator: " ")) { DiffTheme.setCodeFont(f); self?.ui.codeFont = f }
         }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
@@ -233,6 +240,13 @@ struct VetCommands: Commands {
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
             Button("Browser") { app.showBrowser() }.keyboardShortcut("3")
+            Divider()
+            Picker("Theme", selection: Binding(get: { app.ui.themeID }, set: { DiffTheme.setTheme($0); app.ui.themeID = $0 })) {
+                ForEach(Palette.all, id: \.id) { Text($0.name).tag($0.id) }
+            }
+            Picker("Code Font", selection: Binding(get: { app.ui.codeFont }, set: { DiffTheme.setCodeFont($0); app.ui.codeFont = $0 })) {
+                ForEach(CodeFont.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
             Divider()
             Button("Bigger Code Text") { DiffTheme.setFontSize(DiffTheme.fontSize + 1) }.keyboardShortcut("+")
             Button("Smaller Code Text") { DiffTheme.setFontSize(DiffTheme.fontSize - 1) }.keyboardShortcut("-")

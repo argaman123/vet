@@ -172,7 +172,14 @@ final class ReviewModel {
         a.runModal()
     }
 
+    /// A new theme rebuilds the diff's colored text.
+    @ObservationIgnored private lazy var themeObserver: NSObjectProtocol = NotificationCenter.default.addObserver(
+        forName: .vetThemeChanged, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.diffVersion += 1 }
+    }
+
     func open(_ folder: URL?) {
+        _ = themeObserver
         // Coming back to the Review tab shouldn't reset your place in the same project.
         if let folder, folder.standardizedFileURL == root?.standardizedFileURL {
             Task { await refresh() }
