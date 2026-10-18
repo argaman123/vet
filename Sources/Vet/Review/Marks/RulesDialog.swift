@@ -9,7 +9,7 @@ struct RulesDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Unimportant rules").font(.title3)
-            Text("Matching files stage themselves. *.html matches at any depth; src/generated/** a folder and everything in it; **/generated/** such folders anywhere; ? one character. Case-sensitive.")
+            Text(verbatim: "Matching files stage themselves. *.html matches at any depth; src/generated/** a folder and everything in it; **/generated/** such folders anywhere; ? one character. Case-sensitive.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 VStack(spacing: 6) {
