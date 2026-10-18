@@ -21,16 +21,19 @@ extension CodeLocation {
     }
 }
 
-/// Go to definition, go to implementation and find references for one project, through
-/// language servers started on first use (one per language). `text` is the editor's current
-/// text for `url`, so unsaved edits are taken into account. Every failure (no server
-/// installed, a timeout, a crash) comes back as no results; cancelling the calling task
-/// cancels the request.
+/// Go to definition, go to implementation and find references for one project, and the
+/// reading aids (hover, semantic tokens, inlay hints, code lenses, symbols, gutter marks; see
+/// CodeReading.swift), through language servers started on first use (one per language).
+/// `text` is the editor's current text for `url`, so unsaved edits are taken into account.
+/// Every failure (no server installed, a timeout, a crash) comes back as no results;
+/// cancelling the calling task cancels the request.
 @MainActor final class CodeNavigator {
     let root: URL
     private var servers: [LSPLanguage: Task<LanguageServer?, Never>] = [:]
     private var restarts: [LSPLanguage: Int] = [:]
     private static let maxRestarts = 3
+    /// Hover, tokens, hints, lenses, symbols and gutter marks already asked for (CodeReading.swift).
+    let reading = ReadingCaches()
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -56,6 +59,7 @@ extension CodeLocation {
     func shutdown() {
         let running = Array(servers.values)
         servers = [:]
+        reading.removeAll()
         Task.detached {
             for task in running { await task.value?.stop() }
         }
@@ -90,10 +94,21 @@ extension CodeLocation {
         }
     }
 
+    /// The languages whose server was started and is still alive (none is started here).
+    func runningLanguages() async -> [LSPLanguage] {
+        var running: [LSPLanguage] = []
+        for language in LSPLanguage.allCases {
+            if let task = servers[language], let server = await task.value, await server.isAlive {
+                running.append(language)
+            }
+        }
+        return running
+    }
+
     /// The running server for `language`, started on first use and restarted (a few times)
     /// after it exits. Nil when it isn't installed; that's checked again on the next call, so
     /// installing servers while Vet runs works.
-    private func server(for language: LSPLanguage) async -> LanguageServer? {
+    func server(for language: LSPLanguage) async -> LanguageServer? {
         if let task = servers[language] {
             guard let server = await task.value else { return nil } // a launch in flight found nothing
             if await server.isAlive { return server }
@@ -145,10 +160,27 @@ enum LanguageServerCatalog {
                     // of the class); waiting a few seconds for the real answer is better for ⌘-click.
                     "useSyntaxServer": "never",
                 ],
+                // Inlay hints are tsserver preferences, all off by default: parameter names for
+                // literal arguments, and the types of variables, return values and properties.
+                "preferences": [
+                    "includeInlayParameterNameHints": "literals",
+                    "includeInlayParameterNameHintsWhenArgumentMatchesName": false,
+                    "includeInlayVariableTypeHints": true,
+                    "includeInlayVariableTypeHintsWhenTypeMatchesName": false,
+                    "includeInlayFunctionLikeReturnTypeHints": true,
+                    "includeInlayPropertyDeclarationTypeHints": true,
+                ],
+            ]
+            // Code lenses are workspace settings, read only from workspace/didChangeConfiguration.
+            // References on every function, as WebStorm counts usages of each declaration.
+            let lenses: JSONValue = [
+                "implementationsCodeLens": ["enabled": true],
+                "referencesCodeLens": ["enabled": true, "showOnAllFunctions": true],
             ]
             return .init(name: "typescript", executable: nodeBinary, arguments: [script.path, "--stdio"],
                          environment: env, initializationOptions: options,
-                         startTimeout: .seconds(60), requestTimeout: .seconds(60), waitsForIndexing: false)
+                         startTimeout: .seconds(60), requestTimeout: .seconds(60), waitsForIndexing: false,
+                         settings: ["typescript": lenses, "javascript": lenses])
         case .python:
             let script = node.appendingPathComponent("pyright/langserver.index.js")
             guard let nodeBinary = nodeExecutable(env, for: language, script: script) else { return nil }
@@ -170,10 +202,19 @@ enum LanguageServerCatalog {
             }
             // Indexes per project, so two projects' servers don't fight over one cache. The shell
             // environment's JAVA_HOME is what kotlin-lsp's Gradle import runs Gradle with.
+            // Inlay hints are off unless the client's "jetbrains.kotlin" configuration names them:
+            // IntelliJ's option ids, flattened (kotlin-lsp joins nested keys with dots).
+            let hints: JSONValue = [
+                "hints.parameters": true, "hints.parameters.compiled": true,
+                "hints.type.variable": true, "hints.type.property": true, "hints.type.function.return": true,
+                "hints.lambda.return": true, "hints.lambda.receivers.parameters": true,
+                "hints.value.ranges": true,
+            ]
             return .init(name: "kotlin-lsp", executable: launcher,
                          arguments: ["--stdio", "--system-path=\(kotlinCache(for: root).path)"],
                          environment: env, initializationOptions: nil,
-                         startTimeout: .seconds(120), requestTimeout: .seconds(180), waitsForIndexing: true)
+                         startTimeout: .seconds(120), requestTimeout: .seconds(180), waitsForIndexing: true,
+                         settings: ["jetbrains": ["kotlin": hints]])
         }
     }
 

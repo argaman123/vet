@@ -16,17 +16,23 @@ actor LanguageServer {
         /// The server answers "nothing" while it imports or indexes (kotlin-lsp), so requests
         /// wait for its reported work to finish first.
         let waitsForIndexing: Bool
+        /// Configuration shaped like VS Code's settings: sent in `workspace/didChangeConfiguration`
+        /// right after `initialized` and answered from in `workspace/configuration`.
+        var settings: JSONValue? = nil
     }
 
     enum Failure: Error, CustomStringConvertible {
         case notRunning(String)
         case timedOut(String)
         case exited(Int32)
+        /// The document was replaced (or closed) before the answer came, so it may be about another text.
+        case documentChanged
         var description: String {
             switch self {
             case .notRunning(let why): "server not running: \(why)"
             case .timedOut(let method): "\(method) timed out"
             case .exited(let status): "server exited (\(status))"
+            case .documentChanged: "the document changed while the request ran"
             }
         }
     }
@@ -41,6 +47,8 @@ actor LanguageServer {
     private var startTask: Task<Void, Error>?
     private var exitStatus: Int32?
     private var documents: [String: (version: Int, text: String)] = [:] // by URI
+    private var keptURI: String? // the one document closeOthers keeps open
+    private var pinned: [String: Int] = [:] // URI → side requests in flight that need it open
     private var capabilities: JSONValue = .null
     private var progress: [String: String] = [:] // work-done token → title, while running
     private var progressBegun = 0 // work-done progress started so far
@@ -126,6 +134,10 @@ actor LanguageServer {
             let result = try await request("initialize", params, timeout: launch.startTimeout)
             capabilities = result["capabilities"] ?? .null
             try send(.notification(method: "initialized", params: [:]))
+            // typescript-language-server reads its code lens settings only from this notification.
+            if let settings = launch.settings {
+                try send(.notification(method: "workspace/didChangeConfiguration", params: ["settings": settings]))
+            }
             initializedAt = .now
         } catch {
             // A server that can't initialize is useless; end it so the navigator can start afresh.
@@ -155,6 +167,7 @@ actor LanguageServer {
             waiter.timeout.cancel()
             waiter.continuation.resume(throwing: Failure.exited(status))
         }
+        wakeTurnWaiters() // they fail on sending
         log.info("\(self.launch.name, privacy: .public) exited with status \(status)")
     }
 
@@ -179,37 +192,229 @@ actor LanguageServer {
             ]))
             documents[uri] = (1, text)
         }
+        changes[uri, default: 0] += 1
     }
 
     /// Closes every document but `url`'s, so the server reads them from disk again: an open
     /// document's text wins over the file, and Claude may have changed the file since. One stays
     /// open so the server keeps its project loaded (tsserver drops a project with no open file).
+    /// A document opened beside the kept one for a request in flight stays open until it's done.
     private func closeOthers(than url: URL) throws {
         let keep = LSPURI.string(for: url)
-        for uri in documents.keys where uri != keep {
-            try send(.notification(method: "textDocument/didClose", params: ["textDocument": ["uri": .string(uri)]]))
-            documents[uri] = nil
+        keptURI = keep
+        for uri in documents.keys where uri != keep && pinned[uri] == nil {
+            try close(uri)
+        }
+    }
+
+    private func close(_ uri: String) throws {
+        try send(.notification(method: "textDocument/didClose", params: ["textDocument": ["uri": .string(uri)]]))
+        documents[uri] = nil
+        changes[uri, default: 0] += 1
+    }
+
+    // MARK: Turns
+
+    // Requests about the open document run in turns: all those about one text of one file at a
+    // time. A file is often asked about with two texts at once (a diff's two panes), and
+    // replacing the document under a request in flight gets it answered for the other text, or
+    // cancelled (tsserver cancels semantic tokens and lens resolves then, answering "nothing").
+    // So a request about another text waits for the turn to end. Navigation doesn't wait: it
+    // takes the turn at once, and the requests it interrupted find out (`documentChanged`) and
+    // ask again.
+
+    private struct Turn {
+        let id: Int
+        let uri: String
+        let text: String
+        var users: Int
+    }
+
+    private var turn: Turn?
+    private var turnCount = 0
+    private var turnWaiters: [Int: (uri: String, text: String, continuation: CheckedContinuation<Void, Error>)] = [:]
+    private var waiterCount = 0
+    private var changes: [String: Int] = [:] // URI → opens, changes and closes sent so far
+
+    /// Joins the turn of `uri` with `text`, or waits for the current one to end (`first`: takes
+    /// over at once). Returns the turn's id, for `leaveTurn`.
+    private func enterTurn(uri: String, text: String, first: Bool) async throws -> Int {
+        while let current = turn {
+            let same = current.uri == uri && current.text == text
+            // Join, unless another text waits: it goes first then, so a stream of requests
+            // about one text can't keep it waiting.
+            if same && (first || !turnWaiters.values.contains { $0.uri != uri || $0.text != text }) {
+                turn!.users += 1
+                return current.id
+            }
+            if first { break }
+            try await waitForTurn(uri: uri, text: text)
+        }
+        turnCount += 1
+        turn = Turn(id: turnCount, uri: uri, text: text, users: 1)
+        return turnCount
+    }
+
+    private func leaveTurn(_ id: Int) {
+        guard turn?.id == id else { return } // a turn navigation took over: its users don't count
+        turn!.users -= 1
+        if turn!.users == 0 {
+            turn = nil
+            wakeTurnWaiters()
+        }
+    }
+
+    private func waitForTurn(uri: String, text: String) async throws {
+        waiterCount += 1
+        let id = waiterCount
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    turnWaiters[id] = (uri, text, continuation)
+                }
+            }
+        } onCancel: {
+            Task { await self.stopWaiting(id) }
+        }
+    }
+
+    private func stopWaiting(_ id: Int) {
+        turnWaiters.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
+    }
+
+    /// Every waiter tries again, oldest first; the first takes the turn and those about the
+    /// same text join it.
+    private func wakeTurnWaiters() {
+        let waiters = turnWaiters.sorted { $0.key < $1.key }
+        turnWaiters = [:]
+        for (_, waiter) in waiters { waiter.continuation.resume() }
+    }
+
+    /// Sends a request about `url` in a turn of `text`, synced as the one open document. Throws
+    /// `documentChanged` when the document was replaced before the answer came.
+    private func requestInTurn(_ method: String, _ params: JSONValue, url: URL, text: String, first: Bool) async throws -> JSONValue {
+        let uri = LSPURI.string(for: url)
+        let id = try await enterTurn(uri: uri, text: text, first: first)
+        defer { leaveTurn(id) }
+        try sync(url, text: text)
+        try closeOthers(than: url)
+        let before = changes[uri, default: 0]
+        let result = try await request(method, params)
+        guard changes[uri, default: 0] == before else { throw Failure.documentChanged }
+        return result
+    }
+
+    /// The server's capability `key` from `initialize` (e.g. "semanticTokensProvider"); nil
+    /// before the server started or when it didn't announce it.
+    func capability(_ key: String) -> JSONValue? {
+        guard let value = capabilities[key], value != .bool(false), value != .null else { return nil }
+        return value
+    }
+
+    /// Sends `method` about `url` with `text` as the one open document, `params` plus its
+    /// `textDocument`, in a turn (waiting for one about another text to end). Nil when the server
+    /// doesn't offer `provider`. Throws `documentChanged` when navigation replaced the document
+    /// meanwhile (the caller asks again).
+    func documentRequest(_ method: String, provider: String?, url: URL, text: String,
+                         params: [String: JSONValue] = [:]) async throws -> JSONValue? {
+        try await start()
+        if let provider, capability(provider) == nil { return nil }
+        if launch.waitsForIndexing { try await waitForIndexing() }
+        var params = params
+        params["textDocument"] = ["uri": .string(LSPURI.string(for: url))]
+        let begunBefore = progressBegun
+        var result = try await requestInTurn(method, .object(params), url: url, text: text, first: false)
+        // Asked while a (re)import started: ask again once it's done.
+        if launch.waitsForIndexing && Self.isEmpty(result) && (progressBegun != begunBefore || !progress.isEmpty) {
+            try await waitForIndexing()
+            result = try await requestInTurn(method, .object(params), url: url, text: text, first: false)
+        }
+        return result
+    }
+
+    /// Resolves a code lens of `url`'s document with `text`: the server resolves it against the
+    /// open document, so that must still be this text.
+    func resolveCodeLens(_ lens: JSONValue, url: URL, text: String) async throws -> JSONValue {
+        try await requestInTurn("codeLens/resolve", lens, url: url, text: text, first: false)
+    }
+
+    /// A request about another file (a base class's), made without replacing the kept document:
+    /// the file is opened beside it with `text` (its contents on disk) and closed afterwards. One
+    /// that is open already is used as it is, unsaved edits included.
+    func sideDocumentRequest(_ method: String, provider: String?, url: URL, text: String,
+                             params: [String: JSONValue] = [:]) async throws -> JSONValue? {
+        try await start()
+        if let provider, capability(provider) == nil { return nil }
+        if launch.waitsForIndexing { try await waitForIndexing() }
+        let uri = LSPURI.string(for: url)
+        if documents[uri] == nil { try sync(url, text: text) }
+        pinned[uri, default: 0] += 1
+        defer {
+            pinned[uri]! -= 1
+            if pinned[uri] == 0 {
+                pinned[uri] = nil
+                if uri != keptURI && documents[uri] != nil { try? close(uri) }
+            }
+        }
+        var params = params
+        params["textDocument"] = ["uri": .string(uri)]
+        let before = changes[uri, default: 0]
+        let result = try await request(method, .object(params))
+        guard changes[uri, default: 0] == before else { throw Failure.documentChanged } // shown with another text meanwhile
+        return result
+    }
+
+    /// `workspace/symbol`; nil when the server has no workspace symbols. tsserver searches the
+    /// project of an open file, so `anchor` (a file of the project, read from disk) is opened
+    /// first when no document is.
+    func workspaceSymbols(_ query: String, anchor: @Sendable () -> (URL, String)?) async throws -> JSONValue? {
+        try await start()
+        guard capability("workspaceSymbolProvider") != nil else { return nil }
+        if launch.waitsForIndexing { try await waitForIndexing() }
+        if documents.isEmpty, let (url, text) = anchor() {
+            try sync(url, text: text)
+            keptURI = LSPURI.string(for: url)
+        }
+        return try await request("workspace/symbol", ["query": .string(query)])
+    }
+
+    private static func isEmpty(_ result: JSONValue) -> Bool {
+        switch result {
+        case .null: true
+        case .array(let a): a.isEmpty
+        case .object(let o): (o["data"]?.array?.isEmpty ?? false) || (o["contents"].map { $0 == .array([]) || $0 == .string("") } ?? false)
+        default: false
         }
     }
 
     /// Syncs the document, then runs a definition/implementation/references request at a position.
+    /// `navigation` (a ⌘-click) takes the document's turn at once instead of waiting for reading
+    /// requests about another text; the gutter's own lookups wait their turn.
     func locations(_ method: String, url: URL, text: String, line: Int, character: Int,
-                   includeDeclaration: Bool? = nil) async throws -> [LSPLocation] {
+                   includeDeclaration: Bool? = nil, navigation: Bool = true) async throws -> [LSPLocation] {
         try await start()
         if let provider = Self.providers[method], !supports(provider) { return [] } // e.g. pyright has no implementation
         if launch.waitsForIndexing { try await waitForIndexing() }
-        try sync(url, text: text)
-        try closeOthers(than: url)
         let params = LSPProtocol.positionParams(uri: LSPURI.string(for: url), line: line, character: character,
                                                 includeDeclaration: includeDeclaration)
-        let begunBefore = progressBegun
-        var found = LSPLocation.list(from: try await request(method, params))
-        // Asked while a (re)import started: ask again once it's done.
-        if found.isEmpty && launch.waitsForIndexing && (progressBegun != begunBefore || !progress.isEmpty) {
-            try await waitForIndexing()
-            found = LSPLocation.list(from: try await request(method, params))
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                let begunBefore = progressBegun
+                var found = LSPLocation.list(from: try await requestInTurn(method, params, url: url, text: text, first: navigation))
+                // Asked while a (re)import started: ask again once it's done.
+                if found.isEmpty && launch.waitsForIndexing && (progressBegun != begunBefore || !progress.isEmpty) {
+                    try await waitForIndexing()
+                    found = LSPLocation.list(from: try await requestInTurn(method, params, url: url, text: text, first: navigation))
+                }
+                return found
+            } catch Failure.documentChanged where attempt < 3 {
+                continue // another navigation took the document over meanwhile
+            }
         }
-        return found
     }
 
     private static let providers = [
@@ -304,7 +509,8 @@ actor LanguageServer {
             case .failure(let error): waiter.continuation.resume(throwing: error)
             }
         case .request(let id, let method, let params):
-            try? send(.response(id: id, result: LSPProtocol.reply(to: method, params: params, root: root)))
+            try? send(.response(id: id, result: LSPProtocol.reply(to: method, params: params, root: root,
+                                                                  settings: launch.settings)))
         case .notification(let method, let params):
             switch method {
             case "$/progress":
