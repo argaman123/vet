@@ -207,6 +207,14 @@ extension Workspace {
         let url = root.appendingPathComponent(doc.change.path)
         let current = { [weak view] in view?.shownWorkText == text && !(view?.isDirty ?? true) }
         loadReadingAids(pane: view.workPane, gutter: nil, url: url, text: text, row: { [weak view] in view?.workRow(ofFileLine: $0) }, current: current)
+        // HEAD gets the same name colors (the server is asked about that text too).
+        if let navigator, navigator.isSupported(url), let head = view.shownHeadText {
+            Task { [weak view] in
+                let tokens = await navigator.semanticTokens(of: url, text: head)
+                guard let view, view.shownHeadText == head else { return }
+                view.headPane.applySemanticTokens(tokens, display: { [weak view] in view?.headRow(ofFileLine: $0) })
+            }
+        }
     }
 
     private func loadReadingAids(pane: CodeTextView, gutter: LineNumberGutter?, url: URL, text: String,

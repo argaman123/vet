@@ -115,6 +115,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// A working-file line's row in its pane (nil when folded away).
     func workRow(ofFileLine line: Int) -> Int? { workRows[line] }
     private var workRows: [Int: Int] = [:]
+    /// The HEAD side: its pane (the one pane in unified mode), text, and rows.
+    var headPane: CodeTextView { unifiedRows == nil ? leftText : rightText }
+    var shownHeadText: String? { mode == .rightOnly ? nil : shownStaging?.head.joinedString() }
+    func headRow(ofFileLine line: Int) -> Int? { headRows[line] }
+    private var headRows: [Int: Int] = [:]
 
     private struct Anchor { let left: Bool; let line: Int; let text: Substring; let offset: CGFloat }
     private var syncing = false
@@ -283,6 +288,14 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         workRows = [:]
         for (d, line) in layout.right.enumerated() {
             if case .code(let l) = line { workRows[l] = unifiedRows == nil ? d : unifiedOfRight[d] }
+        }
+        headRows = [:]
+        if let rows = unifiedRows {
+            for (u, row) in rows.enumerated() where row.left {
+                if case .code(let l) = layout.left[row.display] { headRows[l] = u }
+            }
+        } else {
+            for (d, line) in layout.left.enumerated() { if case .code(let l) = line { headRows[l] = d } }
         }
         rightText.inlayHints = []
         rightText.lenses = []
