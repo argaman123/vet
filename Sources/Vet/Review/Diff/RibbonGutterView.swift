@@ -160,14 +160,38 @@ final class RibbonGutterView: NSView {
                 }
             }
         }
+        // Folded rows continue through the number columns (each side at its own scroll position).
+        DiffTheme.foldBand.setFill()
+        for s in diffLayout.segments {
+            guard case .fold = s.kind else { continue }
+            switch mode {
+            case .split:
+                NSRect(x: 0, y: y(s.left.lowerBound, left: true), width: Self.numbersWidth, height: DiffTheme.lineHeight).fill()
+                NSRect(x: bounds.width - Self.numbersWidth, y: y(s.right.lowerBound, left: false), width: Self.numbersWidth, height: DiffTheme.lineHeight).fill()
+            case .rightOnly:
+                NSRect(x: 0, y: y(s.right.lowerBound, left: false), width: bounds.width, height: DiffTheme.lineHeight).fill()
+            case .leftOnly:
+                NSRect(x: 0, y: y(s.left.lowerBound, left: true), width: bounds.width, height: DiffTheme.lineHeight).fill()
+            case .unified:
+                break // the unified pane draws its own rows; the gutter has its row ranges below
+            }
+        }
         if mode == .split { // the checkbox column stays plain
             DiffTheme.gutter.setFill()
             NSRect(x: Self.numbersWidth + Self.ribbonWidth, y: 0, width: Self.checkWidth, height: bounds.height).fill()
         }
         // Line numbers.
         let attrs: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumber]
-        func number(_ n: Int, x: CGFloat, y: CGFloat) {
-            let s = NSAttributedString(string: "\(n + 1)", attributes: attrs)
+        // Numbers on a changed row sit on its color: brighter, so they stay readable.
+        var changedLeft = IndexSet(), changedRight = IndexSet()
+        if mode == .unified {
+            for r in unifiedRanges.values { changedLeft.insert(integersIn: r); changedRight.insert(integersIn: r) }
+        } else {
+            for s in segments.values { changedLeft.insert(integersIn: s.left); changedRight.insert(integersIn: s.right) }
+        }
+        let bright: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumberCurrent]
+        func number(_ n: Int, x: CGFloat, y: CGFloat, changed: Bool = false) {
+            let s = NSAttributedString(string: "\(n + 1)", attributes: changed ? bright : attrs)
             let size = s.size()
             s.draw(at: NSPoint(x: x + Self.numbersWidth - 6 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2 + 1.5))
         }
@@ -178,8 +202,9 @@ final class RibbonGutterView: NSView {
             let count = Int(bounds.height / DiffTheme.lineHeight) + 2
             NSGraphicsContext.saveGraphicsState()
             NSRect(x: x, y: band, width: Self.numbersWidth, height: bounds.height - band).clip()
+            let changed = left ? changedLeft : changedRight
             for i in first..<min(list.count, first + count) {
-                if let n = list[i] { number(n, x: x, y: y(i, left: left)) }
+                if let n = list[i] { number(n, x: x, y: y(i, left: left), changed: changed.contains(i)) }
             }
             NSGraphicsContext.restoreGraphicsState()
             guard band > 0 else { return }

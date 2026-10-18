@@ -35,6 +35,9 @@ final class CodeTextView: NSTextView {
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
+        // Overlay scroll bars, as IntelliJ's editors have: a legacy bar's track would cut every
+        // row's background short of the pane's edge.
+        scroll.scrollerStyle = .overlay
         // No automatic title-bar inset: line math (gutter, ribbons, note cards) assumes the
         // document starts at the top of the clip view.
         scroll.automaticallyAdjustsContentInsets = false
