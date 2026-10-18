@@ -205,7 +205,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let layout = DiffLayout(headCount: staging.head.count, workCount: staging.work.count,
                                 hunks: staging.hunks, folding: folding, expanded: expanded,
                                 notes: notes.map { .init(id: $0.id, left: $0.left, line: $0.line,
-                                                         rows: NoteCardView.rows(for: $0.text, editing: $0.id == editingNoteID)) })
+                                                         rows: NoteCardView.rows(for: $0.text, editing: $0.id == editingNoteID,
+                                                                                 width: cardWidth(left: $0.left && mode != .unified))) })
         diffLayout = layout
         var states: [Int: StageState] = [:]
         for h in staging.hunks { states[h.id] = staging.state(of: h) }
@@ -358,15 +359,22 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             card.onCancel = { [weak self] in self?.noteActions?.cancel(id) }
             card.onEdit = { [weak self] in self?.noteActions?.edit(id) }
             card.onDelete = { [weak self] in self?.noteActions?.delete(id) }
-            let width = max(260, ((onLeft ? leftScroll : rightScroll).contentSize.width) - 28)
+            let width = cardWidth(left: onLeft)
             // An overlay above both panes (TextKit 2's own views would cover a text view's subviews,
             // and the clip view routes clicks to its document); repositioned whenever a pane scrolls.
             addSubview(card)
             cards.append(card)
-            cardPlaces.append((card, onLeft, NSRect(x: 14, y: tv.y(ofLine: rows.lowerBound) + 3, width: min(width, 760),
+            cardPlaces.append((card, onLeft, NSRect(x: 14, y: tv.y(ofLine: rows.lowerBound) + 3, width: width,
                                                        height: CGFloat(rows.count) * DiffTheme.lineHeight - 6)))
             if editing { DispatchQueue.main.async { card.focus() } }
         }
+    }
+
+    /// A note card's width in its pane (the pane's width, up to 760 pt).
+    private func cardWidth(left: Bool) -> CGFloat {
+        let pane = (left ? leftScroll : rightScroll).contentSize.width
+        let fallback = mode == .split ? (bounds.width - RibbonGutterView.width(for: .split)) / 2 : bounds.width - RibbonGutterView.width(for: mode)
+        return min(760, max(260, (pane > 50 ? pane : fallback) - 28))
     }
 
     private func positionCards() {

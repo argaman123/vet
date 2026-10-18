@@ -179,6 +179,8 @@ final class ReviewModel {
         repo = isGitRepo ? GitRepo(root: folder) : nil
         marks = isGitRepo ? MarkStore(root: folder) : nil
         notes = NoteStore(root: folder)
+        // A note left without text (Vet quit while it was being written) isn't a note.
+        if let notes { for n in notes.notes where n.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { notes.delete(n.id) } }
         Task { await refresh() }
     }
 

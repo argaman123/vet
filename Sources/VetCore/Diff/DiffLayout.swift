@@ -74,8 +74,9 @@ public struct DiffLayout: Sendable {
             let keepTop = isFirst ? 0 : Self.context
             let keepBottom = isLast ? 0 : Self.context
             let hidden = n - keepTop - keepBottom
-            // A note's line is never folded away.
-            let hidesNote = notes.contains { a in
+            // A note's line is never folded away. (Only asked when there's room for a fold:
+            // a stretch shorter than its two context margins has no hidden range at all.)
+            let hidesNote = hidden >= Self.minimumFold && notes.contains { a in
                 a.left ? (h.lowerBound + keepTop..<h.upperBound - keepBottom).contains(a.line)
                        : (w.lowerBound + keepTop..<w.upperBound - keepBottom).contains(a.line)
             }

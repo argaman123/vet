@@ -27,7 +27,7 @@ final class NoteCardView: NSView, NSTextViewDelegate {
         text.drawsBackground = editing
         text.backgroundColor = DiffTheme.background
         text.textColor = DiffTheme.text
-        text.font = .systemFont(ofSize: 12.5)
+        text.font = Self.textFont
         text.delegate = self
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = editing
@@ -39,16 +39,15 @@ final class NoteCardView: NSView, NSTextViewDelegate {
             return b
         }
         buttons.orientation = .horizontal
+        buttons.alignment = .centerY
         buttons.spacing = 6
         if editing {
-            buttons.addArrangedSubview(button("Cancel", #selector(cancel)))
             let save = button("Save note", #selector(saveNote))
             save.keyEquivalent = "\r"
             save.keyEquivalentModifierMask = .command
-            buttons.addArrangedSubview(save)
+            buttons.setViews([button("Cancel", #selector(cancel)), save], in: .trailing)
         } else {
-            buttons.addArrangedSubview(button("Edit", #selector(edit)))
-            buttons.addArrangedSubview(button("Delete", #selector(delete)))
+            buttons.setViews([button("Edit", #selector(edit)), button("Delete", #selector(delete))], in: .trailing)
         }
         for v in [title, scroll, buttons] as [NSView] { addSubview(v) }
     }
@@ -60,16 +59,22 @@ final class NoteCardView: NSView, NSTextViewDelegate {
     override func layout() {
         super.layout()
         title.frame = NSRect(x: 10, y: 6, width: bounds.width - 180, height: 16)
-        buttons.frame = NSRect(x: bounds.width - 170, y: 2, width: 162, height: 22)
-        buttons.alignment = .trailing
+        buttons.frame = NSRect(x: bounds.width - 178, y: 3, width: 170, height: 20)
         scroll.frame = NSRect(x: 8, y: 24, width: bounds.width - 16, height: bounds.height - 30)
     }
 
     func focus() { window?.makeFirstResponder(text) }
 
-    /// Rows a note needs: its text lines plus the header.
-    static func rows(for text: String, editing: Bool) -> Int {
-        editing ? 6 : max(3, text.split(separator: "\n", omittingEmptySubsequences: false).count + 2)
+    static let textFont = NSFont.systemFont(ofSize: 12.5)
+
+    /// Rows a note needs at a card width: the header plus its text as wrapped.
+    static func rows(for text: String, editing: Bool, width: CGFloat = 600) -> Int {
+        if editing { return 6 }
+        let textWidth = max(120, width - 16 - 10) // the text view's insets
+        let height = (text as NSString).boundingRect(with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
+                                                     options: [.usesLineFragmentOrigin, .usesFontLeading],
+                                                     attributes: [.font: textFont]).height
+        return max(2, Int(ceil((24 + height + 10) / DiffTheme.lineHeight)))
     }
 
     @objc private func saveNote() { onSave?(text.string) }

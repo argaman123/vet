@@ -54,6 +54,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] { try? out.write(toFile: dir + "/search.txt", atomically: true, encoding: .utf8) }
             }
         }
+        SnapshotHook.on("note") { [weak self] args in
+            // note <line> [text…]: a note on a working-file line of the open diff (left editing without text)
+            guard let self, let line = Int(args.first ?? ""), let staging = self.workspace.review.diff?.staging, line < staging.work.count else { return }
+            let review = self.workspace.review
+            review.addNote(left: false, line: line, lineText: String(staging.work.lines[line].text))
+            if args.count > 1, let id = review.editingNoteID { review.saveNote(id, text: args.dropFirst().joined(separator: " ")) }
+        }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
             guard args.count == 2, let line = Int(args[0]), let character = Int(args[1]) else { return }
