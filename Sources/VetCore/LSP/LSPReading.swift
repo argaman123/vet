@@ -404,8 +404,8 @@ public struct DocumentSymbol: Sendable, Equatable, Hashable {
     private static func tree(fromFlat items: [JSONValue]) -> [DocumentSymbol] {
         let nodes = items.compactMap { item -> Node? in
             guard let name = item["name"]?.string, let range = LSPRange(item["location"]?["range"]) else { return nil }
-            let container = item["containerName"]?.string.flatMap { $0.isEmpty ? nil : $0 }
-            return Node(name: name, detail: container, kind: item["kind"]?.int ?? 0, range: range)
+            // No detail: the container a flat symbol names is its parent in the tree.
+            return Node(name: name, detail: nil, kind: item["kind"]?.int ?? 0, range: range)
         }
         // Outer before inner: by start, the longer range first; the server's order breaks ties.
         let ordered = nodes.enumerated().sorted { a, b in
