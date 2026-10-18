@@ -6,15 +6,37 @@ import VetCore
 struct MainArea: View {
     let app: AppDelegate
 
+    @AppStorage("outputHeight") private var outputHeight = 220.0
+    @State private var dragStart: Double?
+
     var body: some View {
         let run = app.workspace.run
-        VSplitView {
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .top) { Banner(app: app) }
-                .overlay(alignment: .bottom) { Toast(app: app) }
-            if run.outputVisible {
-                OutputPane(app: app).frame(minHeight: 120, idealHeight: 220)
+        // A plain stack with a drag handle: SwiftUI's VSplitView gives its lower pane the
+        // toolbar's safe-area inset, leaving a blank band above the output.
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .top) { Banner(app: app) }
+                    .overlay(alignment: .bottom) { Toast(app: app) }
+                if run.outputVisible {
+                    Divider()
+                        .overlay {
+                            Color.clear
+                                .frame(height: 7)
+                                .contentShape(Rectangle())
+                                .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
+                                .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                                    .onChanged { g in
+                                        let start = dragStart ?? outputHeight
+                                        if dragStart == nil { dragStart = start }
+                                        outputHeight = min(max(100, start - g.translation.height), max(100, geo.size.height - 160))
+                                    }
+                                    .onEnded { _ in dragStart = nil })
+                        }
+                    OutputPane(app: app)
+                        .frame(height: min(outputHeight, max(100, geo.size.height - 160)))
+                }
             }
         }
     }
@@ -237,6 +259,8 @@ struct OutputPane: View {
                 Button { run.outputVisible = false } label: { Image(systemName: "xmark") }.help("Hide Output (⇧⌘Y)")
             }
             OutputText(text: run.output, version: run.outputVersion, epoch: run.outputEpoch)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }

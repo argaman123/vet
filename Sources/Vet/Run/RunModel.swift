@@ -88,6 +88,9 @@ final class RunModel {
             guard generation == launchGeneration else { return } // stopped or switched projects meanwhile
             for (k, v) in config.env ?? [:] { env[k] = v }
             env["FORCE_COLOR"] = "0"
+            // Python buffers its output when it isn't a terminal; the "Serving on http://…" line
+            // (and every print) should show as it happens.
+            env["PYTHONUNBUFFERED"] = env["PYTHONUNBUFFERED"] ?? "1"
             launch(command: config.command, cwd: cwd, env: env)
         }
     }
@@ -233,7 +236,10 @@ final class RunModel {
     static func localURL(in text: String) -> URL? {
         let clean = stripANSI(text)
         guard let r = clean.range(of: "https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)(:[0-9]+)?(/[^\\s]*)?", options: .regularExpression) else { return nil }
-        return URL(string: clean[r].replacingOccurrences(of: "0.0.0.0", with: "localhost"))
+        // "(http://127.0.0.1:8765/) ..." — closing punctuation belongs to the sentence, not the URL.
+        var found = String(clean[r])
+        while let last = found.last, ")]}>.,;:'\"".contains(last), !found.hasSuffix("//") { found.removeLast() }
+        return URL(string: found.replacingOccurrences(of: "0.0.0.0", with: "localhost"))
     }
 
     // MARK: Storage
