@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             review.addNote(left: false, line: line, lineText: String(staging.work.lines[line].text))
             if args.count > 1, let id = review.editingNoteID { review.saveNote(id, text: args.dropFirst().joined(separator: " ")) }
         }
+        SnapshotHook.on("checkout") { [weak self] args in if let b = args.first { self?.workspace.review.checkout(b) } }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
             guard args.count == 2, let line = Int(args[0]), let character = Int(args[1]) else { return }

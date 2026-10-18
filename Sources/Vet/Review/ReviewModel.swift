@@ -144,7 +144,8 @@ final class ReviewModel {
         guard push else { link?.flash("Committed"); return true }
         do {
             let summary = try await repo.push()
-            link?.flash(summary.isEmpty ? "Committed and pushed" : "Pushed: \(summary)")
+            let tidy = summary.split(whereSeparator: \.isWhitespace).joined(separator: " ").replacingOccurrences(of: "->", with: "→")
+            link?.flash(tidy.isEmpty ? "Committed and pushed" : "Committed and pushed · \(tidy)")
         } catch let e as GitActionError {
             Self.alert("Committed, but the push failed. \(e.message)", e.output)
         } catch {
