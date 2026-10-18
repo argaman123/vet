@@ -90,6 +90,7 @@ final class CodeTextView: NSTextView {
             return
         }
         if event.modifierFlags.contains(.command), let onNavigate, let pos = position(at: p) {
+            NavigationAnchor.set(self, symbolRect(line: pos.line, character: pos.character))
             onNavigate(.definition, pos.line, pos.character)
             return
         }
@@ -107,6 +108,7 @@ final class CodeTextView: NSTextView {
             // Right-clicking outside the selection moves the caret there first, like other editors.
             let index = characterIndexForInsertion(at: p)
             if !NSLocationInRange(index, selectedRange()) || selectedRange().length == 0 { setSelectedRange(NSRange(location: index, length: 0)) }
+            NavigationAnchor.set(self, symbolRect(line: pos.line, character: pos.character))
             for item in contextItems?(pos.line, pos.character) ?? [] { menu.addItem(item) }
         }
         // Owners that give a full menu place Copy themselves; otherwise it's just Copy.
@@ -128,6 +130,30 @@ final class CodeTextView: NSTextView {
         if lineStart == ns.length, index == ns.length, ns.length > 0, ns.character(at: ns.length - 1) == 10 { line += 1 }
         guard foldLines[line] == nil else { return nil }
         return (line, index - lineStart)
+    }
+
+    /// The word at (display line, column), in this view's coordinates; where popovers point.
+    func symbolRect(line: Int, character: Int) -> NSRect {
+        guard let r = range(line: line, character: character), let window else { return .zero }
+        let ns = string as NSString
+        var lo = r.location, hi = r.location
+        func isWord(_ c: unichar) -> Bool { (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 36 }
+        while lo > 0, isWord(ns.character(at: lo - 1)) { lo -= 1 }
+        while hi < ns.length, isWord(ns.character(at: hi)) { hi += 1 }
+        var actual = NSRange()
+        let screen = firstRect(forCharacterRange: NSRange(location: lo, length: max(1, hi - lo)), actualRange: &actual)
+        return convert(window.convertFromScreen(screen), from: nil)
+    }
+
+    /// The identifier at (display line, column), if any.
+    func word(line: Int, character: Int) -> String? {
+        guard let r = range(line: line, character: character) else { return nil }
+        let ns = string as NSString
+        var lo = r.location, hi = r.location
+        func isWord(_ c: unichar) -> Bool { (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 36 }
+        while lo > 0, isWord(ns.character(at: lo - 1)) { lo -= 1 }
+        while hi < ns.length, isWord(ns.character(at: hi)) { hi += 1 }
+        return hi > lo ? ns.substring(with: NSRange(location: lo, length: hi - lo)) : nil
     }
 
     /// Display lines covered by a character range (the selection).

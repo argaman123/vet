@@ -36,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { _ = await ShellEnvironment.load() } // warm up: Run and the language servers need it
         workspace.startLink()
         SnapshotHook.install()
+        // Tests pin a throwaway project and never follow Claude into a real one.
+        if let project = SnapshotHook.testProject { projects.open(project) }
         if !SnapshotHook.isTesting { NSApp.activate() } // tests run in the background, never stealing focus
     }
 

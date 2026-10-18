@@ -12,13 +12,15 @@ final class ProjectStore {
 
     init() {
         recent = (defaults.stringArray(forKey: "recentProjects") ?? []).map { URL(fileURLWithPath: $0, isDirectory: true) }
-        if let last = recent.first, FileManager.default.fileExists(atPath: last.path) { current = last }
+        // A test run (VET_PROJECT) never opens your last real project, even for a moment.
+        if !SnapshotHook.isTesting, let last = recent.first, FileManager.default.fileExists(atPath: last.path) { current = last }
     }
 
     func open(_ url: URL) {
         let folder = GitRepo.root(containing: url) ?? url
         if folder.standardizedFileURL != current?.standardizedFileURL { guard mayLeave() else { return } }
         current = folder
+        guard !SnapshotHook.isTesting else { return } // tests leave your recent projects alone
         recent.removeAll { $0.standardizedFileURL == folder.standardizedFileURL }
         recent.insert(folder, at: 0)
         recent = Array(recent.prefix(8))

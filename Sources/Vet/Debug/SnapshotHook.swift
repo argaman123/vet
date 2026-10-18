@@ -6,6 +6,8 @@ import AppKit
 @MainActor
 enum SnapshotHook {
     static var isTesting: Bool { ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] != nil }
+    /// The throwaway project a test run must use (VET_PROJECT).
+    static var testProject: URL? { ProcessInfo.processInfo.environment["VET_PROJECT"].map { URL(fileURLWithPath: $0, isDirectory: true) } }
 
     static func install() {
         guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
@@ -15,10 +17,23 @@ enum SnapshotHook {
     }
 
     private static func snapshot(to url: URL) {
-        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.frame.width > 400 }),
-              let frameView = window.contentView?.superview,
-              let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { return }
-        frameView.cacheDisplay(in: frameView.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: url)
+        // The main window, then any popover or panel windows as window-1.png, window-2.png…
+        let windows = NSApp.windows.filter { w in
+            w.contentView != nil && w.frame.width > 60 && (w.isVisible || String(describing: type(of: w)).contains("Popover"))
+        }
+            .sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
+        let dir = url.deletingLastPathComponent()
+        let inventory = NSApp.windows.map { "\(type(of: $0)) visible=\($0.isVisible) frame=\($0.frame) content=\($0.contentView != nil)" }.joined(separator: "\n")
+        try? inventory.write(to: dir.appendingPathComponent("windows.txt"), atomically: true, encoding: .utf8)
+        for old in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] where old.hasPrefix("window-") {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent(old))
+        }
+        for (i, window) in windows.enumerated() {
+            guard let frameView = window.contentView?.superview ?? window.contentView,
+                  let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { continue }
+            frameView.cacheDisplay(in: frameView.bounds, to: rep)
+            let out = i == 0 ? url : dir.appendingPathComponent("window-\(i).png")
+            try? rep.representation(using: .png, properties: [:])?.write(to: out)
+        }
     }
 }

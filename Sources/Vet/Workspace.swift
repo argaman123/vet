@@ -32,16 +32,13 @@ final class Workspace {
     func navigate(_ kind: CodeTextView.Navigation, url: URL, text: String, line: Int, character: Int) {
         guard let navigator else { return }
         guard navigator.isSupported(url) else {
-            link.flash("Go to definition works in TypeScript, JavaScript, Python and Kotlin files.")
+            link.flash("Code navigation works in TypeScript, JavaScript, Python and Kotlin files.")
             return
         }
-        let title: String = switch kind {
-        case .definition: "Definition"
-        case .implementation: "Implementations"
-        case .references: "References"
-        }
-        navBusy = "Finding \(title.lowercased())…"
+        let symbol = Self.word(in: text, line: line, character: character) ?? "Symbol"
+        navBusy = kind == .references ? "Finding usages of \(symbol)…" : kind == .implementation ? "Finding implementations…" : "Finding declaration…"
         Task {
+            var kind = kind
             var found: [CodeLocation] = switch kind {
             case .definition: await navigator.definition(of: url, text: text, line: line, character: character)
             case .implementation: await navigator.implementation(of: url, text: text, line: line, character: character)
@@ -52,15 +49,39 @@ final class Workspace {
             if kind == .definition, found.count == 1, let hop = await followImport(found[0], navigator: navigator) {
                 found = hop
             }
+            // Like WebStorm: go to declaration on the declaration itself shows its usages.
+            if kind == .definition, found.count == 1, found[0].url.standardizedFileURL == url.standardizedFileURL,
+               found[0].startLine == line, (found[0].startCharacter...max(found[0].endCharacter, found[0].startCharacter)).contains(character) {
+                kind = .references
+                navBusy = "Finding usages of \(symbol)…"
+                found = await navigator.references(of: url, text: text, line: line, character: character)
+            }
             navBusy = nil
             if found.isEmpty {
-                link.flash("No \(title.lowercased()) found.")
+                link.flash(kind == .references ? "No usages of \(symbol) found." : kind == .implementation ? "No implementations found." : "No declaration found.")
             } else if found.count == 1 && kind != .references {
                 open(found[0])
             } else {
-                navResults = (title, found)
+                let editing = files.openURL
+                ReferencesPresenter.shared.show(symbol: symbol, locations: found, root: root, textOf: { [weak self] u in
+                    guard let self, u == editing, let view = self.files.editorText?() else { return nil }
+                    return view
+                }, open: { [weak self] loc in self?.open(loc) })
             }
         }
+    }
+
+    /// The identifier around a position (for titles like "Usages of LoopLayer").
+    static func word(in text: String, line: Int, character: Int) -> String? {
+        let lines = text.components(separatedBy: "\n")
+        guard line < lines.count else { return nil }
+        let u = Array(lines[line].utf16)
+        guard character <= u.count else { return nil }
+        func isWord(_ c: UInt16) -> Bool { (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 36 }
+        var lo = character, hi = character
+        while lo > 0, isWord(u[lo - 1]) { lo -= 1 }
+        while hi < u.count, isWord(u[hi]) { hi += 1 }
+        return hi > lo ? String(decoding: u[lo..<hi], as: UTF16.self) : nil
     }
 
     private func followImport(_ loc: CodeLocation, navigator: CodeNavigator) async -> [CodeLocation]? {
@@ -83,8 +104,8 @@ final class Workspace {
     func startLink() {
         review.link = link
         link.onFolderChanged = { [weak self] cwd in
-            // Never pull the project out from under unsaved edits or a running app.
-            guard let self, !self.hasUnsavedEdits, !self.run.isRunning else { return }
+            // Never pull the project out from under unsaved edits or a running app; tests never follow.
+            guard let self, !self.hasUnsavedEdits, !self.run.isRunning, !SnapshotHook.isTesting else { return }
             let folder = URL(fileURLWithPath: cwd, isDirectory: true)
             let target = GitRepo.root(containing: folder) ?? folder
             if let root = self.root, Self.same(target.path, root), Self.same(root.path, target) { return }
