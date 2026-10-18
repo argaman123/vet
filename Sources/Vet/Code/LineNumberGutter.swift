@@ -23,7 +23,7 @@ final class LineNumberGutter: NSView {
             let s = NSAttributedString(string: "\(n + 1)", attributes: n == highlighted ? strong : attrs)
             let size = s.size()
             let y = DiffTheme.inset.height + CGFloat(i) * DiffTheme.lineHeight - offset
-            s.draw(at: NSPoint(x: bounds.width - 10 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2))
+            s.draw(at: NSPoint(x: bounds.width - 10 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2 + 1.5))
         }
     }
 }

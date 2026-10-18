@@ -5,7 +5,7 @@ import VetCore
 @MainActor
 enum CodeText {
     static var baseAttributes: [NSAttributedString.Key: Any] {
-        [.font: DiffTheme.font, .foregroundColor: DiffTheme.text, .paragraphStyle: CodeTextView.paragraph, .baselineOffset: 2]
+        [.font: DiffTheme.font, .foregroundColor: DiffTheme.text, .paragraphStyle: CodeTextView.paragraph]
     }
 
     /// One pane's text: `display` picks which file lines show (and where folds go).
@@ -113,7 +113,7 @@ enum ScopeLabel {
 
     private static let keywords: Set<String> = ["if", "for", "while", "switch", "catch", "return", "else", "do", "try", "when", "with"]
 
-    private static func declaredName(_ line: String) -> String? {
+    static func declaredName(_ line: String) -> String? {
         let t = line.trimmingCharacters(in: .whitespaces)
         if let m = t.firstMatch(of: /(?:class|interface|enum|object|struct|protocol|extension|trait|impl)\s+([A-Za-z_][\w]*)/) { return String(m.1) }
         if let m = t.firstMatch(of: /(?:def|fun|func|function)\s+([A-Za-z_][\w]*)/) { return String(m.1) + "()" }

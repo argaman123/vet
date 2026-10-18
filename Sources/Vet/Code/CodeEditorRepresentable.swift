@@ -33,10 +33,11 @@ struct CodeEditorRepresentable: NSViewRepresentable {
             view.shownVersion = version
             view.shownJump = jump
             view.load(text, language: model.language, force: true)
-            if let target = model.target { view.scrollTo(line: target.line, character: target.character) }
+            // After layout, so the target can sit a third of the way down.
+            if let target = model.target { DispatchQueue.main.async { view.scrollTo(line: target.line, character: target.character) } }
         } else if view.shownJump != jump {
             view.shownJump = jump
-            if let target = model.target { view.scrollTo(line: target.line, character: target.character) }
+            if let target = model.target { DispatchQueue.main.async { view.scrollTo(line: target.line, character: target.character) } }
         }
     }
 

@@ -90,6 +90,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private let (leftScroll, leftText) = CodeTextView.make()
     private let (rightScroll, rightText) = CodeTextView.make()
     private let gutter = RibbonGutterView()
+    private let leftSticky = StickyLinesView(), rightSticky = StickyLinesView()
     private let messageLabel = NSTextField(labelWithString: "")
     private var diffLayout: DiffLayout?
     private var mode: RibbonGutterView.Mode = .split
@@ -106,7 +107,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     override init(frame: NSRect) {
         super.init(frame: frame)
         clipsToBounds = true
-        for v in [leftScroll, rightScroll, gutter, messageLabel] as [NSView] { addSubview(v) }
+        for v in [leftScroll, rightScroll, gutter, messageLabel, leftSticky, rightSticky] as [NSView] { addSubview(v) }
+        for (sticky, left) in [(leftSticky, true), (rightSticky, false)] {
+            sticky.isHidden = true
+            sticky.onClick = { [weak self] line in self?.scrollPane(left: left, toLine: line) }
+        }
         messageLabel.textColor = .secondaryLabelColor
         messageLabel.font = .systemFont(ofSize: 14)
         messageLabel.alignment = .center
@@ -485,6 +490,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         }
         messageLabel.frame = NSRect(x: 0, y: h / 2 - 12, width: w, height: 24)
         positionCards()
+        updateSticky()
         window?.invalidateCursorRects(for: gutter)
     }
 
@@ -540,6 +546,29 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         gutter.leftOffset = leftScroll.contentView.bounds.origin.y
         gutter.rightOffset = rightScroll.contentView.bounds.origin.y
         positionCards()
+        updateSticky()
+    }
+
+    /// Each pane pins the enclosing declarations of its first visible line.
+    private func updateSticky() {
+        for (sticky, scroll, tv, visible) in [(leftSticky, leftScroll, leftText, mode != .rightOnly), (rightSticky, rightScroll, rightText, mode != .leftOnly)] {
+            defer { if sticky === leftSticky { gutter.leftPinned = sticky.rows.map(\.line) } else { gutter.rightPinned = sticky.rows.map(\.line) } }
+            guard visible, let storage = tv.textStorage, storage.length > 0 else { sticky.show([]); continue }
+            let clip = scroll.contentView.bounds
+            let first = Int((clip.minY - DiffTheme.inset.height) / DiffTheme.lineHeight)
+            sticky.show(StickyLinesView.rows(in: storage, first: max(0, first)))
+            sticky.scrollX = clip.minX
+            let scrollerWidth = scroll.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
+            sticky.frame = NSRect(x: scroll.frame.minX, y: scroll.frame.minY, width: scroll.frame.width - scrollerWidth, height: sticky.height)
+        }
+    }
+
+    private func scrollPane(left: Bool, toLine line: Int) {
+        let scroll = left ? leftScroll : rightScroll
+        let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - scroll.contentView.bounds.height / 3
+        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
+        scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: min(max(0, y), maxY)))
+        scroll.reflectScrolledClipView(scroll.contentView)
     }
 
     private func scrollRight(toLine line: Int) {

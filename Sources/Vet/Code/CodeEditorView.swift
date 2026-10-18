@@ -5,6 +5,7 @@ import VetCore
 final class CodeEditorView: NSView, NSTextViewDelegate {
     private let (scroll, textView) = CodeTextView.make()
     private let gutter = LineNumberGutter()
+    private let sticky = StickyLinesView()
     private var language: CodeLanguage = .plain
     private var lines = TextLines(lines: [])
     private var rehighlight: DispatchWorkItem?
@@ -25,6 +26,9 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         super.init(frame: frame)
         addSubview(scroll)
         addSubview(gutter)
+        addSubview(sticky)
+        sticky.isHidden = true
+        sticky.onClick = { [weak self] line in self?.scrollTo(line: line) }
         textView.isEditable = true
         textView.allowsUndo = true
         textView.delegate = self
@@ -42,6 +46,19 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         super.layout()
         gutter.frame = NSRect(x: 0, y: 0, width: LineNumberGutter.width, height: bounds.height)
         scroll.frame = NSRect(x: LineNumberGutter.width, y: 0, width: bounds.width - LineNumberGutter.width, height: bounds.height)
+        updateSticky()
+    }
+
+    /// Pins the enclosing declarations of the first visible line.
+    private func updateSticky() {
+        guard let storage = textView.textStorage else { return }
+        let clip = scroll.contentView.bounds
+        let first = Int((clip.minY - DiffTheme.inset.height) / DiffTheme.lineHeight)
+        sticky.show(StickyLinesView.rows(in: storage, first: max(0, first)))
+        sticky.scrollX = clip.minX
+        let scrollerWidth = scroll.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
+        sticky.gutterWidth = LineNumberGutter.width
+        sticky.frame = NSRect(x: 0, y: 0, width: bounds.width - scrollerWidth, height: sticky.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -101,7 +118,10 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         textView.setFrameSize(NSSize(width: max(textView.frame.width, scroll.contentSize.width), height: max(height, scroll.contentSize.height)))
     }
 
-    @objc private func scrolled() { gutter.offset = scroll.contentView.bounds.minY }
+    @objc private func scrolled() {
+        gutter.offset = scroll.contentView.bounds.minY
+        updateSticky()
+    }
 
     func textDidChange(_ notification: Notification) {
         isDirty = true

@@ -14,6 +14,10 @@ final class RibbonGutterView: NSView {
     var states: [Int: StageState] = [:]
     var leftNumbers: [Int?] = []  // display line → file line (nil for folds)
     var rightNumbers: [Int?] = []
+    /// Display lines pinned at the top of each pane (sticky lines); their numbers cover the
+    /// numbers of the lines scrolled under them.
+    var leftPinned: [Int] = [] { didSet { if oldValue != leftPinned { needsDisplay = true } } }
+    var rightPinned: [Int] = [] { didSet { if oldValue != rightPinned { needsDisplay = true } } }
     var leftOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes() } }
     var rightOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes() } }
     var onToggle: ((Int, Bool, String) -> Void)?
@@ -129,15 +133,30 @@ final class RibbonGutterView: NSView {
         }
         // Line numbers.
         let attrs: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumber]
+        func number(_ n: Int, x: CGFloat, y: CGFloat) {
+            let s = NSAttributedString(string: "\(n + 1)", attributes: attrs)
+            let size = s.size()
+            s.draw(at: NSPoint(x: x + Self.numbersWidth - 6 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2 + 1.5))
+        }
         func numbers(_ list: [Int?], left: Bool, x: CGFloat) {
+            let pinned = left ? leftPinned : rightPinned
+            let band = pinned.isEmpty ? 0 : CGFloat(pinned.count) * DiffTheme.lineHeight + 2
             let first = max(0, Int(((left ? leftOffset : rightOffset) - DiffTheme.inset.height) / DiffTheme.lineHeight))
             let count = Int(bounds.height / DiffTheme.lineHeight) + 2
+            NSGraphicsContext.saveGraphicsState()
+            NSRect(x: x, y: band, width: Self.numbersWidth, height: bounds.height - band).clip()
             for i in first..<min(list.count, first + count) {
-                guard let n = list[i] else { continue }
-                let s = NSAttributedString(string: "\(n + 1)", attributes: attrs)
-                let size = s.size()
-                s.draw(at: NSPoint(x: x + Self.numbersWidth - 6 - size.width, y: y(i, left: left) + (DiffTheme.lineHeight - size.height) / 2))
+                if let n = list[i] { number(n, x: x, y: y(i, left: left)) }
             }
+            NSGraphicsContext.restoreGraphicsState()
+            guard band > 0 else { return }
+            DiffTheme.background.setFill()
+            NSRect(x: x, y: 0, width: Self.numbersWidth, height: band).fill()
+            for (row, line) in pinned.enumerated() where line < list.count {
+                if let n = list[line] { number(n, x: x, y: CGFloat(row) * DiffTheme.lineHeight) }
+            }
+            NSColor.separatorColor.setFill()
+            NSRect(x: x, y: band - 1, width: Self.numbersWidth, height: 1).fill()
         }
         switch mode {
         case .split:

@@ -86,19 +86,21 @@ struct MainToolbar: ToolbarContent {
             Button { app.goForward() } label: { Label("Forward", systemImage: "chevron.right") }
                 .disabled(!ui.canGoForward).help("Forward (⌘])")
         }
-        ToolbarItemGroup(placement: .principal) {
-            Button { review.jumpToChange(forward: false) } label: { Label("Previous Change", systemImage: "chevron.up") }
-                .help("Previous Change (⌥⌘↑)")
-            Button { review.jumpToChange(forward: true) } label: { Label("Next Change", systemImage: "chevron.down") }
-                .help("Next Change (⌥⌘↓)")
-        }
-        ToolbarItem(placement: .principal) {
-            Picker("Layout", selection: Bindable(review).unified) {
-                Label("Side by Side", systemImage: "rectangle.split.2x1").tag(false)
-                Label("Unified", systemImage: "rectangle").tag(true)
+        if case .diff? = ui.location {
+            ToolbarItemGroup(placement: .principal) {
+                Button { review.jumpToChange(forward: false) } label: { Label("Previous Change", systemImage: "chevron.up") }
+                    .help("Previous Change (⌥⌘↑)")
+                Button { review.jumpToChange(forward: true) } label: { Label("Next Change", systemImage: "chevron.down") }
+                    .help("Next Change (⌥⌘↓)")
             }
-            .pickerStyle(.segmented)
-            .help("Diff Layout")
+            ToolbarItem(placement: .principal) {
+                Picker("Layout", selection: Bindable(review).unified) {
+                    Label("Side by Side", systemImage: "rectangle.split.2x1").tag(false)
+                    Label("Unified", systemImage: "rectangle").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .help("Diff Layout")
+            }
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Menu {
