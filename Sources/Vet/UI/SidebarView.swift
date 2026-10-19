@@ -17,6 +17,8 @@ struct SidebarView: View {
             }
         }
         .frame(maxHeight: .infinity)
+        // A quiet grey selection (names keep their colors on it), not the accent blue.
+        .tint(Color(white: 0.32))
         // IDE trees want dense rows (Xcode's navigators use the small size too).
         .environment(\.sidebarRowSize, .medium)
     }
@@ -243,7 +245,7 @@ private struct PlanRow: View {
                     ChangeName(name: node.name, kind: change.kind, selected: review.selectedPath == node.path)
                 }
             }
-            .opacity(reviewed && prominence != .increased ? 0.65 : 1)
+            .opacity(reviewed && review.selectedPath != node.path ? 0.65 : 1)
             Spacer(minLength: 4)
             TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
         }
@@ -285,7 +287,8 @@ struct ChangeName: View {
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
-        let onHighlight = selected || prominence == .increased
+        // The selection is a quiet grey, so names keep their color on it.
+        let onHighlight = false
         HStack(spacing: 6) {
             Text(name).lineLimit(1).truncationMode(.middle)
                 .foregroundStyle(Design.names == .colored && !onHighlight ? (kind.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.primary)) : AnyShapeStyle(.primary))

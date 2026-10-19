@@ -198,10 +198,11 @@ enum DiffTheme {
         switch kind {
         case .modified, .renamed: color("fileModified") { $0.fileModified }
         case .added, .untracked: color("fileAdded") { $0.fileAdded } // new is new, in git or not
-        case .deleted: color("fileDeleted") { $0.fileDeleted }
+        case .deleted: NSColor.secondaryLabelColor // gone: grey, not alarming
         case .conflicted: color("fileConflict") { $0.fileConflict }
         }
     }
+
 }
 
 extension Notification.Name {

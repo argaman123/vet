@@ -3,8 +3,8 @@ import AppKit
 /// One of Vet's color themes: the app's surfaces (window, sidebar, bars), the code panes, the
 /// diff, and the code colors. Vet is a dark app; `light` is used only if the system forces light.
 struct Palette: Sendable {
-    let id: String
-    let name: String
+    var id: String
+    var name: String
     // App surfaces
     var window: UInt32, sidebar: UInt32, header: UInt32
     /// The accent (selected controls, focus) and the folder color.
@@ -188,7 +188,42 @@ extension Palette {
         function: 0x67E3C2, property: 0xB9C6F2, parameter: 0xD3DCF5, classType: 0x5FD3E6, constant: 0xFFC27A, namespace: 0x5FD3E6,
         fileModified: 0x6E9BFF, fileAdded: 0x48D7A4, fileDeleted: 0xF0708A, fileConflict: 0xFFC27A)
 
-    static let all: [Palette] = [.aurora, .vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .monokai, .neon]
+    /// Carbon's surfaces with another set of code colors.
+    private static func carbon(_ id: String, _ name: String, _ code: (inout Palette) -> Void) -> Palette {
+        var p = Palette.carbon
+        p.id = id; p.name = name
+        code(&p)
+        return p
+    }
+
+    /// Ink: hierarchy by brightness, not hue. Names near-white, declarations brightest, keywords
+    /// recede; only three quiet hues: types blue, text sage, values amber.
+    static let ink = carbon("ink", "Ink") { p in
+        p.text = 0xD8D8DC; p.keyword = 0x8E9AAF; p.function = 0xF4F4F7; p.classType = 0x9CC3FF; p.type = 0x9CC3FF
+        p.namespace = 0x9CC3FF; p.property = 0xC6C6CE; p.parameter = 0xB9B2D9; p.string = 0xA8D5A2
+        p.number = 0xE8B987; p.constant = 0xE8B987; p.decorator = 0xE8B987; p.comment = 0x5F6470
+        p.tag = 0x9CC3FF; p.attribute = 0xC6C6CE
+    }
+
+    /// Tide: structure cool (keywords, calls, types in blue → cyan → aqua), data warm (strings
+    /// sand, numbers coral). Two temperatures, each a small family.
+    static let tide = carbon("tide", "Tide") { p in
+        p.text = 0xD6DBE6; p.keyword = 0x8FA8FF; p.function = 0x6FD3F0; p.classType = 0x7FE0C8; p.type = 0x7FE0C8
+        p.namespace = 0x7FE0C8; p.property = 0xB7C4E8; p.parameter = 0xD4C3F7; p.string = 0xF2C28B
+        p.number = 0xF59E8B; p.constant = 0xF59E8B; p.decorator = 0xF2C28B; p.comment = 0x5C6675
+        p.tag = 0x8FA8FF; p.attribute = 0x7FE0C8
+    }
+
+    /// Spectral: the logo's gradient (blue → cyan → mint → green) across code roles, one amber.
+    static let spectral = carbon("spectral", "Spectral") { p in
+        let a = Palette.aurora
+        p.text = a.text; p.keyword = a.keyword; p.function = a.function; p.classType = a.classType; p.type = a.type
+        p.namespace = a.namespace; p.property = a.property; p.parameter = a.parameter; p.string = a.string
+        p.number = a.number; p.constant = a.constant; p.decorator = a.decorator; p.comment = a.comment
+        p.tag = a.tag; p.attribute = a.attribute
+    }
+
+    static let all: [Palette] = [.ink, .tide, .spectral, .aurora, .vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .monokai, .neon]
 }
 
 /// Design variants being tried (Settings-free switches read from defaults; mockups for now).
