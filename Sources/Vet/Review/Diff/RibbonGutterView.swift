@@ -24,6 +24,13 @@ final class RibbonGutterView: NSView {
         let cy = (anchor(s.left, left: true) + anchor(s.right, left: false)) / 2
         return (cy - DiffTheme.lineHeight / 2, cy + DiffTheme.lineHeight / 2)
     }
+    /// Where the ring sits on a change's bridge: the neck's middle (ribbon), or halfway between the
+    /// middles of the two blocks, which is always inside a smooth or straight band.
+    func ringCenterY(_ s: DiffLayout.Segment) -> CGFloat {
+        if Design.bridge == .ribbon { let (a, b) = ringBand(s); return (a + b) / 2 }
+        func middle(_ r: Range<Int>, left: Bool) -> CGFloat { r.isEmpty ? y(r.lowerBound, left: left) : (y(r.lowerBound, left: left) + y(r.upperBound, left: left)) / 2 }
+        return (middle(s.left, left: true) + middle(s.right, left: false)) / 2
+    }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
     static var checkWidth: CGFloat { [.inline, .row, .native, .mono, .check, .circle, .progress].contains(Design.marker) ? 0 : 24 }
@@ -127,8 +134,7 @@ final class RibbonGutterView: NSView {
             guard let s = segment(for: id) else { b.isHidden = true; continue }
             if mode == .split, [.native, .mono, .check, .circle, .progress].contains(b.style) {
                 // In the bridge's flat stretch on the taller side, centered on that side's first line.
-                let (top, bottom) = ringBand(s)
-                let cy = (top + bottom) / 2
+                let cy = ringCenterY(s)
                 let cx = Self.numbersWidth + Self.ribbonWidth / 2
                 b.frame = NSRect(x: cx - 8, y: cy - 8, width: 16, height: 16)
                 b.isHidden = cy < -20 || cy > bounds.height + 20
@@ -183,7 +189,28 @@ final class RibbonGutterView: NSView {
                 // WebStorm's curve: control points at 30% and 70% across the ribbon.
                 let path = NSBezierPath()
                 let c1 = x0 + (x1 - x0) * 0.45, c2 = x0 + (x1 - x0) * 0.55
-                if Self.ringInBridge && mode == .split {
+                if Design.bridge == .straight {
+                    // Straight edges between the two blocks.
+                    path.move(to: NSPoint(x: 0, y: l0))
+                    path.line(to: NSPoint(x: x0, y: l0))
+                    path.line(to: NSPoint(x: x1, y: r0))
+                    path.line(to: NSPoint(x: bounds.width, y: r0))
+                    path.line(to: NSPoint(x: bounds.width, y: r1))
+                    path.line(to: NSPoint(x: x1, y: r1))
+                    path.line(to: NSPoint(x: x0, y: l1))
+                    path.line(to: NSPoint(x: 0, y: l1))
+                } else if Design.bridge == .flow || Design.bridge == .thread {
+                    // One smooth band: each edge an S whose handles reach halfway across.
+                    let m = (x0 + x1) / 2
+                    path.move(to: NSPoint(x: 0, y: l0))
+                    path.line(to: NSPoint(x: x0, y: l0))
+                    path.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: m, y: l0), controlPoint2: NSPoint(x: m, y: r0))
+                    path.line(to: NSPoint(x: bounds.width, y: r0))
+                    path.line(to: NSPoint(x: bounds.width, y: r1))
+                    path.line(to: NSPoint(x: x1, y: r1))
+                    path.curve(to: NSPoint(x: x0, y: l1), controlPoint1: NSPoint(x: m, y: r1), controlPoint2: NSPoint(x: m, y: l1))
+                    path.line(to: NSPoint(x: 0, y: l1))
+                } else if Self.ringInBridge && mode == .split {
                     // The ring sits in the middle of the bridge, in a flat band one line tall at the
                     // taller side's first line; each side curves into that band.
                     let (m0, m1) = ringBand(s)
@@ -213,6 +240,30 @@ final class RibbonGutterView: NSView {
                 }
                 path.close()
                 let change = DiffTheme.change(head: h.head, work: h.work)
+                if Design.bridge == .thread {
+                    // The blocks keep their color in the number columns; between them only a thin
+                    // curve joins their middles, broken where the ring sits on it.
+                    DiffTheme.fill(change, hasWords: false, staged: staged).setFill()
+                    NSRect(x: 0, y: l0, width: x0, height: l1 - l0).fill()
+                    NSRect(x: x1, y: r0, width: bounds.width - x1, height: r1 - r0).fill()
+                    let lc = (l0 + l1) / 2, rc = (r0 + r1) / 2, m = (x0 + x1) / 2
+                    let thread = NSBezierPath()
+                    thread.move(to: NSPoint(x: x0, y: lc))
+                    thread.curve(to: NSPoint(x: x1, y: rc), controlPoint1: NSPoint(x: m, y: lc), controlPoint2: NSPoint(x: m, y: rc))
+                    thread.lineWidth = 1.5
+                    thread.lineCapStyle = .round
+                    NSGraphicsContext.saveGraphicsState()
+                    if Self.ringInBridge {
+                        let hole = NSBezierPath(rect: bounds)
+                        hole.append(NSBezierPath(ovalIn: NSRect(x: m - 10, y: (lc + rc) / 2 - 10, width: 20, height: 20)))
+                        hole.windingRule = .evenOdd
+                        hole.addClip()
+                    }
+                    DiffTheme.marker(change).withAlphaComponent(staged ? 0.35 : 0.75).setStroke()
+                    thread.stroke()
+                    NSGraphicsContext.restoreGraphicsState()
+                    continue
+                }
                 if Design.bridge == .lines {
                     // Just the two edges, in the change's color: light, and the code stays the focus.
                     let edges = NSBezierPath()

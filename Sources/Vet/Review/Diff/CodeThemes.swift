@@ -248,7 +248,9 @@ enum Design {
     static var chrome: Chrome { Chrome(rawValue: UserDefaults.standard.string(forKey: "design.chrome") ?? "") ?? .column }
     static var frosted: Bool { UserDefaults.standard.object(forKey: "design.frosted") as? Bool ?? true }
     /// What joins the two sides of the diff.
-    enum Bridge: String { case ribbon, lines, map }
+    /// ribbon: the band narrows to a neck for the ring (the old look); flow: one smooth band, the
+    /// ring on top of it; thread: a single thin curve between the two blocks; straight: straight edges.
+    enum Bridge: String { case ribbon, lines, map, flow, thread, straight }
     static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .progress }
     static var bridge: Bridge { Bridge(rawValue: UserDefaults.standard.string(forKey: "design.bridge") ?? "") ?? .ribbon }
 }

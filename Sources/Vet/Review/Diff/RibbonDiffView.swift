@@ -188,6 +188,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         messageLabel.textColor = .secondaryLabelColor
         messageLabel.font = .systemFont(ofSize: 14)
         messageLabel.alignment = .center
+        // The panes scroll together: one scroller (the right's), none pressed against the numbers.
+        leftScroll.hasVerticalScroller = false
         for scroll in [leftScroll, rightScroll] {
             scroll.contentView.postsBoundsChangedNotifications = true
             NotificationCenter.default.addObserver(self, selector: #selector(scrolled(_:)),
