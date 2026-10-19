@@ -89,7 +89,6 @@ struct DiffScreen: View {
             diff
                 // The fades sit in their own layer under the glass, so the glass samples them.
                 .overlay(alignment: .top) { EdgeFade(edge: .top, height: top) }
-                .overlay(alignment: .bottom) { EdgeFade(edge: .bottom, height: bottom) }
                 .overlay(alignment: .top) { header.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { top = $0 } }
                 .overlay(alignment: .bottom) { ReviewFooter(app: app, floating: true).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottom = $0 } }
         } else {
@@ -250,9 +249,9 @@ struct EdgeFade: View {
     let height: CGFloat
     var body: some View {
         let bg = Color(nsColor: DiffTheme.background).opacity(1)
-        // Solid under the bar (the glass boosts whatever shows through it), then the code dissolves
-        // into it over the band just past the bar.
-        LinearGradient(stops: [.init(color: bg, location: 0), .init(color: bg.opacity(0.97), location: 0.8), .init(color: bg.opacity(0), location: 1)],
+        // One smooth gradient, no solid band: the theme's color is itself translucent when frosted,
+        // so a solid stretch stacked on the code read as a grey slab.
+        LinearGradient(stops: [.init(color: bg, location: 0), .init(color: bg.opacity(0), location: 1)],
                        startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
             .frame(height: height + 26 + (edge == .top ? 60 : 0)) // a little past the bar, and up under the window's top bar
             .padding(.top, edge == .top ? -60 : 0)
