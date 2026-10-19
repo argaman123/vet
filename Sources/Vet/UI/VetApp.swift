@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Vet is a dark app with its own surfaces (the theme's window, sidebar and bar colors).
         NSApp.appearance = NSAppearance(named: .darkAqua)
         CodeFont.registerBundled()
+        installDoubleShift()
         searchEverywhere.app = self
         find.app = self
         workspace.onOpenProject = { [weak self] url in self?.projects.open(url) }
@@ -124,6 +125,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showBrowser() { ui.show(.browser) }
+
+    // Double Shift opens Search Everywhere (files, classes, symbols, actions), as in IntelliJ.
+    private var lastShiftUp: TimeInterval = 0
+    private var shiftDownClean = false
+    private func installDoubleShift() {
+        NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.type == .keyDown { self.shiftDownClean = false; self.lastShiftUp = 0; return event }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if flags == .shift { self.shiftDownClean = true; return event } // Shift went down alone
+            if flags.isEmpty, self.shiftDownClean { // ...and came up with nothing pressed in between
+                self.shiftDownClean = false
+                let now = event.timestamp
+                if now - self.lastShiftUp < 0.4 { self.lastShiftUp = 0; self.ui.focusSearch = true } else { self.lastShiftUp = now }
+            } else {
+                self.shiftDownClean = false
+            }
+            return event
+        }
+    }
 
     /// The toolbar's switcher: the changes (diff), all files (project tree + editor), the browser.
     enum Place: Hashable { case changes, files, browser }

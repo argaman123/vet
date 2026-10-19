@@ -79,6 +79,7 @@ struct DiffScreen: View {
                 DiffHeader(app: app, doc: doc)
             }
             RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial)
+            ReviewFooter(app: app)
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
@@ -295,6 +296,33 @@ struct BrowserScreen: View {
             }
             WebViewHost(webView: browser.webView)
         }
+    }
+}
+
+/// Under the diff: how far the review is, approve-and-next, and Commit (rarely used: Claude
+/// usually commits, so it sits here rather than in the toolbar).
+struct ReviewFooter: View {
+    let app: AppDelegate
+    var body: some View {
+        let review = app.workspace.review, ui = app.ui
+        let staged = review.changes.filter { review.stage(of: $0) != .unstaged }.count
+        HStack(spacing: 10) {
+            Text(review.changes.isEmpty ? "No changes" : "\(review.reviewedCount) of \(review.changes.count) files reviewed")
+                .foregroundStyle(.secondary).monospacedDigit()
+            Spacer()
+            Button { review.approveAndNext() } label: { Label("Approve and Next", systemImage: "checkmark") }
+                .help("Approve the outlined change and go to the next (⌘↩)")
+            Button { ui.showCommit = true } label: { Text(staged > 0 ? "Commit \(staged)…" : "Commit…") }
+                .help("Commit the checked changes (⌘K)")
+                .popover(isPresented: Binding(get: { ui.showCommit && ui.location.map { if case .diff = $0 { true } else { false } } == true },
+                                              set: { ui.showCommit = $0 }), arrowEdge: .top) { CommitPopover(app: app) }
+        }
+        .font(.callout)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 14)
+        .frame(height: 30)
+        .background(Color(nsColor: DiffTheme.header))
+        .overlay(alignment: .top) { Divider() }
     }
 }
 

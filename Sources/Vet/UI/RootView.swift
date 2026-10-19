@@ -34,6 +34,9 @@ struct RootView: View {
             // Keep the main area on the selected change (selection can change from the menu or Claude).
             if let path, ui.location != .diff(path: path), case .diff = ui.location ?? .diff(path: "") { ui.replace(.diff(path: path)) }
         }
+        // ⌘K away from the diff: the commit form as a sheet.
+        .sheet(isPresented: Binding(get: { ui.showCommit && ui.location.map { if case .diff = $0 { false } else { true } } ?? true },
+                                    set: { ui.showCommit = $0 })) { CommitPopover(app: app) }
         .sheet(isPresented: Bindable(ui).editingRules) { RulesDialog(model: ws.review, isPresented: Bindable(ui).editingRules) }
         .sheet(isPresented: Bindable(ui).editingRunConfigs) { RunConfigEditor(run: ws.run, isPresented: Bindable(ui).editingRunConfigs) }
         .sheet(isPresented: Binding(get: { ws.navResults != nil }, set: { if !$0 { ws.navResults = nil } })) {
@@ -110,7 +113,8 @@ struct MainToolbar: ToolbarContent {
             }
             .pickerStyle(.segmented)
         }
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItem(placement: .primaryAction) {
+            // One button: Run, or Stop while running; its arrow picks the configuration.
             Menu {
                 ForEach(run.configs) { c in
                     Button { run.selectedID = c.id } label: {
@@ -120,31 +124,14 @@ struct MainToolbar: ToolbarContent {
                 if !run.configs.isEmpty { Divider() }
                 Button("Edit Configurations…") { ui.editingRunConfigs = true }
             } label: {
-                Label(run.selected?.name ?? "Add Configuration", systemImage: "play.rectangle").labelStyle(.titleAndIcon)
+                Label(run.isRunning ? "Stop" : "Run", systemImage: run.isRunning ? "stop.fill" : "play.fill")
+                    .foregroundStyle(run.isRunning ? Color.red : Color.primary)
+            } primaryAction: {
+                if run.isRunning { run.stop() }
+                else if run.configs.isEmpty { ui.editingRunConfigs = true }
+                else { run.start(); run.outputVisible = true }
             }
-            .help("Run Configuration")
-            Button {
-                if run.configs.isEmpty { ui.editingRunConfigs = true } else { run.start(); run.outputVisible = true }
-            } label: { Label("Run", systemImage: "play.fill") }
-                .disabled(run.isRunning)
-                .help(run.selected.map { "Run ‘\($0.name)’ (⌘R)" } ?? "Run (⌘R)")
-            Button { run.stop() } label: { Label("Stop", systemImage: "stop.fill") }
-                .disabled(!run.isRunning).help("Stop (⌘.)")
-        }
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-        ToolbarItem(placement: .primaryAction) {
-            let staged = review.changes.filter { review.stage(of: $0) != .unstaged }.count
-            // Prominent once something is checked; with nothing checked it stays a readable plain
-            // button (the popover then offers to amend the last commit).
-            Group {
-                if staged > 0 {
-                    Button { ui.showCommit = true } label: { Text("Commit \(staged)") }.buttonStyle(.glassProminent)
-                } else {
-                    Button { ui.showCommit = true } label: { Text("Commit") }.buttonStyle(.glass)
-                }
-            }
-            .help("Commit the checked changes (⌘K)")
-            .popover(isPresented: Bindable(ui).showCommit, arrowEdge: .bottom) { CommitPopover(app: app) }
+            .help(run.isRunning ? "Stop (⌘.)" : run.selected.map { "Run ‘\($0.name)’ (⌘R) · arrow: configurations" } ?? "Run (⌘R)")
         }
     }
 }
