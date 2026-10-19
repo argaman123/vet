@@ -7,7 +7,13 @@ final class RibbonGutterView: NSView {
     /// `unified`: one pane; both number columns (HEAD, working file) then the checkboxes.
     enum Mode { case split, rightOnly, leftOnly, unified }
     static let numbersWidth: CGFloat = 40
-    static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : 36 }
+    static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : ringInBridge ? 46 : 36 }
+    /// The review ring sits in the bridge (in a flat stretch on the taller side, so it always fits).
+    static var ringInBridge: Bool { [.native, .mono, .check, .circle, .progress].contains(Design.marker) }
+    static let ringZone: CGFloat = 18
+
+    /// Where a change's bridge runs flat for its ring: the side with more lines.
+    func ringOnRight(_ s: DiffLayout.Segment) -> Bool { s.right.count >= s.left.count }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
     static var checkWidth: CGFloat { [.inline, .row, .native, .mono, .check, .circle, .progress].contains(Design.marker) ? 4 : 24 }
@@ -110,12 +116,12 @@ final class RibbonGutterView: NSView {
             }
             guard let s = segment(for: id) else { b.isHidden = true; continue }
             if mode == .split, [.native, .mono, .check, .circle, .progress].contains(b.style) {
-                // In the bridge, between the two number columns, at the middle of the ribbon.
-                let l0 = y(s.left.lowerBound, left: true), l1 = s.left.isEmpty ? l0 : y(s.left.upperBound, left: true)
-                let r0 = y(s.right.lowerBound, left: false), r1 = s.right.isEmpty ? r0 : y(s.right.upperBound, left: false)
-                let top = (l0 + r0) / 2, bottom = (l1 + r1) / 2
-                let cy = bottom - top >= DiffTheme.lineHeight ? top + DiffTheme.lineHeight / 2 : (top + bottom) / 2
-                b.frame = NSRect(x: Self.numbersWidth + (Self.ribbonWidth - 16) / 2, y: cy - 8, width: 16, height: 16)
+                // In the bridge's flat stretch on the taller side, centered on that side's first line.
+                let right = ringOnRight(s)
+                let top = right ? y(s.right.lowerBound, left: false) : y(s.left.lowerBound, left: true)
+                let cy = top + DiffTheme.lineHeight / 2
+                let cx = right ? Self.numbersWidth + Self.ribbonWidth - Self.ringZone / 2 : Self.numbersWidth + Self.ringZone / 2
+                b.frame = NSRect(x: cx - 8, y: cy - 8, width: 16, height: 16)
                 b.isHidden = cy < -20 || cy > bounds.height + 20
                 continue
             }
@@ -167,14 +173,17 @@ final class RibbonGutterView: NSView {
                 let staged = states[h.id] == .staged
                 // WebStorm's curve: control points at 30% and 70% across the ribbon.
                 let path = NSBezierPath()
-                let c1 = x0 + (x1 - x0) * 0.45, c2 = x0 + (x1 - x0) * 0.55
+                // With the ring in the bridge, the curve leaves a flat stretch on the taller side.
+                var a = x0, b = x1
+                if Self.ringInBridge && mode == .split { if ringOnRight(s) { b = x1 - Self.ringZone } else { a = x0 + Self.ringZone } }
+                let c1 = a + (b - a) * 0.45, c2 = a + (b - a) * 0.55
                 path.move(to: NSPoint(x: 0, y: l0))
-                path.line(to: NSPoint(x: x0, y: l0))
-                path.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: c1, y: l0), controlPoint2: NSPoint(x: c2, y: r0))
+                path.line(to: NSPoint(x: a, y: l0))
+                path.curve(to: NSPoint(x: b, y: r0), controlPoint1: NSPoint(x: c1, y: l0), controlPoint2: NSPoint(x: c2, y: r0))
                 path.line(to: NSPoint(x: bounds.width, y: r0))
                 path.line(to: NSPoint(x: bounds.width, y: r1))
-                path.line(to: NSPoint(x: x1, y: r1))
-                path.curve(to: NSPoint(x: x0, y: l1), controlPoint1: NSPoint(x: c2, y: r1), controlPoint2: NSPoint(x: c1, y: l1))
+                path.line(to: NSPoint(x: b, y: r1))
+                path.curve(to: NSPoint(x: a, y: l1), controlPoint1: NSPoint(x: c2, y: r1), controlPoint2: NSPoint(x: c1, y: l1))
                 path.line(to: NSPoint(x: 0, y: l1))
                 path.close()
                 let change = DiffTheme.change(head: h.head, work: h.work)
@@ -439,7 +448,9 @@ final class StageToggle: NSView {
     private func drawProgress() {
         if shown < 0 { shown = target }
         if progressTimer?.isValid != true { shown = target }
-        let r = NSRect(x: bounds.midX - 6.5, y: bounds.midY - 6.5, width: 13, height: 13)
+        // Fits inside one line's height of the bridge, whatever the text size.
+        let d = min(13, max(9, DiffTheme.lineHeight - 4))
+        let r = NSRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
         let c = NSPoint(x: r.midX, y: r.midY)
         if shown >= 0.999 {
             DiffTheme.accent.setFill()
@@ -459,7 +470,7 @@ final class StageToggle: NSView {
         track.stroke()
         if shown > 0.001 {
             let arc = NSBezierPath()
-            arc.appendArc(withCenter: c, radius: 5.7, startAngle: 90, endAngle: 90 - 360 * shown, clockwise: true)
+            arc.appendArc(withCenter: c, radius: d / 2 - 0.8, startAngle: 90, endAngle: 90 - 360 * shown, clockwise: true)
             arc.lineWidth = 1.9; arc.lineCapStyle = .round
             DiffTheme.accent.setStroke()
             arc.stroke()
