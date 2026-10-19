@@ -39,6 +39,7 @@ final class Workspace {
         }
         let symbol = Self.word(in: text, line: line, character: character) ?? "Symbol"
         navBusy = kind == .references || kind == .usagesOrDeclaration ? "Finding usages of \(symbol)…" : kind == .implementation ? "Finding implementations…" : "Finding declaration…"
+        ReferencesPresenter.shared.beginLoading(navBusy ?? "")
         Task {
             var kind = kind
             var found: [CodeLocation] = switch kind {
@@ -74,6 +75,7 @@ final class Workspace {
                 found = await navigator.references(of: url, text: text, line: line, character: character)
             }
             navBusy = nil
+            if found.isEmpty || (found.count == 1 && kind != .references) { ReferencesPresenter.shared.endLoading() }
             if found.isEmpty {
                 link.flash(kind == .references ? "No usages of \(symbol) found." : kind == .implementation ? "No implementations found." : "No declaration found.")
             } else if found.count == 1 && kind != .references {
@@ -258,30 +260,18 @@ extension Workspace {
                 return row(h.line).map { InlayHintMark(line: $0, character: h.character, label: label, padLeft: h.paddingLeft, padRight: h.paddingRight) }
             }
         }
-        let repo = review.repo, path = root.map { Self.relativePath(url, in: $0) }
         Task { [weak pane] in
-            async let lensList = navigator.codeLenses(of: url, text: text)
-            async let symbolList = navigator.documentSymbols(of: url, text: text)
-            let (lenses, symbols) = await (lensList, symbolList)
-            let declarations = symbols.flatMap(\.flattened)
-            // One lens per line: usages (and implementations) from the server, the last author from git.
+            let lenses = await navigator.codeLenses(of: url, text: text)
+            // One lens per line: usages (and implementations) from the server. No author names.
             var byLine: [Int: [CodeLensInfo]] = [:]
             for l in lenses { byLine[l.line, default: []].append(l) }
             let lines = byLine.keys.sorted()
-            let spans: [ClosedRange<Int>] = lines.map { line in
-                let d = declarations.first { $0.selectionRange.start.line == line }
-                return (line + 1)...((d?.range.end.line ?? line) + 1) // blame lines are 1-based
-            }
-            var authors: [(author: String, date: Date)?] = Array(repeating: nil, count: lines.count)
-            if let repo, let path, !lines.isEmpty {
-                authors = (try? await repo.lastAuthors(path: path, ranges: spans, workingText: Data(text.utf8))) ?? authors
-            }
             guard let pane, current() else { return }
-            pane.lenses = lines.enumerated().compactMap { i, line in
+            pane.lenses = lines.compactMap { line in
                 guard let r = row(line) else { return nil }
                 let infos = byLine[line] ?? []
-                var parts = infos.compactMap(Self.lensText)
-                if let a = authors[i] { parts.append(a.author) }
+                let parts = infos.compactMap(Self.lensText)
+                guard !parts.isEmpty else { return nil }
                 return LineLensMark(line: r, character: infos.first?.character ?? 0, text: parts.joined(separator: " · "))
             }
         }

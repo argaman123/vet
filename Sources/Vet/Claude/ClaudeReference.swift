@@ -11,10 +11,22 @@ enum ClaudeReference {
         let text = "`\(path):\(range)`\n```\(lang)\n\(code)\n```\n"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        if let claude = NSRunningApplication.runningApplications(withBundleIdentifier: "com.anthropic.claudefordesktop").first {
-            claude.activate()
-        } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.anthropic.claudefordesktop") {
-            NSWorkspace.shared.openApplication(at: url, configuration: .init())
+        bringClaudeForward()
+    }
+
+    static let bundleID = "com.anthropic.claudefordesktop"
+
+    /// Since macOS 14 an app can't pull another one forward on its own: Vet yields first, then
+    /// Claude takes over (or is launched, frontmost).
+    static func bringClaudeForward() {
+        if let claude = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            NSApp.yieldActivation(to: claude)
+            claude.activate(from: .current, options: [])
+        } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            NSApp.yieldActivation(toApplicationWithBundleIdentifier: bundleID)
+            NSWorkspace.shared.openApplication(at: url, configuration: config)
         }
     }
 }

@@ -311,9 +311,7 @@ private struct Toast: View {
     var body: some View {
         let ws = app.workspace
         Group {
-            if let busy = ws.navBusy {
-                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(busy) }
-            } else if let toast = ws.link.toast {
+            if let toast = ws.link.toast {
                 Text(toast)
             }
         }
@@ -321,8 +319,8 @@ private struct Toast: View {
         .padding(.horizontal, 16).padding(.vertical, 9)
         .glassEffect(.regular, in: .capsule)
         .padding(.bottom, 18)
-        .opacity(ws.navBusy == nil && ws.link.toast == nil ? 0 : 1)
-        .animation(.easeOut(duration: 0.2), value: ws.navBusy == nil && ws.link.toast == nil)
+        .opacity(ws.link.toast == nil ? 0 : 1)
+        .animation(.easeOut(duration: 0.2), value: ws.link.toast == nil)
     }
 }
 
@@ -372,18 +370,14 @@ struct BrowserScreen: View {
 /// usually commits, so it sits here rather than in the toolbar).
 struct ReviewFooter: View {
     let app: AppDelegate
-    /// Glass: two buttons in a floating Liquid Glass capsule over the code, instead of a bar.
+    /// Glass: the action in a floating Liquid Glass capsule over the code, instead of a bar.
     var floating = false
     var body: some View {
-        let review = app.workspace.review, ui = app.ui
-        let staged = review.changes.filter { review.stage(of: $0) != .unstaged }.count
+        let review = app.workspace.review
+        // One action under the code. Commit is rarer: the project menu in the title bar, or ⌘K.
         let buttons = HStack(spacing: 14) {
             Button { review.approveAndNext() } label: { Label("Approve and Next", systemImage: "checkmark") }
                 .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
-            Button { ui.showCommit = true } label: { Text(staged > 0 ? "Commit \(staged)" : "Commit") }
-                .help("Commit the checked changes (⌘K)")
-                .popover(isPresented: Binding(get: { ui.showCommit && ui.location.map { if case .diff = $0 { true } else { false } } == true },
-                                              set: { ui.showCommit = $0 }), arrowEdge: .top) { CommitPopover(app: app) }
         }
         .font(.callout)
         .buttonStyle(.borderless)

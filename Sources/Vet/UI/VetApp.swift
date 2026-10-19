@@ -98,6 +98,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let y = Double(args.first ?? "") else { return }
             self.workspace.review.diffView.debugScroll(to: y)
         }
+        SnapshotHook.on("loading") { [weak self] args in
+            // loading <line> <character>: the lookup popover at a symbol of the open editor file
+            guard let self, args.count == 2, let line = Int(args[0]), let ch = Int(args[1]) else { return }
+            let view = self.workspace.files.editorView
+            NavigationAnchor.set(view.pane, view.pane.symbolRect(line: line, character: ch))
+            ReferencesPresenter.shared.beginLoading("Finding usages of HttpClient…")
+        }
+        SnapshotHook.on("claudeforward") { _ in ClaudeReference.bringClaudeForward() } // test: the hand-off alone, clipboard untouched
         SnapshotHook.on("stagehunk") { [weak self] args in
             // stagehunk <n>: mark the open diff's nth change reviewed
             guard let self, let staging = self.workspace.review.diff?.staging, let n = Int(args.first ?? "0"), n < staging.hunks.count else { return }

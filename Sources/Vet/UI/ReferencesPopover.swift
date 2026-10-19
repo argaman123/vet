@@ -22,8 +22,44 @@ final class ReferencesPresenter: NSObject, NSPopoverDelegate {
     /// Semantic tokens for previews (set by the workspace).
     var tokens: ((URL, String) async -> [SemanticToken])?
 
+    private var loading: NSPopover?
+    private var pendingLoading: DispatchWorkItem?
+
+    /// A lookup started at the symbol: if it takes more than a moment, a small popover there says
+    /// so (like VS Code's peek while it loads), until the results replace it or `endLoading` ends it.
+    func beginLoading(_ text: String) {
+        endLoading()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.presentLoading(text) } }
+        pendingLoading = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+    }
+
+    func endLoading() {
+        pendingLoading?.cancel()
+        pendingLoading = nil
+        loading?.close()
+        loading = nil
+    }
+
+    private func presentLoading(_ text: String) {
+        let p = NSPopover()
+        p.behavior = .transient
+        p.animates = true
+        let host = NSHostingController(rootView:
+            HStack(spacing: 10) { ProgressView().controlSize(.small); Text(text).foregroundStyle(.secondary) }
+                .font(.callout)
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .fixedSize())
+        p.contentViewController = host
+        loading = p
+        if let view = NavigationAnchor.view, view.window != nil {
+            p.show(relativeTo: NavigationAnchor.rect, of: view, preferredEdge: .maxY)
+        }
+    }
+
     func show(symbol: String, locations: [CodeLocation], root: URL?, noun: String = "usage", textOf: @escaping (URL) -> String?,
               open: @escaping (CodeLocation) -> Void) {
+        endLoading()
         popover?.close()
         let model = ReferencesModel(symbol: symbol, locations: locations, root: root, textOf: textOf)
         model.noun = noun
