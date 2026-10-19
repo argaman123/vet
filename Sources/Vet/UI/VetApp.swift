@@ -29,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let ui = UIState()
     let searchEverywhere = SearchEverywhereModel()
     let find = FindModel()
+    /// Claude talks to Vet through this while Vet is open.
+    private(set) var mcp: MCPServer?
     private var quitting = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -36,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         CodeFont.registerBundled()
         installDoubleShift()
+        mcp = MCPServer(tools: VetTools.make(self))
+        mcp?.start()
         searchEverywhere.app = self
         find.app = self
         workspace.onOpenProject = { [weak self] url in self?.projects.open(url) }
@@ -125,6 +129,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showBrowser() { ui.show(.browser) }
+
+    /// Registers Vet's MCP server with Claude Code (once, for every project): Claude can then set
+    /// the review order, read your selection and open files here while Vet is running.
+    func connectClaudeCode() {
+        let cmd = "claude mcp add --transport http --scope user vet \(MCPServer.url)"
+        let a = NSAlert()
+        a.messageText = "Connect Claude Code to Vet?"
+        a.informativeText = "Runs this once, adding Vet to Claude Code for all projects:\n\n\(cmd)\n\nAfterwards, start a new Claude Code session. While Vet is open, Claude can set your review order, see what you've selected, and open files here."
+        a.addButton(withTitle: "Connect")
+        a.addButton(withTitle: "Copy Command")
+        a.addButton(withTitle: "Cancel")
+        switch a.runModal() {
+        case .alertFirstButtonReturn:
+            Task {
+                let env = await ShellEnvironment.load()
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                p.arguments = ["-lc", "claude mcp remove --scope user vet >/dev/null 2>&1; " + cmd]
+                p.environment = env
+                let pipe = Pipe(); p.standardOutput = pipe; p.standardError = pipe
+                do { try p.run() } catch {}
+                p.waitUntilExit()
+                let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                let done = NSAlert()
+                done.messageText = p.terminationStatus == 0 ? "Vet is connected to Claude Code" : "Couldn't connect"
+                done.informativeText = p.terminationStatus == 0 ? "Start a new Claude Code session to use it." : out.isEmpty ? "Is Claude Code installed (the claude command)?" : out
+                done.runModal()
+            }
+        case .alertSecondButtonReturn:
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(cmd, forType: .string)
+        default: break
+        }
+    }
 
     // Double Shift opens Search Everywhere (files, classes, symbols, actions), as in IntelliJ.
     private var lastShiftUp: TimeInterval = 0
@@ -309,6 +347,10 @@ struct VetCommands: Commands {
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
             Button("Next Change") { app.workspace.review.jumpToChange(forward: true) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            Button("Connect Claude Code…") { app.connectClaudeCode() }
+            Button(app.workspace.review.plan == nil ? "No Review Order from Claude" : "Clear Claude's Review Order") { app.workspace.review.setPlan(nil) }
+                .disabled(app.workspace.review.plan == nil)
+            Divider()
             Button("Approve Change and Next") { app.workspace.review.approveAndNext() }
                 .keyboardShortcut(.return, modifiers: .command)
             Button("Next Unreviewed File") { app.workspace.review.nextUnreviewed(); if let p = app.workspace.review.selectedPath { app.ui.show(.diff(path: p)) } }

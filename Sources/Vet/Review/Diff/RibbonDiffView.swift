@@ -118,6 +118,31 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// Unified mode: right-side display line → its row in the one pane.
     private var unifiedOfRight: [Int: Int] = [:]
     private var unifiedHunks: [Int: Range<Int>] = [:]
+    /// What's selected (or, with nothing selected, the line with the caret) in the pane that has
+    /// focus: which side, the file lines, their text.
+    func selectionInfo() -> (head: Bool, lines: ClosedRange<Int>, text: String, selected: Bool)? {
+        guard let staging = shownStaging else { return nil }
+        let tv = window?.firstResponder === leftText ? leftText : rightText
+        let r = tv.selectedRange()
+        let rows = tv.displayLines(of: r)
+        let resolved = rows.compactMap { resolve(left: tv === leftText, displayLine: $0) }
+        guard let first = resolved.first else { return nil }
+        let side = resolved.filter { $0.left == first.left }.map(\.line)
+        let lines = (side.min() ?? first.line)...(side.max() ?? first.line)
+        let src = first.left ? staging.head : staging.work
+        let text = lines.compactMap { $0 < src.count ? String(src.lines[$0].text) : nil }.joined(separator: "\n")
+        return (first.left, lines, text, r.length > 0)
+    }
+
+    /// File lines visible in the new (right) pane.
+    func visibleWorkLines() -> ClosedRange<Int>? {
+        let clip = rightScroll.contentView.bounds
+        let a = Int((clip.minY - DiffTheme.inset.height) / DiffTheme.lineHeight), b = Int((clip.maxY - DiffTheme.inset.height) / DiffTheme.lineHeight)
+        let lines = (max(0, a)...max(0, b)).compactMap { resolve(left: false, displayLine: $0) }.filter { !$0.left }.map(\.line)
+        guard let lo = lines.min(), let hi = lines.max() else { return nil }
+        return lo...hi
+    }
+
     /// The working-file pane, for reading aids (semantic colors, hints, lenses).
     var workPane: CodeTextView { rightText }
     /// The working-file text the pane was built from.
@@ -650,12 +675,16 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             },
             .separator(),
         ]
+        items.insert(contentsOf: [
+            item("Reference in Claude") { ClaudeReference.send(path: path, lines: span, code: code) },
+            .separator(),
+        ], at: 0)
         items.append(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         items.append(item("Copy path and line") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString("\(path):\(span.lowerBound + 1)\(span.count > 1 ? "-\(span.upperBound + 1)" : "")", forType: .string)
         })
-        items[0].toolTip = "⌘-click"
+        items[2].toolTip = "⌘-click"
         return items
     }
 

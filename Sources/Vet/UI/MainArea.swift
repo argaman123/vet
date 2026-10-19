@@ -77,6 +77,7 @@ struct DiffScreen: View {
         VStack(spacing: 0) {
             if let doc = review.diff {
                 DiffHeader(app: app, doc: doc)
+                if let f = review.plan?.file(doc.change.path) { PlanSummary(file: f, index: review.plan?.index(of: f.path), total: review.plan?.files.count ?? 0) }
             }
             RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial)
             ReviewFooter(app: app)
@@ -323,6 +324,45 @@ struct ReviewFooter: View {
         .frame(height: 30)
         .background(Color(nsColor: DiffTheme.header))
         .overlay(alignment: .top) { Divider() }
+    }
+}
+
+/// Claude's summary of the open file (from the review plan), with its notes on key functions.
+struct PlanSummary: View {
+    let file: ReviewPlan.File
+    let index: Int?
+    let total: Int
+    @AppStorage("planSummaryOpen") private var open = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "sparkle").foregroundStyle(Color(nsColor: DiffTheme.accent))
+                if let index { Text("\(index + 1) of \(total)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary) }
+                Text(file.summary).foregroundStyle(.primary).lineLimit(open ? nil : 1).fixedSize(horizontal: false, vertical: open)
+                Spacer(minLength: 8)
+                if !(file.notes ?? []).isEmpty {
+                    Button { open.toggle() } label: { Image(systemName: open ? "chevron.up" : "chevron.down") }
+                        .buttonStyle(.borderless).help(open ? "Hide notes" : "Show notes")
+                }
+            }
+            if open, let notes = file.notes, !notes.isEmpty {
+                ForEach(Array(notes.enumerated()), id: \.offset) { _, n in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if let s = n.symbol { Text(s).font(.system(.caption, design: .monospaced)).foregroundStyle(Color(nsColor: DiffTheme.palette.function == 0 ? .labelColor : DiffTheme.semantic("function", modifiers: []) ?? .labelColor)) }
+                        if let l = n.line { Text("line \(l + 1)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary) }
+                        Text(n.text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.leading, 22)
+                }
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: DiffTheme.header))
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 

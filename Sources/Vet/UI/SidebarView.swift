@@ -37,6 +37,11 @@ struct ChangesTool: View {
                 Text(review.changes.isEmpty ? "No changes" : "\(review.reviewedCount) of \(review.changes.count) reviewed")
                     .foregroundStyle(.secondary)
                 Spacer()
+                if review.plan != nil {
+                    ToolButton(review.followPlan ? "list.number" : "list.bullet.indent", review.followPlan ? "Showing Claude's review order (click for the folder tree)" : "Show Claude's review order") {
+                        review.followPlan.toggle()
+                    }
+                }
                 ToolButton("line.3.horizontal.decrease.circle", "Unimportant Files…") { app.ui.editingRules = true }
                 // One button that flips between expanding and collapsing everything.
                 if review.allExpanded {
@@ -64,14 +69,39 @@ struct ChangesTool: View {
         let review = app.workspace.review
         // New files sit in the same tree as everything else (checking one adds it to git).
         let all = review.tree
+        // Claude's review order, when there is one: those files first, numbered, with Claude's
+        // summary; whatever else changed follows as the usual tree.
+        let planned: [FileTreeNode] = review.followPlan ? (review.plan?.files ?? []).compactMap { f in
+            FileTreeNode.find(f.path, in: all).flatMap { $0.isFolder ? nil : $0 }
+        } : []
+        let plannedPaths = Set(planned.map(\.path))
+        let rest = plannedPaths.isEmpty ? all : FileTreeNode.build(review.changes.filter { !plannedPaths.contains($0.path) })
         return List(selection: Binding(get: { row ?? review.selectedPath }, set: { path in
             row = path
             if let path, review.changes.contains(where: { $0.path == path }) { app.showDiff(path) }
         })) {
-            Section {
-                ForEach(CompactChange.compact(all)) { ChangeNodeRow(app: app, item: $0, quickLook: $quickLook) }
-            } header: {
-                SectionHeader(title: "Changes", nodes: all, app: app)
+            if !planned.isEmpty {
+                Section {
+                    if let overview = review.plan?.overview, !overview.isEmpty {
+                        Text(overview).font(.callout).foregroundStyle(.secondary).lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 2)
+                            .selectionDisabled()
+                    }
+                    ForEach(Array(planned.enumerated()), id: \.element.path) { i, node in
+                        PlanRow(app: app, node: node, index: i + 1, summary: review.plan?.file(node.path)?.summary ?? "")
+                            .tag(node.path)
+                    }
+                } header: {
+                    SectionHeader(title: "Review Order", nodes: planned, app: app)
+                }
+            }
+            if !rest.isEmpty {
+                Section {
+                    ForEach(CompactChange.compact(rest)) { ChangeNodeRow(app: app, item: $0, quickLook: $quickLook) }
+                } header: {
+                    SectionHeader(title: planned.isEmpty ? "Changes" : "Other Changes", nodes: rest, app: app)
+                }
             }
         }
         // Double-click (or Return): a folder opens or closes, a file shows its diff.
@@ -192,6 +222,40 @@ struct ChangeMenu: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(node.path, forType: .string)
         }
+    }
+}
+
+/// A file in Claude's review order: its number, name, folder, and Claude's one-line summary.
+private struct PlanRow: View {
+    let app: AppDelegate
+    let node: FileTreeNode
+    let index: Int
+    let summary: String
+    @Environment(\.backgroundProminence) private var prominence
+
+    var body: some View {
+        let review = app.workspace.review
+        let change = node.change!
+        let reviewed = review.stage(of: change) == .staged
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(index)").font(.callout.monospacedDigit().weight(.semibold)).foregroundStyle(.tertiary).frame(minWidth: 14, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
+                    Text(node.name).lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(change.kind.color))
+                }
+                if !summary.isEmpty {
+                    Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .opacity(reviewed && prominence != .increased ? 0.65 : 1)
+            Spacer(minLength: 4)
+            ReviewBar(fraction: review.reviewedFraction(node)).alignedToTextBaseline()
+            TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
+        }
+        .padding(.vertical, 2)
+        .help(node.path)
     }
 }
 

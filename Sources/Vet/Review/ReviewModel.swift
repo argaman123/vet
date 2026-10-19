@@ -82,6 +82,21 @@ final class ReviewModel {
     /// Section clicks run one after another, each against the file's state after the previous one.
     private var hunkQueue: Task<Void, Never>?
 
+    /// Claude's suggested review order (via Vet's MCP tool), and whether the list follows it.
+    private(set) var plan: ReviewPlan?
+    var followPlan = UserDefaults.standard.object(forKey: "followPlan") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(followPlan, forKey: "followPlan") }
+    }
+
+    func setPlan(_ p: ReviewPlan?) {
+        plan = p
+        guard let root else { return }
+        let dir = GitRepo.gitDir(of: root)
+        if let p { p.save(gitDir: dir) } else { try? FileManager.default.removeItem(at: ReviewPlan.url(gitDir: dir)) }
+        followPlan = p != nil
+        version += 1
+    }
+
     /// Per file: changed lines and how many are reviewed (for the sidebar's progress bars).
     private(set) var progress: [String: (total: Int, staged: Int)] = [:]
 
@@ -210,6 +225,7 @@ final class ReviewModel {
         expanded = []
         guard let folder else { repo = nil; return }
         isGitRepo = GitRepo.root(containing: folder) != nil
+        plan = isGitRepo ? ReviewPlan.load(gitDir: GitRepo.gitDir(of: folder)) : nil
         repo = isGitRepo ? GitRepo(root: folder) : nil
         marks = isGitRepo ? MarkStore(root: folder) : nil
         notes = NoteStore(root: folder)

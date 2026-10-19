@@ -31,7 +31,12 @@ struct CodeEditorRepresentable: NSViewRepresentable {
         }
         view.contextItems = { [weak view, weak model] line, character in
             guard let model, let url = model.openURL else { return [] }
-            return Self.menuItems(kind: { kind in
+            let selection = view?.selectedLines(fallback: line) ?? (line...line)
+            return [ClosureMenuItem(title: "Reference in Claude") { [weak view] in
+                        guard let view else { return }
+                        ClaudeReference.send(path: model.relativePath ?? url.path, lines: selection, code: view.text(lines: selection))
+                    }, .separator()]
+                + Self.menuItems(kind: { kind in
                 guard let view else { return }
                 navigator?(kind, url, view.currentText, line, character)
             }, copyLocation: "\(model.relativePath ?? url.path):\(line + 1)")

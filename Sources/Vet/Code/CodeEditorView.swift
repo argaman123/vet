@@ -138,6 +138,31 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
 
     var currentText: String { textView.string }
 
+    /// Whether anything is selected, and which lines the selection (or caret) is on.
+    var selectionLines: (lines: ClosedRange<Int>, selected: Bool) {
+        let r = textView.selectedRange()
+        return (textView.displayLines(of: r), r.length > 0)
+    }
+
+    /// The lines on screen.
+    var visibleLines: ClosedRange<Int> {
+        let clip = scroll.contentView.bounds
+        let a = max(0, Int((clip.minY - DiffTheme.inset.height) / DiffTheme.lineHeight))
+        return a...max(a, Int((clip.maxY - DiffTheme.inset.height) / DiffTheme.lineHeight))
+    }
+
+    /// The lines the selection covers (or `fallback` when nothing is selected).
+    func selectedLines(fallback: Int) -> ClosedRange<Int> {
+        let r = textView.selectedRange()
+        return r.length == 0 ? fallback...fallback : textView.displayLines(of: r)
+    }
+
+    /// The text of whole lines.
+    func text(lines: ClosedRange<Int>) -> String {
+        let all = textView.string.components(separatedBy: "\n")
+        return all[max(0, lines.lowerBound)...min(all.count - 1, lines.upperBound)].joined(separator: "\n")
+    }
+
     func save() {
         guard isDirty else { return }
         onSave?(fileText())
