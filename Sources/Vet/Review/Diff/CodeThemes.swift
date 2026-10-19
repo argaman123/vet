@@ -8,7 +8,7 @@ struct Palette: Sendable {
     // App surfaces
     var window: UInt32, sidebar: UInt32, header: UInt32
     /// The accent (selected controls, focus) and the folder color.
-    var accent: UInt32 = 0x4F8BFF, folder: UInt32 = 0x4FD1C5
+    var accent: UInt32 = 0x4F8BFF, folder: UInt32 = 0x7D8796
     /// The sidebar is the system's Liquid Glass (not painted); the accent is the user's system accent.
     var glassSidebar = false, systemAccent = false
     // Code panes
@@ -122,7 +122,7 @@ extension Palette {
     static let carbon: Palette = {
         var p = Palette.vet
         p = Palette(id: "carbon", name: "Carbon",
-            window: 0x0B0B0B, sidebar: 0x0E0E0E, header: 0x111111, accent: 0x4F8BFF, folder: 0x9AA3B2,
+            window: 0x0B0B0B, sidebar: 0x0E0E0E, header: 0x111111, accent: 0x4F8BFF, folder: 0x7D8796,
             background: 0x141414, text: 0xD9D9D9, lineNumber: 0x404040, lineNumberCurrent: 0xB0B0B0, selection: 0x37393D,
             foldPill: 0x1B1B1B, foldPillHover: 0x262626, foldPillBorder: 0x2C2C2C, foldLabel: 0x8C8C8C, foldWave: 0x2A2A2A,
             inlayBackground: 0x1F1F1F, inlayText: 0x8F8F8F, lensText: 0x6E6E6E, searchMatch: 0x5A4416,
@@ -140,7 +140,7 @@ extension Palette {
     static let obsidian: Palette = {
         var p = Palette.carbon
         p = Palette(id: "obsidian", name: "Obsidian",
-            window: 0x070707, sidebar: 0x090909, header: 0x0B0B0B, accent: 0x5E9BFF, folder: 0x8F96A3,
+            window: 0x070707, sidebar: 0x090909, header: 0x0B0B0B, accent: 0x5E9BFF, folder: 0x7D8796,
             background: 0x0D0D0D, text: 0xE4E4E4, lineNumber: 0x383838, lineNumberCurrent: 0xBDBDBD, selection: 0x333539,
             foldPill: 0x161616, foldPillHover: 0x212121, foldPillBorder: 0x262626, foldLabel: 0x878787, foldWave: 0x232323,
             inlayBackground: 0x191919, inlayText: 0x8A8A8A, lensText: 0x666666, searchMatch: 0x5A4416,
@@ -158,7 +158,7 @@ extension Palette {
     static let charcoal: Palette = {
         var p = Palette.carbon
         p = Palette(id: "charcoal", name: "Charcoal",
-            window: 0x151515, sidebar: 0x181818, header: 0x1B1B1B, accent: 0x4F8BFF, folder: 0x9AA3B2,
+            window: 0x151515, sidebar: 0x181818, header: 0x1B1B1B, accent: 0x4F8BFF, folder: 0x7D8796,
             background: 0x1E1E1E, text: 0xD4D4D4, lineNumber: 0x4A4A4A, lineNumberCurrent: 0xB4B4B4, selection: 0x3A3D41,
             foldPill: 0x252525, foldPillHover: 0x2F2F2F, foldPillBorder: 0x353535, foldLabel: 0x8E8E8E, foldWave: 0x313131,
             inlayBackground: 0x2A2A2A, inlayText: 0x939393, lensText: 0x737373, searchMatch: 0x5A4416,

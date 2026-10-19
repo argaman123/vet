@@ -102,13 +102,14 @@ private struct SectionHeader: View {
         let files = nodes.flatMap(\.fileChanges)
         let states = Set(files.map { review.stage(of: $0) })
         HStack(spacing: 6) {
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            Text("\(files.count)").font(.subheadline).foregroundStyle(.tertiary).monospacedDigit()
+            Spacer()
             TriStateCheckbox(state: states == [.staged] ? .staged : states == [.unstaged] ? .unstaged : .partial) { on in
                 for n in nodes { review.setStaged(n, on) }
             }
-            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-            Spacer()
-            Text("\(files.count)").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
-                .padding(.trailing, 8) // the header runs past the rows' inset; keep the count inside
+            .alignedToTextBaseline()
+            .padding(.trailing, 8) // the header runs past the rows' inset; line up with the rows
         }
     }
 }
@@ -149,12 +150,12 @@ struct ChangeNodeRow: View {
                 ForEach(item.children) { ChangeNodeRow(app: app, item: $0, quickLook: $quickLook) }
             } label: {
                 HStack(spacing: 6) {
-                    TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }
                     Label { Text(item.name) } icon: { Image(systemName: "folder.fill").foregroundStyle(Color(nsColor: DiffTheme.folder)) }
                         .lineLimit(1)
                         .opacity(review.stage(of: node) == .staged ? 0.65 : 1) // reviewed names recede
                     Spacer(minLength: 0)
-                    ReviewBar(fraction: review.reviewedFraction(node))
+                    ReviewBar(fraction: review.reviewedFraction(node)).alignedToTextBaseline().alignedToTextBaseline()
+                    TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
                 }
             }
             .tag(node.path)
@@ -203,7 +204,6 @@ private struct FileChangeLabel: View {
         let review = app.workspace.review
         let change = node.change!
         HStack(spacing: 6) {
-            TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }
             Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 0) {
                 Text(node.name).lineLimit(1).truncationMode(.middle)
@@ -214,7 +214,8 @@ private struct FileChangeLabel: View {
                 }
             }
             Spacer(minLength: 4)
-            ReviewBar(fraction: review.reviewedFraction(node))
+            ReviewBar(fraction: review.reviewedFraction(node)).alignedToTextBaseline()
+            TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
         }
         .help(change.kind.help)
     }

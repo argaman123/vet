@@ -10,7 +10,7 @@ final class RibbonGutterView: NSView {
     static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : 36 }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
-    static var checkWidth: CGFloat { Design.marker == .inline || Design.marker == .row ? 4 : 24 }
+    static var checkWidth: CGFloat { [.inline, .row, .native].contains(Design.marker) ? 4 : 24 }
 
     var mode: Mode = .split { didSet { needsDisplay = true } }
     var diffLayout: DiffLayout?
@@ -109,6 +109,16 @@ final class RibbonGutterView: NSView {
                 continue
             }
             guard let s = segment(for: id) else { b.isHidden = true; continue }
+            if mode == .split, b.style == .native {
+                // In the bridge, between the two number columns, at the middle of the ribbon.
+                let l0 = y(s.left.lowerBound, left: true), l1 = s.left.isEmpty ? l0 : y(s.left.upperBound, left: true)
+                let r0 = y(s.right.lowerBound, left: false), r1 = s.right.isEmpty ? r0 : y(s.right.upperBound, left: false)
+                let top = (l0 + r0) / 2, bottom = (l1 + r1) / 2
+                let cy = bottom - top >= DiffTheme.lineHeight ? top + DiffTheme.lineHeight / 2 : (top + bottom) / 2
+                b.frame = NSRect(x: Self.numbersWidth + (Self.ribbonWidth - 16) / 2, y: cy - 8, width: 16, height: 16)
+                b.isHidden = cy < -20 || cy > bounds.height + 20
+                continue
+            }
             if mode == .split {
                 // At the change's first new line; for removed lines, beside where the ribbon starts.
                 // Removed lines: centered on the line where they were removed (kept inside the view
@@ -185,11 +195,7 @@ final class RibbonGutterView: NSView {
                 }
                 DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: staged).setFill()
                 path.fill()
-                if h.id == currentID {
-                    DiffTheme.accent.setStroke()
-                    path.lineWidth = 1.5
-                    path.stroke()
-                }
+
 
             }
         }
@@ -219,8 +225,16 @@ final class RibbonGutterView: NSView {
             for s in segments.values { changedLeft.insert(integersIn: s.left); changedRight.insert(integersIn: s.right) }
         }
         let bright: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumberCurrent]
-        func number(_ n: Int, x: CGFloat, y: CGFloat, changed: Bool = false) {
-            let s = NSAttributedString(string: "\(n + 1)", attributes: changed ? bright : attrs)
+        // The change ⌘↩ approves next: its line numbers in the accent color.
+        let lit: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: DiffTheme.numberFont.pointSize, weight: .semibold),
+                                                  .foregroundColor: DiffTheme.accent]
+        var currentLeft = IndexSet(), currentRight = IndexSet()
+        if let currentID {
+            if mode == .unified, let r = unifiedRanges[currentID] { currentLeft.insert(integersIn: r); currentRight.insert(integersIn: r) }
+            else if let s = segments[currentID] { currentLeft.insert(integersIn: s.left); currentRight.insert(integersIn: s.right) }
+        }
+        func number(_ n: Int, x: CGFloat, y: CGFloat, changed: Bool = false, current: Bool = false) {
+            let s = NSAttributedString(string: "\(n + 1)", attributes: current ? lit : changed ? bright : attrs)
             let size = s.size()
             s.draw(at: NSPoint(x: x + Self.numbersWidth - 6 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2))
         }
@@ -231,9 +245,9 @@ final class RibbonGutterView: NSView {
             let count = Int(bounds.height / DiffTheme.lineHeight) + 2
             NSGraphicsContext.saveGraphicsState()
             NSRect(x: x, y: band, width: Self.numbersWidth, height: bounds.height - band).clip()
-            let changed = left ? changedLeft : changedRight
+            let changed = left ? changedLeft : changedRight, current = left ? currentLeft : currentRight
             for i in first..<min(list.count, first + count) {
-                if let n = list[i] { number(n, x: x, y: y(i, left: left), changed: changed.contains(i)) }
+                if let n = list[i] { number(n, x: x, y: y(i, left: left), changed: changed.contains(i), current: current.contains(i)) }
             }
             NSGraphicsContext.restoreGraphicsState()
             guard band > 0 else { return }

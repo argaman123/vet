@@ -17,7 +17,7 @@ enum DiffTheme {
 
     // MARK: Theme (Settings ▸ Theme; see CodeThemes.swift)
 
-    nonisolated(unsafe) private static var current: Palette = Palette.all.first { $0.id == UserDefaults.standard.string(forKey: "theme") } ?? .vet
+    nonisolated(unsafe) private static var current: Palette = Palette.all.first { $0.id == UserDefaults.standard.string(forKey: "theme") } ?? .carbon
     static var palette: Palette { current }
     static func setTheme(_ id: String) {
         guard let p = Palette.all.first(where: { $0.id == id }), p.id != current.id else { return }

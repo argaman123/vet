@@ -204,8 +204,7 @@ extension CodeTextView {
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: fg, .paragraphStyle: HintBox.paragraph]
             let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold).applying(.init(paletteColors: [fg]))
             let chevron = reviewed
-                ? NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Reviewed; show the change")?
-                    .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold).applying(.init(paletteColors: [DiffTheme.added])))
+                ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: "Reviewed; show the change")?.withSymbolConfiguration(config)
                 : NSImage(systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: "Show unchanged lines")?.withSymbolConfiguration(config)
             let size = (label as NSString).size(withAttributes: attrs)
             let chevronWidth = chevron?.size.width ?? 0

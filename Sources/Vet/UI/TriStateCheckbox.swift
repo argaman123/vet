@@ -37,3 +37,13 @@ struct TriStateCheckbox: NSViewRepresentable {
         }
     }
 }
+
+extension View {
+    /// Lines a control up with the row's text baseline, so a list's disclosure arrow (which
+    /// follows the label's first baseline) sits level with the row.
+    func alignedToTextBaseline() -> some View {
+        alignmentGuide(.firstTextBaseline) { d in d[VerticalAlignment.center] + 4 }
+            .alignmentGuide(.lastTextBaseline) { d in d[VerticalAlignment.center] + 4 }
+    }
+}
+
