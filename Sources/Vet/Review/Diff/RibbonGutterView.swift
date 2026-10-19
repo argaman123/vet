@@ -150,9 +150,9 @@ final class RibbonGutterView: NSView {
                 guard let s = segment(for: h.id) else { continue }
                 // A side with no lines ends in a short notch around its marker, not a hairline.
                 var l0 = y(s.left.lowerBound, left: true), l1 = y(s.left.upperBound, left: true)
-                if s.left.isEmpty { l0 -= 2; l1 = l0 + 4 }
+                if s.left.isEmpty { l0 -= 1; l1 = l0 + 2 }
                 var r0 = y(s.right.lowerBound, left: false), r1 = y(s.right.upperBound, left: false)
-                if s.right.isEmpty { r0 -= 2; r1 = r0 + 4 }
+                if s.right.isEmpty { r0 -= 1; r1 = r0 + 2 }
                 if max(l1, r1) < dirtyRect.minY || min(l0, r0) > dirtyRect.maxY { continue } // off screen
                 let staged = states[h.id] == .staged
                 // WebStorm's curve: control points at 30% and 70% across the ribbon.

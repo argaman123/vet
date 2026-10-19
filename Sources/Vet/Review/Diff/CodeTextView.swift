@@ -109,9 +109,9 @@ final class CodeTextView: NSTextView {
             r.fill()
         }
         for m in markers {
-            let r = NSRect(x: 0, y: y(ofLine: m.line) - 1.5, width: width, height: 3)
+            let r = NSRect(x: 0, y: y(ofLine: m.line) - 1, width: width, height: 2)
             guard r.intersects(rect) else { continue }
-            m.color.withAlphaComponent(0.85).setFill()
+            m.color.setFill()
             r.fill()
         }
         drawWordHighlights(in: rect)

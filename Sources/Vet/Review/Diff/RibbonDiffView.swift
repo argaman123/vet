@@ -268,9 +268,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
                 let change = DiffTheme.change(head: h.head, work: h.work)
                 let color = DiffTheme.marker(change)
                 let fill = DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: states[id] == .staged)
-                if s.left.isEmpty { leftMarkers.append((s.left.lowerBound, color)) }
+                // The side without lines gets a thin line in the ribbon's own color.
+                _ = color
+                if s.left.isEmpty { leftMarkers.append((s.left.lowerBound, fill)) }
                 else { leftBands.append(.init(lines: s.left, color: fill)) }
-                if s.right.isEmpty { rightMarkers.append((s.right.lowerBound, color)) }
+                if s.right.isEmpty { rightMarkers.append((s.right.lowerBound, fill)) }
                 else { rightBands.append(.init(lines: s.right, color: fill)) }
             case .fold(let id):
                 leftFolds[s.left.lowerBound] = id
