@@ -9,7 +9,7 @@ struct RootView: View {
         let ws = app.workspace, ui = app.ui
         NavigationSplitView {
             SidebarView(app: app)
-                .background(Color(nsColor: DiffTheme.sidebar))
+                .background(DiffTheme.palette.glassSidebar ? Color.clear : Color(nsColor: DiffTheme.sidebar))
                 .navigationSplitViewColumnWidth(min: 230, ideal: 290, max: 460)
         } detail: {
             MainArea(app: app)

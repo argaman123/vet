@@ -9,6 +9,8 @@ struct Palette: Sendable {
     var window: UInt32, sidebar: UInt32, header: UInt32
     /// The accent (selected controls, focus) and the folder color.
     var accent: UInt32 = 0x4F8BFF, folder: UInt32 = 0x4FD1C5
+    /// The sidebar is the system's Liquid Glass (not painted); the accent is the user's system accent.
+    var glassSidebar = false, systemAccent = false
     // Code panes
     var background: UInt32, text: UInt32, lineNumber: UInt32, lineNumberCurrent: UInt32, selection: UInt32
     var foldPill: UInt32, foldPillHover: UInt32, foldPillBorder: UInt32, foldLabel: UInt32, foldWave: UInt32
@@ -86,7 +88,47 @@ extension Palette {
         function: 0x00627A, property: 0x871094, parameter: 0x000000, classType: 0x000000, constant: 0x871094, namespace: 0x000000,
         fileModified: 0x0969DA, fileAdded: 0x1A7F37, fileDeleted: 0xCF222E, fileConflict: 0x9A6700)
 
-    static let all: [Palette] = [.vet, .monokai, .neon]
+    /// Neutral graphite: the system's own glass sidebar and accent color, code colors of its own.
+    static let graphite = Palette(
+        id: "graphite", name: "Graphite",
+        window: 0x1A1A1C, sidebar: 0x1E1E20, header: 0x1C1C1E, accent: 0x0A84FF, folder: 0x8E8E93, glassSidebar: true, systemAccent: true,
+        background: 0x18181A, text: 0xE2E2E6, lineNumber: 0x48484E, lineNumberCurrent: 0xB4B4BC, selection: 0x3A3A44,
+        foldPill: 0x232326, foldPillHover: 0x2E2E33, foldPillBorder: 0x34343A, foldLabel: 0x8E8E96, foldWave: 0x2C2C31,
+        inlayBackground: 0x26262A, inlayText: 0x9898A0, lensText: 0x76767E, searchMatch: 0x5A4A1C,
+        inserted: 0x1C3424, modified: 0x232F45, deleted: 0x3F2128,
+        insertedWord: 0x2C5A3A, modifiedWord: 0x33497A, deletedWord: 0x6B2A35,
+        addedMark: 0x32D74B, modifiedMark: 0x64A8FF, removedMark: 0xFF6961,
+        keyword: 0xF2A65A, string: 0x9CD67A, comment: 0x6E7480, number: 0xF5D76E, type: 0xC5A8FF,
+        decorator: 0xFF9DB0, tag: 0x7CC4FF, attribute: 0xF2A65A,
+        function: 0x7CC4FF, property: 0xFF9DB0, parameter: 0xE6B8FF, classType: 0xC5A8FF, constant: 0xFF8B7B, namespace: 0x7CDCD0,
+        fileModified: 0x64A8FF, fileAdded: 0x32D74B, fileDeleted: 0xFF6961, fileConflict: 0xFFD60A)
+
+    /// Warm charcoal with an amber accent.
+    static let ember = Palette(
+        id: "ember", name: "Ember",
+        window: 0x110E0D, sidebar: 0x141110, header: 0x171312, accent: 0xFF9E5E, folder: 0xFFB86B,
+        background: 0x1A1614, text: 0xEAE0D8, lineNumber: 0x4E443E, lineNumberCurrent: 0xC4B6AC, selection: 0x4A3628,
+        foldPill: 0x221C19, foldPillHover: 0x2E2622, foldPillBorder: 0x352C27, foldLabel: 0x9A8C82, foldWave: 0x302824,
+        inlayBackground: 0x261F1C, inlayText: 0xA0928A, lensText: 0x7E7068, searchMatch: 0x5C3E14,
+        inserted: 0x22331E, modified: 0x3B2E1A, deleted: 0x3E1E1C,
+        insertedWord: 0x37562E, modifiedWord: 0x664A22, deletedWord: 0x6A2C28,
+        addedMark: 0x8CCF5A, modifiedMark: 0xFFB454, removedMark: 0xFF6B5B,
+        keyword: 0xFF9E5E, string: 0xC3E88D, comment: 0x7A6C62, number: 0xF78C6C, type: 0x8FD3C7,
+        decorator: 0xF0A3B5, tag: 0xFF9E5E, attribute: 0xFFD27A,
+        function: 0xFFD27A, property: 0xF0A3B5, parameter: 0xD7B6FF, classType: 0x8FD3C7, constant: 0xFF7B6B, namespace: 0x8FD3C7,
+        fileModified: 0xFFB454, fileAdded: 0x8CCF5A, fileDeleted: 0xFF6B5B, fileConflict: 0xFF6B5B)
+
+    static let all: [Palette] = [.vet, .graphite, .ember, .monokai, .neon]
+}
+
+/// Design variants being tried (Settings-free switches read from defaults; mockups for now).
+enum Design {
+    /// How a file or section is marked reviewed.
+    enum Marker: String { case ring, native, dot, inline }
+    /// What joins the two sides of the diff.
+    enum Bridge: String { case ribbon, lines, map }
+    static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .ring }
+    static var bridge: Bridge { Bridge(rawValue: UserDefaults.standard.string(forKey: "design.bridge") ?? "") ?? .ribbon }
 }
 
 /// The code font choices (SF Mono is the system's; Google Sans Code ships with Vet).

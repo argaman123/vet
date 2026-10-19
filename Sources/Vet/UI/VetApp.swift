@@ -71,6 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHook.on("center") { _ in
             for w in NSApp.windows where w.isVisible && w.frame.width > 400 { w.setFrame(NSRect(x: 218, y: 92, width: 1440, height: 900), display: true) }
         }
+        SnapshotHook.on("stagehunk") { [weak self] args in
+            // stagehunk <n>: mark the open diff's nth change reviewed
+            guard let self, let staging = self.workspace.review.diff?.staging, let n = Int(args.first ?? "0"), n < staging.hunks.count else { return }
+            self.workspace.review.setHunk(staging.hunks[n].id, staged: true, snapshot: staging.snapshotID)
+        }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
             guard args.count == 2, let line = Int(args[0]), let character = Int(args[1]) else { return }

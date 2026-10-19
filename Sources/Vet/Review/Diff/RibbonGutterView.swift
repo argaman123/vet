@@ -7,10 +7,10 @@ final class RibbonGutterView: NSView {
     /// `unified`: one pane; both number columns (HEAD, working file) then the checkboxes.
     enum Mode { case split, rightOnly, leftOnly, unified }
     static let numbersWidth: CGFloat = 40
-    static let ribbonWidth: CGFloat = 36
+    static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : 36 }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
-    static let checkWidth: CGFloat = 24
+    static var checkWidth: CGFloat { Design.marker == .inline ? 4 : 24 }
 
     var mode: Mode = .split { didSet { needsDisplay = true } }
     var diffLayout: DiffLayout?
@@ -54,6 +54,7 @@ final class RibbonGutterView: NSView {
         for seg in diffLayout?.segments ?? [] { if case .hunk(let id) = seg.kind { segments[id] = seg } }
         for h in hunks {
             let b = StageToggle(id: h.id) { [weak self] id in self?.toggled(id) }
+            b.isHidden = Design.marker == .inline
             addSubview(b)
             boxes[h.id] = b
         }
@@ -95,6 +96,7 @@ final class RibbonGutterView: NSView {
 
     private func placeCheckboxes() {
         let (x0, x1) = ribbonX
+        if Design.marker == .inline { boxes.values.forEach { $0.isHidden = true }; return }
         for (id, b) in boxes {
             if mode == .unified {
                 guard let r = unifiedRanges[id] else { b.isHidden = true; continue }
@@ -134,7 +136,7 @@ final class RibbonGutterView: NSView {
         bounds.fill()
         guard let diffLayout else { return }
         // Ribbons.
-        if mode == .split {
+        if mode == .split && Design.bridge != .map {
             let (x0, x1) = ribbonX
             for h in hunks {
                 guard let s = segment(for: h.id) else { continue }
@@ -158,6 +160,21 @@ final class RibbonGutterView: NSView {
                 path.line(to: NSPoint(x: 0, y: l1))
                 path.close()
                 let change = DiffTheme.change(head: h.head, work: h.work)
+                if Design.bridge == .lines {
+                    // Just the two edges, in the change's color: light, and the code stays the focus.
+                    let edges = NSBezierPath()
+                    edges.move(to: NSPoint(x: x0, y: l0))
+                    edges.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: c1, y: l0), controlPoint2: NSPoint(x: c2, y: r0))
+                    edges.move(to: NSPoint(x: x0, y: l1))
+                    edges.curve(to: NSPoint(x: x1, y: r1), controlPoint1: NSPoint(x: c1, y: l1), controlPoint2: NSPoint(x: c2, y: r1))
+                    edges.lineWidth = 1.5
+                    DiffTheme.marker(change).withAlphaComponent(staged ? 0.35 : 0.9).setStroke()
+                    edges.stroke()
+                    DiffTheme.fill(change, hasWords: false, staged: staged).setFill()
+                    NSRect(x: 0, y: l0, width: x0, height: l1 - l0).fill()
+                    NSRect(x: x1, y: r0, width: bounds.width - x1, height: r1 - r0).fill()
+                    continue
+                }
                 DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: staged).setFill()
                 path.fill()
 
@@ -257,8 +274,17 @@ final class RibbonGutterView: NSView {
 final class StageToggle: NSView {
     let id: Int
     let onToggle: (Int) -> Void
-    var state: StageState = .unstaged { didSet { if oldValue != state { needsDisplay = true; setAccessibilityValue(state == .staged ? 1 : state == .partial ? 2 : 0) } } }
+    var state: StageState = .unstaged {
+        didSet {
+            guard oldValue != state else { return }
+            needsDisplay = true
+            setAccessibilityValue(state == .staged ? 1 : state == .partial ? 2 : 0)
+            native?.state = switch state { case .staged: .on; case .unstaged: .off; case .partial: .mixed }
+        }
+    }
     private var hovering = false { didSet { needsDisplay = true } }
+    /// The system checkbox, in the "native" design.
+    private var native: NSButton?
 
     init(id: Int, onToggle: @escaping (Int) -> Void) {
         self.id = id
@@ -269,7 +295,17 @@ final class StageToggle: NSView {
         setAccessibilityRole(.checkBox)
         setAccessibilityLabel("Stage this section (mark it reviewed)")
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+        if Design.marker == .native {
+            let b = NSButton(checkboxWithTitle: "", target: self, action: #selector(nativeClicked))
+            b.allowsMixedState = true
+            b.controlSize = .small
+            b.frame = bounds
+            b.autoresizingMask = [.width, .height]
+            addSubview(b)
+            native = b
+        }
     }
+    @objc private func nativeClicked() { onToggle(id) }
     required init?(coder: NSCoder) { fatalError() }
 
     override func accessibilityPerformPress() -> Bool { onToggle(id); return true }
@@ -279,6 +315,11 @@ final class StageToggle: NSView {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     override func draw(_ dirtyRect: NSRect) {
+        switch Design.marker {
+        case .native: return
+        case .dot, .inline: drawDot(); return
+        case .ring: break
+        }
         let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 1.5))
         switch state {
         case .staged:
@@ -300,6 +341,24 @@ final class StageToggle: NSView {
                 dash.lineWidth = 1.8; dash.lineCapStyle = .round
                 DiffTheme.added.setStroke(); dash.stroke()
             }
+        }
+    }
+
+    /// Mail's unread dot: a dot means "still to review"; half a dot, partly; none, reviewed (a
+    /// faint ring shows under the pointer, to mark it again).
+    private func drawDot() {
+        let dot = NSBezierPath(ovalIn: NSRect(x: bounds.midX - 4.5, y: bounds.midY - 4.5, width: 9, height: 9))
+        switch state {
+        case .unstaged:
+            DiffTheme.accent.setFill(); dot.fill()
+        case .partial:
+            DiffTheme.accent.setStroke(); dot.lineWidth = 1.5; dot.stroke()
+            NSGraphicsContext.saveGraphicsState()
+            NSRect(x: bounds.midX - 5, y: bounds.minY, width: 5, height: bounds.height).clip()
+            DiffTheme.accent.setFill(); dot.fill()
+            NSGraphicsContext.restoreGraphicsState()
+        case .staged:
+            if hovering { DiffTheme.foldLabel.setStroke(); dot.lineWidth = 1.2; dot.stroke() }
         }
     }
 }

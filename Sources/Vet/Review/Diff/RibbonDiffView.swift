@@ -266,6 +266,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         leftText.foldLines = leftFolds; rightText.foldLines = rightFolds
         if mode == .unified { applyUnifiedDecorations(layout, staging: staging, states: states) }
         placeCards(layout)
+        placeSectionControls(layout, staging: staging, states: states)
         leftText.window?.invalidateCursorRects(for: leftText)
         rightText.window?.invalidateCursorRects(for: rightText)
 
@@ -387,7 +388,58 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         return min(760, max(260, (pane > 50 ? pane : fallback) - 28))
     }
 
+    // MARK: Design variants: inline review buttons, the change map
+
+    private var pills: [(button: NSButton, row: Int)] = []
+    private let changeMap = ChangeMapView()
+
+    /// "Mark Reviewed" buttons on each change (the inline design), and the change map strip.
+    private func placeSectionControls(_ layout: DiffLayout, staging: SectionStaging, states: [Int: StageState]) {
+        pills.forEach { $0.button.removeFromSuperview() }
+        pills = []
+        let total = max(1, unifiedRows?.count ?? layout.right.count)
+        var marks: [ChangeMapView.Mark] = []
+        for seg in layout.segments {
+            guard case .hunk(let id) = seg.kind, let h = staging.hunks.first(where: { $0.id == id }) else { continue }
+            let rows = unifiedHunks[id] ?? seg.right
+            let staged = states[id] == .staged
+            marks.append(.init(rows: rows, color: DiffTheme.marker(DiffTheme.change(head: h.head, work: h.work)), staged: staged))
+            guard Design.marker == .inline, mode != .leftOnly else { continue }
+            let b = ClosureButton(title: staged ? "Reviewed" : "Mark Reviewed") { [weak self] in
+                self?.onToggle?(id, !staged, staging.snapshotID)
+            }
+            b.bezelStyle = .glass
+            b.controlSize = .small
+            b.image = NSImage(systemSymbolName: staged ? "checkmark.circle.fill" : "checkmark.circle", accessibilityDescription: nil)
+            b.imagePosition = .imageLeading
+            b.contentTintColor = staged ? DiffTheme.added : nil
+            b.sizeToFit()
+            addSubview(b)
+            pills.append((b, rows.lowerBound))
+        }
+        changeMap.marks = marks
+        changeMap.total = total
+        changeMap.isHidden = Design.bridge != .map
+        changeMap.onJump = { [weak self] row in self?.scrollRight(toLine: max(0, row - 4)) }
+        if changeMap.superview == nil { addSubview(changeMap) }
+        positionCards()
+    }
+
     private func positionCards() {
+        // Inline review buttons: top-right of each change, in the new (right) pane.
+        let scroll = rightScroll
+        let clip = convert(scroll.contentView.bounds, from: scroll.contentView)
+        for p in pills {
+            let rowRect = convert(NSRect(x: 0, y: rightText.y(ofLine: p.row), width: 1, height: DiffTheme.lineHeight), from: rightText)
+            let size = p.button.frame.size
+            p.button.frame = NSRect(x: scroll.frame.maxX - size.width - 22, y: rowRect.minY - 1, width: size.width, height: size.height)
+            p.button.isHidden = !clip.insetBy(dx: 0, dy: -4).contains(NSPoint(x: clip.midX, y: rowRect.midY))
+        }
+        if !changeMap.isHidden {
+            changeMap.frame = NSRect(x: rightScroll.frame.maxX - 16, y: rightScroll.frame.minY, width: 16, height: rightScroll.frame.height)
+            let doc = max(1, rightText.frame.height)
+            changeMap.viewport = (rightScroll.contentView.bounds.minY / doc)...(rightScroll.contentView.bounds.maxY / doc)
+        }
         for place in cardPlaces {
             let tv = place.left ? leftText : rightText, scroll = place.left ? leftScroll : rightScroll
             let frame = convert(place.rect, from: tv)
@@ -838,3 +890,50 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         if let target { scrollRight(toLine: max(0, target - Int(scroll.contentView.bounds.height / DiffTheme.lineHeight / 3))) }
     }
 }
+
+/// A button that runs a closure.
+final class ClosureButton: NSButton {
+    private var run: () -> Void = {}
+    convenience init(title: String, action: @escaping () -> Void) {
+        self.init(frame: .zero)
+        self.title = title
+        run = action
+        target = self
+        self.action = #selector(fire)
+    }
+    @objc private func fire() { run() }
+}
+
+/// The change map: the whole file as a thin strip at the edge, each change a colored mark
+/// (hollow once reviewed), the visible part outlined. Click to jump; it doubles as progress.
+final class ChangeMapView: NSView {
+    struct Mark { let rows: Range<Int>; let color: NSColor; let staged: Bool }
+    var marks: [Mark] = [] { didSet { needsDisplay = true } }
+    var total = 1 { didSet { needsDisplay = true } }
+    var viewport: ClosedRange<CGFloat> = 0...0 { didSet { needsDisplay = true } }
+    var onJump: ((Int) -> Void)?
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        DiffTheme.header.setFill()
+        bounds.fill()
+        DiffTheme.foldPillBorder.setFill()
+        NSRect(x: 0, y: 0, width: 1, height: bounds.height).fill()
+        let h = bounds.height
+        let view = NSRect(x: 1, y: viewport.lowerBound * h, width: bounds.width - 2, height: max(6, (viewport.upperBound - viewport.lowerBound) * h))
+        DiffTheme.foldPillHover.withAlphaComponent(0.6).setFill()
+        NSBezierPath(roundedRect: view, xRadius: 3, yRadius: 3).fill()
+        for m in marks {
+            let y = CGFloat(m.rows.lowerBound) / CGFloat(total) * h
+            let r = NSRect(x: 4, y: y, width: bounds.width - 7, height: max(5, CGFloat(max(1, m.rows.count)) / CGFloat(total) * h))
+            let p = NSBezierPath(roundedRect: r, xRadius: 2, yRadius: 2)
+            if m.staged { m.color.withAlphaComponent(0.8).setStroke(); p.lineWidth = 1; p.stroke() } else { m.color.setFill(); p.fill() }
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let y = convert(event.locationInWindow, from: nil).y
+        onJump?(Int(y / max(1, bounds.height) * CGFloat(total)))
+    }
+}
+
