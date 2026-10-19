@@ -190,7 +190,24 @@ final class CodeTextView: NSTextView {
         hoverTracking = t
     }
 
+    /// Something floats over the code at the pointer (the glass header or actions): the text
+    /// mustn't set its I-beam there, or hover through to the code.
+    func isCovered(_ event: NSEvent) -> Bool {
+        guard let content = window?.contentView, let hit = content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow) else { return false }
+        return hit !== self && !hit.isDescendant(of: self)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if isCovered(event) { return }
+        super.cursorUpdate(with: event)
+    }
+
     override func mouseMoved(with event: NSEvent) {
+        if isCovered(event) {
+            hoveredFoldLine = nil
+            hoverWork?.cancel()
+            return
+        }
         super.mouseMoved(with: event)
         let at = convert(event.locationInWindow, from: nil)
         let row = line(at: at)

@@ -190,13 +190,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func hideFocusRings() {
         NotificationCenter.default.addObserver(forName: NSWindow.didUpdateNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
-                guard let w = NSApp.keyWindow, let fr = w.firstResponder as? NSTextView, fr.isFieldEditor,
-                      let field = fr.delegate as? NSTextField, field.focusRingType != .none else { return }
+                // The field being typed in is the field editor's delegate, or (for the toolbar's
+                // search field) the text field the field editor sits in.
+                guard let w = NSApp.keyWindow else { return }
+                // The toolbar's search field draws its ring from the moment it takes focus: turn it
+                // off before then.
+                if let frame = w.contentView?.superview { Self.noRings(in: frame) }
+                guard let fr = w.firstResponder as? NSTextView, fr.isFieldEditor else { return }
+                var field = fr.delegate as? NSTextField
+                var v: NSView? = fr.superview
+                while field == nil, let cur = v { field = cur as? NSTextField; v = cur.superview }
+                guard let field, field.focusRingType != .none else { return }
                 field.focusRingType = .none
                 field.needsDisplay = true
                 field.superview?.needsDisplay = true
             }
         }
+    }
+
+    private static func noRings(in v: NSView) {
+        if let f = v as? NSSearchField, f.focusRingType != .none { f.focusRingType = .none; f.cell?.focusRingType = .none }
+        for sub in v.subviews { noRings(in: sub) }
     }
 
     // Double Shift opens Search Everywhere (files, classes, symbols, actions), as in IntelliJ.

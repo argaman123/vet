@@ -33,9 +33,13 @@ struct ProjectTool: View {
                     }
                 }
                 .quickLookPreview($quickLook)
-                .frame(maxHeight: .infinity)
+                .contentMargins(.bottom, 52, for: .scrollContent) // the last rows can scroll clear of the bar
+                .quietSelection(row ?? files.relativePath)
             }
-            // The tree's tools along the bottom, below the list (not over it), as in the changes list.
+        }
+        .frame(maxHeight: .infinity)
+        // The tree's tools in glass over the list, as in the changes list.
+        .overlay(alignment: .bottom) {
             HStack(spacing: 4) {
                 Text("All Files").foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
@@ -107,6 +111,7 @@ struct ProjectNodeRow: View {
                 .opacity(app.workspace.review.isMarked(node.path) ? 0.45 : 1)
             }
             .tag(node.path)
+            .quietRow(node.path)
             .contextMenu { menu }
         } else {
             HStack(spacing: 6) {
@@ -116,6 +121,7 @@ struct ProjectNodeRow: View {
             }
             .opacity(app.workspace.review.isMarked(node.path) ? 0.45 : 1) // unimportant files recede
             .tag(node.path)
+            .quietRow(node.path)
             .contextMenu { menu }
         }
     }

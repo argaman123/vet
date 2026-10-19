@@ -65,16 +65,35 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         updateSticky()
     }
 
-    /// Pins the enclosing declarations of the first visible line.
+    /// The glass header floats over the code: the text scrolls under it, and rests clear of it.
+    func setOverlay(top: CGFloat) {
+        guard scroll.contentInsets.top != top else { return }
+        let atTop = scroll.contentView.bounds.minY <= -scroll.contentInsets.top + 0.5
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets(top: top, left: 0, bottom: 0, right: 0)
+        if atTop { scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: -top)) }
+        scroll.reflectScrolledClipView(scroll.contentView)
+        gutter.offset = scroll.contentView.bounds.minY
+        updateSticky()
+    }
+
+    private func clampY(_ y: CGFloat) -> CGFloat {
+        let i = scroll.contentInsets
+        let maxY = max(-i.top, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height + i.bottom)
+        return min(max(-i.top, y), maxY)
+    }
+
+    /// Pins the enclosing declarations of the first visible line (below the floating header).
     private func updateSticky() {
         guard let storage = textView.textStorage else { return }
         let clip = scroll.contentView.bounds
-        let first = Int((clip.minY - DiffTheme.inset.height) / DiffTheme.lineHeight)
+        let top = scroll.contentInsets.top
+        let first = Int((clip.minY + top - DiffTheme.inset.height) / DiffTheme.lineHeight)
         sticky.show(StickyLinesView.rows(in: storage, first: max(0, first)))
         sticky.scrollX = clip.minX
         let scrollerWidth = scroll.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
         sticky.gutterWidth = LineNumberGutter.width
-        sticky.frame = NSRect(x: 0, y: 0, width: bounds.width - scrollerWidth, height: sticky.height)
+        sticky.frame = NSRect(x: 0, y: top, width: bounds.width - scrollerWidth, height: sticky.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -103,8 +122,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
 
     func scrollTo(line: Int, character: Int = 0) {
         let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - scroll.contentView.bounds.height / 3
-        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(max(0, y), maxY)))
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: clampY(y)))
         scroll.reflectScrolledClipView(scroll.contentView)
         gutter.highlighted = line
         if let range = textView.range(line: line, character: character) {
@@ -118,8 +136,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     /// taking focus or moving the selection (for previews).
     func reveal(line: Int, columns: Range<Int>?) {
         let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - scroll.contentView.bounds.height / 3
-        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(max(0, y), maxY)))
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: clampY(y)))
         scroll.reflectScrolledClipView(scroll.contentView)
         gutter.offset = scroll.contentView.bounds.minY
         gutter.highlighted = line

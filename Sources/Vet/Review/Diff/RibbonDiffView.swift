@@ -8,6 +8,8 @@ struct RibbonDiffView: NSViewRepresentable {
     let version: Int
     let jumpSerial: Int
     var approveSerial = 0
+    /// Room for the glass header and actions that float over the code.
+    var overlay = NSEdgeInsets()
 
     func makeNSView(context: Context) -> RibbonDiffNSView {
         let v = model.diffView // kept by the model across tab switches
@@ -32,6 +34,7 @@ struct RibbonDiffView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: RibbonDiffNSView, context: Context) {
+        view.setOverlay(top: overlay.top, bottom: overlay.bottom)
         if view.revertSerial != model.revertSerial {
             view.revertSerial = model.revertSerial
             view.discardEdits()
@@ -394,8 +397,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             rightScroll.contentView.scroll(to: keepRight)
             if let anchor { restore(anchor, staging: staging, layout: layout) }
         } else {
-            leftScroll.contentView.scroll(to: .zero)
-            rightScroll.contentView.scroll(to: .zero)
+            leftScroll.contentView.scroll(to: NSPoint(x: 0, y: -leftScroll.contentInsets.top))
+            rightScroll.contentView.scroll(to: NSPoint(x: 0, y: -rightScroll.contentInsets.top))
             if let first = layout.segments.first(where: { if case .hunk = $0.kind { true } else { false } }) {
                 var line = first.right.lowerBound
                 if case .hunk(let id) = first.kind, let r = unifiedHunks[id] { line = r.lowerBound }
@@ -812,8 +815,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         guard let d = display.firstIndex(where: { if case .code(let l) = $0 { l >= target } else { false } }) else { return }
         let scroll = a.left ? leftScroll : rightScroll
         let y = DiffTheme.inset.height + CGFloat(d) * DiffTheme.lineHeight + a.offset
-        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
-        scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: min(max(0, y), maxY)))
+        scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: clampY(y, scroll)))
     }
 
     private func showMessage(_ text: String) {
@@ -854,6 +856,30 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private static func text(_ lines: TextLines, _ display: [DiffLayout.DisplayLine], _ language: CodeLanguage,
                              words: [Int: [Range<Int>]], wordColor: [Int: NSColor], foldStarts: [Int: Int] = [:]) -> NSAttributedString {
         CodeText.attributed(lines, display, language, words: words, wordColor: wordColor, foldStarts: foldStarts)
+    }
+
+    // MARK: Floating glass over the code
+
+    /// The glass header and actions float over the code: each pane scrolls under them, and its
+    /// resting top and bottom leave the first and last lines clear of the glass.
+    func setOverlay(top: CGFloat, bottom: CGFloat) {
+        guard leftScroll.contentInsets.top != top || leftScroll.contentInsets.bottom != bottom else { return }
+        for scroll in [leftScroll, rightScroll] {
+            let atTop = scroll.contentView.bounds.minY <= -scroll.contentInsets.top + 0.5
+            scroll.automaticallyAdjustsContentInsets = false
+            scroll.contentInsets = NSEdgeInsets(top: top, left: 0, bottom: bottom, right: 0)
+            if atTop { scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: -top)) }
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        gutter.covered = (top, bottom)
+        syncGutter()
+    }
+
+    /// Where a pane may scroll to: from its top (above the document, under the header) to its end.
+    private func clampY(_ y: CGFloat, _ scroll: NSScrollView) -> CGFloat {
+        let i = scroll.contentInsets
+        let maxY = max(-i.top, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height + i.bottom)
+        return min(max(-i.top, y), maxY)
     }
 
     // MARK: Layout and divider
@@ -940,8 +966,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let mapped = layout.map(Double((anchor - DiffTheme.inset.height) / DiffTheme.lineHeight), fromLeft: fromLeft)
         let targetY = DiffTheme.inset.height + CGFloat(mapped) * DiffTheme.lineHeight - dst.contentView.bounds.height / 3
         syncing = true
-        let maxY = max(0, (dst.documentView?.frame.height ?? 0) - dst.contentView.bounds.height)
-        dst.contentView.scroll(to: NSPoint(x: src.contentView.bounds.origin.x, y: min(max(0, targetY), maxY)))
+        dst.contentView.scroll(to: NSPoint(x: src.contentView.bounds.origin.x, y: clampY(targetY, dst)))
         dst.reflectScrolledClipView(dst.contentView)
         syncing = false
         syncGutter()
@@ -962,27 +987,26 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             defer { if sticky === leftSticky { gutter.leftPinned = sticky.rows.map(\.line) } else { gutter.rightPinned = sticky.rows.map(\.line) } }
             guard visible, let storage = tv.textStorage, storage.length > 0 else { sticky.show([]); continue }
             let clip = scroll.contentView.bounds
-            let first = Int((clip.minY - DiffTheme.inset.height) / DiffTheme.lineHeight)
+            let top = scroll.contentInsets.top
+            let first = Int((clip.minY + top - DiffTheme.inset.height) / DiffTheme.lineHeight)
             sticky.show(StickyLinesView.rows(in: storage, first: max(0, first)))
             sticky.scrollX = clip.minX
             let scrollerWidth = scroll.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
-            sticky.frame = NSRect(x: scroll.frame.minX, y: scroll.frame.minY, width: scroll.frame.width - scrollerWidth, height: sticky.height)
+            sticky.frame = NSRect(x: scroll.frame.minX, y: scroll.frame.minY + top, width: scroll.frame.width - scrollerWidth, height: sticky.height)
         }
     }
 
     private func scrollPane(left: Bool, toLine line: Int) {
         let scroll = left ? leftScroll : rightScroll
         let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - scroll.contentView.bounds.height / 3
-        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
-        scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: min(max(0, y), maxY)))
+        scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: clampY(y, scroll)))
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
     private func scrollRight(toLine line: Int, animated: Bool = true) {
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
         let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight
-        let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
-        let target = NSPoint(x: 0, y: min(max(0, y), maxY))
+        let target = NSPoint(x: 0, y: clampY(y, scroll))
         // Jumps glide (the other pane follows), unless motion is reduced or the view is still loading.
         if animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { ctx in

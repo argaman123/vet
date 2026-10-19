@@ -71,19 +71,35 @@ private struct Placeholder: View {
 
 struct DiffScreen: View {
     let app: AppDelegate
+    @State private var top: CGFloat = 0
+    @State private var bottom: CGFloat = 0
 
     var body: some View {
         let review = app.workspace.review
-        VStack(spacing: 0) {
+        let glass = Design.direction == .glass
+        let header = VStack(spacing: 0) {
             if let doc = review.diff {
                 DiffHeader(app: app, doc: doc)
-                if let f = review.plan?.file(doc.change.path) { PlanSummary(file: f, index: review.plan?.index(of: f.path), total: review.plan?.files.count ?? 0) }
             }
-            RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial)
-            // Under the code, not over it (over the code the text would take the pointer).
-            ReviewFooter(app: app, floating: Design.direction == .glass)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        let diff = RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial,
+                                  overlay: NSEdgeInsets(top: glass ? top : 0, left: 0, bottom: glass ? bottom : 0, right: 0))
+        if glass {
+            // Glass: the header and the actions float over the code, which scrolls under them.
+            diff
+                // The fades sit in their own layer under the glass, so the glass samples them.
+                .overlay(alignment: .top) { EdgeFade(edge: .top, height: top) }
+                .overlay(alignment: .bottom) { EdgeFade(edge: .bottom, height: bottom) }
+                .overlay(alignment: .top) { header.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { top = $0 } }
+                .overlay(alignment: .bottom) { ReviewFooter(app: app, floating: true).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottom = $0 } }
+        } else {
+            VStack(spacing: 0) {
+                header
+                diff
+                ReviewFooter(app: app, floating: false)
+            }
+            .background(Color(nsColor: .textBackgroundColor))
+        }
     }
 }
 
@@ -108,6 +124,8 @@ struct DiffHeader: View {
             } else {
                 Text((change.path as NSString).deletingLastPathComponent).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             }
+            // Claude's note on this file, one click away instead of a second bar.
+            if let f = review.plan?.file(change.path) { ClaudeNoteButton(file: f) }
             Spacer(minLength: 12)
             if review.diffDirty {
                 Text("Edited").foregroundStyle(.secondary)
@@ -155,11 +173,24 @@ struct DiffHeader: View {
 
 struct EditorScreen: View {
     let app: AppDelegate
+    @State private var top: CGFloat = 0
 
     var body: some View {
+        let glass = Design.direction == .glass
+        if glass {
+            // Glass: the header floats over the code, which scrolls under it.
+            editor(overlayTop: top)
+                .overlay(alignment: .top) { EdgeFade(edge: .top, height: top) }
+                .overlay(alignment: .top) { header.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { top = $0 } }
+        } else {
+            VStack(spacing: 0) { header; editor(overlayTop: 0) }
+                .background(Color(nsColor: .textBackgroundColor))
+        }
+    }
+
+    private var header: some View {
         let files = app.workspace.files
-        VStack(spacing: 0) {
-            HeaderBar {
+        return HeaderBar {
                 if let url = files.openURL {
                     Image(nsImage: FileIcons.icon(for: url.lastPathComponent)).resizable().frame(width: 16, height: 16)
                     Text(url.lastPathComponent).fontWeight(.semibold)
@@ -191,6 +222,10 @@ struct EditorScreen: View {
                 } label: { Image(systemName: "ellipsis") }
                 .menuStyle(.button).menuIndicator(.hidden).fixedSize()
             }
+    }
+
+    @ViewBuilder private func editor(overlayTop: CGFloat) -> some View {
+        let files = app.workspace.files
             if let message = files.message {
                 Text(message).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -200,14 +235,30 @@ struct EditorScreen: View {
                     app.workspace.hover(url: url, text: text, line: line, character: character)
                 }, readingAids: { view, url in
                     app.workspace.loadReadingAids(editor: view, url: url)
-                })
+                }, overlayTop: overlayTop)
             }
-        }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 }
 
 // MARK: Shared
+
+/// Where code passes under floating glass, it fades out first (as Tahoe's scroll edges do), so
+/// the glass reads cleanly instead of showing sharp text through it. Reaches up under the top bar.
+struct EdgeFade: View {
+    let edge: VerticalEdge
+    /// The bar's height.
+    let height: CGFloat
+    var body: some View {
+        let bg = Color(nsColor: DiffTheme.background).opacity(1)
+        // Solid under the bar (the glass boosts whatever shows through it), then the code dissolves
+        // into it over the band just past the bar.
+        LinearGradient(stops: [.init(color: bg, location: 0), .init(color: bg.opacity(0.97), location: 0.8), .init(color: bg.opacity(0), location: 1)],
+                       startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
+            .frame(height: height + 26 + (edge == .top ? 60 : 0)) // a little past the bar, and up under the window's top bar
+            .padding(.top, edge == .top ? -60 : 0)
+            .allowsHitTesting(false)
+    }
+}
 
 /// A file header in standard material across the top of the content.
 struct HeaderBar<Content: View>: View {
@@ -218,12 +269,13 @@ struct HeaderBar<Content: View>: View {
             HStack(spacing: 8) { content }
                 .font(.callout)
                 .buttonStyle(.borderless)
+                .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the code's I-beam
                 .padding(.horizontal, 14)
                 .frame(height: 34)
-                .glassEffect(.regular, in: .capsule)
+                // A light tint of the code's own color keeps the header readable over passing code.
+                .glassEffect(.regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)), in: .capsule)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Color(nsColor: DiffTheme.background))
         } else {
             HStack(spacing: 8) { content }
                 .font(.callout)
@@ -336,17 +388,18 @@ struct ReviewFooter: View {
         }
         .font(.callout)
         .buttonStyle(.borderless)
+        .pointerStyle(.link)
+        .onContinuousHover { if case .active = $0 { NSCursor.pointingHand.set() } }
         if floating {
             HStack {
                 Spacer()
                 buttons
                     .padding(.horizontal, 16)
                     .frame(height: 32)
-                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .glassEffect(.regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)).interactive(), in: .capsule)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color(nsColor: DiffTheme.background))
+            .padding(.vertical, 10)
         } else {
             HStack { Spacer(); buttons }
                 .padding(.horizontal, 16)
@@ -358,40 +411,37 @@ struct ReviewFooter: View {
 }
 
 /// Claude's summary of the open file (from the review plan), with its notes on key functions.
-struct PlanSummary: View {
+/// Claude's note on the open file (from the review plan): a sparkle in the file's header that
+/// opens the summary and the notes on key functions.
+struct ClaudeNoteButton: View {
     let file: ReviewPlan.File
-    let index: Int?
-    let total: Int
-    @AppStorage("planSummaryOpen") private var open = false
+    @State private var open = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "sparkle").font(.caption).foregroundStyle(.secondary)
-                Text(file.summary).foregroundStyle(.secondary).lineLimit(open ? nil : 1).fixedSize(horizontal: false, vertical: open)
-                Spacer(minLength: 8)
-                if !(file.notes ?? []).isEmpty {
-                    Button { open.toggle() } label: { Image(systemName: open ? "chevron.up" : "chevron.down") }
-                        .buttonStyle(.borderless).help(open ? "Hide notes" : "Show notes")
-                }
-            }
-            if open, let notes = file.notes, !notes.isEmpty {
-                ForEach(Array(notes.enumerated()), id: \.offset) { _, n in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        if let s = n.symbol { Text(s).font(.system(.caption, design: .monospaced)).foregroundStyle(Color(nsColor: DiffTheme.palette.function == 0 ? .labelColor : DiffTheme.semantic("function", modifiers: []) ?? .labelColor)) }
-                        if let l = n.line { Text("line \(l + 1)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary) }
-                        Text(n.text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Button { open.toggle() } label: { Image(systemName: "sparkle") }
+            .foregroundStyle(.secondary)
+            .help(file.summary)
+            .popover(isPresented: $open, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(file.summary).fixedSize(horizontal: false, vertical: true)
+                    if let notes = file.notes, !notes.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(notes.enumerated()), id: \.offset) { _, n in
+                                VStack(alignment: .leading, spacing: 1) {
+                                    HStack(spacing: 6) {
+                                        if let sym = n.symbol { Text(sym).font(.system(.callout, design: .monospaced)).foregroundStyle(Color(nsColor: DiffTheme.semantic("function", modifiers: []) ?? .labelColor)) }
+                                        if let l = n.line { Text("line \(l + 1)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary) }
+                                    }
+                                    Text(n.text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
                     }
-                    .padding(.leading, 22)
                 }
+                .font(.callout)
+                .padding(14)
+                .frame(width: 360, alignment: .leading)
             }
-        }
-        .font(.callout)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: DiffTheme.background))
-        .overlay(alignment: .bottom) { Divider() }
     }
 }
 

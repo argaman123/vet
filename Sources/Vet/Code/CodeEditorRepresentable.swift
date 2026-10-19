@@ -11,6 +11,8 @@ struct CodeEditorRepresentable: NSViewRepresentable {
     var hover: ((URL, String, Int, Int) -> Void)?
     /// Loads semantic colors, hints, lenses and gutter icons for the shown text.
     var readingAids: ((CodeEditorView, URL) -> Void)?
+    /// Room for the glass header floating over the code.
+    var overlayTop: CGFloat = 0
 
     func makeNSView(context: Context) -> CodeEditorView {
         let v = model.editorView // kept by the model across tab switches
@@ -21,6 +23,7 @@ struct CodeEditorRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ view: CodeEditorView, context: Context) {
+        view.setOverlay(top: overlayTop)
         view.onNavigate = { [weak view, weak model] kind, line, character in
             guard let view, let model, let url = model.openURL else { return }
             navigator?(kind, url, view.currentText, line, character)

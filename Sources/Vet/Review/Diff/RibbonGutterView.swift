@@ -340,8 +340,12 @@ final class RibbonGutterView: NSView {
 
     override func mouseUp(with event: NSEvent) { dragStart = nil }
 
+    /// The bands the glass header and actions cover: no resize cursor under them.
+    var covered: (top: CGFloat, bottom: CGFloat) = (0, 0) { didSet { window?.invalidateCursorRects(for: self) } }
+
     override func resetCursorRects() {
-        if mode == .split { addCursorRect(bounds, cursor: .resizeLeftRight) }
+        guard mode == .split else { return }
+        addCursorRect(NSRect(x: 0, y: covered.top, width: bounds.width, height: max(0, bounds.height - covered.top - covered.bottom)), cursor: .resizeLeftRight)
     }
 }
 

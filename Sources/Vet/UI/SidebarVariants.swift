@@ -13,9 +13,7 @@ struct ChangesVariant: View {
 
     var body: some View {
         let review = app.workspace.review
-        // The bar sits below the list, not over it: rows never show through the glass.
-        VStack(spacing: 0) {
-            Group {
+        Group {
             if app.projects.current == nil {
                 EmptyToolState(title: "No Project", message: "Open a project folder to review its changes.") {
                     Button("Open Folder…") { app.projects.showOpenPanel() }
@@ -28,9 +26,9 @@ struct ChangesVariant: View {
                 list
             }
         }
-            .frame(maxHeight: .infinity)
-            FilterBar(app: app, filter: $filter, tree: style == .tree)
-        }
+        .frame(maxHeight: .infinity)
+        // Glass over the list: the rows pass under the bar.
+        .overlay(alignment: .bottom) { FilterBar(app: app, filter: $filter, tree: style == .tree) }
         .quickLookPreview($quickLook)
     }
 
@@ -51,7 +49,7 @@ struct ChangesVariant: View {
                 Section {
                     ForEach(Array(planPaths.enumerated()), id: \.element) { i, path in
                         if let node = FileTreeNode.find(path, in: review.tree) {
-                            VariantFileRow(app: app, node: node, index: i + 1, detail: nil).tag(path)
+                            VariantFileRow(app: app, node: node, index: i + 1, detail: nil).tag(path).quietRow(path)
                         }
                     }
                 } header: { VariantHeader(title: "Review Order", count: planPaths.count) }
@@ -78,7 +76,7 @@ struct ChangesVariant: View {
                     Section {
                         ForEach(byFolder[folder]!.sorted { $0.path < $1.path }, id: \.path) { c in
                             if let node = FileTreeNode.find(c.path, in: review.tree) {
-                                VariantFileRow(app: app, node: node, index: nil, detail: nil).tag(c.path)
+                                VariantFileRow(app: app, node: node, index: nil, detail: nil).tag(c.path).quietRow(c.path)
                             }
                         }
                     } header: { VariantHeader(title: folder.isEmpty ? "Project" : folder, count: nil, path: true) }
@@ -109,6 +107,8 @@ struct ChangesVariant: View {
         .onKeyPress(.space) { review.approveAndNext(); return .handled }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, 52, for: .scrollContent) // the last rows can scroll clear of the bar
+        .quietSelection(row ?? review.selectedPath)
     }
 
     /// Files as one flat list: the name, then its folder in a quiet tone.
@@ -117,7 +117,7 @@ struct ChangesVariant: View {
         ForEach(changes.sorted { $0.path < $1.path }, id: \.path) { c in
             if let node = FileTreeNode.find(c.path, in: review.tree) {
                 let folder = (c.path as NSString).deletingLastPathComponent
-                VariantFileRow(app: app, node: node, index: nil, detail: folder.isEmpty ? nil : folder).tag(c.path)
+                VariantFileRow(app: app, node: node, index: nil, detail: folder.isEmpty ? nil : folder).tag(c.path).quietRow(c.path)
             }
         }
     }
@@ -208,8 +208,9 @@ private struct VariantTreeRow: View {
                 .onHover { hovering = $0 }
             }
             .tag(node.path)
+            .quietRow(node.path)
         } else {
-            VariantFileRow(app: app, node: node, index: nil, detail: nil).tag(node.path)
+            VariantFileRow(app: app, node: node, index: nil, detail: nil).tag(node.path).quietRow(node.path)
         }
     }
 }
