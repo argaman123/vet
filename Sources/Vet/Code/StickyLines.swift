@@ -26,7 +26,8 @@ final class StickyLinesView: NSView {
     var height: CGFloat { rows.isEmpty ? 0 : CGFloat(rows.count) * DiffTheme.lineHeight + 2 }
 
     override func draw(_ dirtyRect: NSRect) {
-        DiffTheme.background.setFill()
+        // Opaque even when the code is a translucent veil, so the lines scrolled under don't show through.
+        DiffTheme.background.withAlphaComponent(1).setFill()
         bounds.fill()
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: NSRect(x: gutterWidth, y: 0, width: bounds.width - gutterWidth, height: bounds.height)).addClip()
