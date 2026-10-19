@@ -181,7 +181,7 @@ enum Design {
     enum Marker: String { case ring, native, dot, inline, bar, row, check, circle, mono, progress }
     /// The whole app's look around the code.
     enum Direction: String { case current, glass, monolith, studio }
-    static var direction: Direction { Direction(rawValue: UserDefaults.standard.string(forKey: "design.direction") ?? "") ?? .current }
+    static var direction: Direction { Direction(rawValue: UserDefaults.standard.string(forKey: "design.direction") ?? "") ?? .glass }
     /// How changed files' names show their status.
     enum Names { case colored, dot, glyph }
     static var names: Names { switch direction { case .glass: .dot; case .monolith: .glyph; default: .colored } }
