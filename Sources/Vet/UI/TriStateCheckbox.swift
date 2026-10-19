@@ -10,7 +10,7 @@ struct TriStateCheckbox: NSViewRepresentable {
     let action: (Bool) -> Void
 
     func makeNSView(context: Context) -> StageToggle {
-        let t = StageToggle(id: 0) { [coordinator = context.coordinator] _ in coordinator.clicked() }
+        let t = StageToggle(id: 0, inList: true) { [coordinator = context.coordinator] _ in coordinator.clicked() }
         t.setContentHuggingPriority(.required, for: .horizontal)
         return t
     }

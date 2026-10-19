@@ -7,6 +7,7 @@ struct RibbonDiffView: NSViewRepresentable {
     let model: ReviewModel
     let version: Int
     let jumpSerial: Int
+    var approveSerial = 0
 
     func makeNSView(context: Context) -> RibbonDiffNSView {
         let v = model.diffView // kept by the model across tab switches
@@ -25,6 +26,8 @@ struct RibbonDiffView: NSViewRepresentable {
         v.onNavigate = { [weak model] kind, left, line, character in model?.navigate(kind, left: left, line: line, character: character) }
         v.onHover = { [weak model] line, character in model?.hover(line: line, character: character) }
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
+        v.onFileDone = { [weak model] in model?.nextUnreviewed() }
+        v.onApproveKey = { [weak model] in model?.approveAndNext() }
         return v
     }
 
@@ -46,6 +49,10 @@ struct RibbonDiffView: NSViewRepresentable {
         if jumpSerial != view.lastJump {
             view.lastJump = jumpSerial
             view.jump(forward: model.jump.forward)
+        }
+        if approveSerial != view.lastApprove {
+            view.lastApprove = approveSerial
+            view.approveAndNext()
         }
     }
 }
@@ -86,6 +93,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     var onToggle: ((Int, Bool, String) -> Void)?
     var onFoldClick: ((Int) -> Void)?
     var lastJump = 0
+    var lastApprove = 0
+    /// Every change in the file is reviewed: move on to the next file.
+    var onFileDone: (() -> Void)?
+    /// Space in a read-only pane.
+    var onApproveKey: (() -> Void)?
     var shownVersion = -1
 
     private let (leftScroll, leftText) = CodeTextView.make()
@@ -143,6 +155,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
                                                    name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         }
         for tv in [leftText, rightText] { tv.onFoldClick = { [weak self] id in self?.onFoldClick?(id) } }
+        leftText.onSpace = { [weak self] in self?.onApproveKey?() }
         NotificationCenter.default.addObserver(self, selector: #selector(fontChanged), name: .vetCodeFontChanged, object: nil)
         // The working file (right side) can be edited and saved; HEAD (left) can't.
         rightText.isEditable = true
@@ -201,14 +214,19 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         case .deleted: .leftOnly
         default: staging.head.count == 0 ? .rightOnly : unified ? .unified : .split
         }
+        var states: [Int: StageState] = [:]
+        for h in staging.hunks { states[h.id] = pendingHunks[h.id] ?? staging.state(of: h) }
+        // Reviewed sections fold away (click one to see it again).
+        let reviewed = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? true
+            ? Set(staging.hunks.filter { states[$0.id] == .staged }.map(\.id)) : []
         let layout = DiffLayout(headCount: staging.head.count, workCount: staging.work.count,
                                 hunks: staging.hunks, folding: folding, expanded: expanded,
                                 notes: notes.map { .init(id: $0.id, left: $0.left, line: $0.line,
                                                          rows: NoteCardView.rows(for: $0.text, editing: $0.id == editingNoteID,
-                                                                                 width: cardWidth(left: $0.left && mode != .unified))) })
+                                                                                 width: cardWidth(left: $0.left && mode != .unified))) }
+                                    + Self.changeHeaderAnchors(staging, reviewed: reviewed),
+                                reviewed: reviewed)
         diffLayout = layout
-        var states: [Int: StageState] = [:]
-        for h in staging.hunks { states[h.id] = pendingHunks[h.id] ?? staging.state(of: h) }
 
         var leftWords: [Int: [Range<Int>]] = [:], rightWords: [Int: [Range<Int>]] = [:]
         for h in staging.hunks {
@@ -267,6 +285,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         if mode == .unified { applyUnifiedDecorations(layout, staging: staging, states: states) }
         placeCards(layout)
         placeSectionControls(layout, staging: staging, states: states)
+        placeChangeHeaders(layout, staging: staging, states: states)
         leftText.window?.invalidateCursorRects(for: leftText)
         rightText.window?.invalidateCursorRects(for: rightText)
 
@@ -388,6 +407,38 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         return min(760, max(260, (pane > 50 ? pane : fallback) - 28))
     }
 
+    // MARK: Design variants: a header row above each change ("row" marker)
+
+    /// One blank row above each change (under the line before it), where its header goes.
+    private static func changeHeaderAnchors(_ staging: SectionStaging, reviewed: Set<Int>) -> [DiffLayout.NoteAnchor] {
+        guard Design.marker == .row else { return [] }
+        return staging.hunks.compactMap { h in
+            h.work.lowerBound > 0 ? .init(id: "change-\(h.id)", left: false, line: h.work.lowerBound - 1, rows: 1) : nil
+        }
+    }
+
+    private var headers: [(view: ChangeHeaderView, row: Int)] = []
+
+    private func placeChangeHeaders(_ layout: DiffLayout, staging: SectionStaging, states: [Int: StageState]) {
+        headers.forEach { $0.view.removeFromSuperview() }
+        headers = []
+        guard Design.marker == .row else { return }
+        let total = staging.hunks.count
+        for seg in layout.segments {
+            guard case .note(let nid) = seg.kind, nid.hasPrefix("change-"), let id = Int(nid.dropFirst(7)),
+                  let index = staging.hunks.firstIndex(where: { $0.id == id }) else { continue }
+            let h = staging.hunks[index]
+            let row = unifiedRows == nil ? seg.right.lowerBound : (unifiedOfRight[seg.right.lowerBound] ?? seg.right.lowerBound)
+            let v = ChangeHeaderView(index: index + 1, of: total, added: h.work.count, removed: h.head.count,
+                                     state: states[id] ?? .unstaged, tint: DiffTheme.marker(DiffTheme.change(head: h.head, work: h.work))) { [weak self] on in
+                self?.onToggle?(id, on, staging.snapshotID)
+            }
+            addSubview(v)
+            headers.append((v, row))
+        }
+        positionCards()
+    }
+
     // MARK: Design variants: inline review buttons, the change map
 
     private var pills: [(button: NSButton, row: Int)] = []
@@ -426,6 +477,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     private func positionCards() {
+        for h in headers {
+            let r = convert(NSRect(x: 0, y: rightText.y(ofLine: h.row), width: 1, height: DiffTheme.lineHeight), from: rightText)
+            h.view.frame = NSRect(x: rightScroll.frame.minX, y: r.minY, width: rightScroll.frame.width, height: DiffTheme.lineHeight)
+            h.view.isHidden = r.maxY < rightScroll.frame.minY || r.minY > rightScroll.frame.maxY
+        }
         // Inline review buttons: top-right of each change, in the new (right) pane.
         let scroll = rightScroll
         let clip = convert(scroll.contentView.bounds, from: scroll.contentView)
@@ -839,6 +895,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     private func syncGutter() {
+        gutter.currentID = currentChangeID()
         gutter.leftOffset = mode == .unified ? rightScroll.contentView.bounds.origin.y : leftScroll.contentView.bounds.origin.y
         gutter.rightOffset = rightScroll.contentView.bounds.origin.y
         positionCards()
@@ -874,6 +931,44 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
         scroll.contentView.scroll(to: NSPoint(x: 0, y: min(y, maxY)))
         scroll.reflectScrolledClipView(scroll.contentView)
+    }
+
+    /// The unreviewed change you're on: the topmost one still on screen, else the next below,
+    /// else the last above.
+    func currentChangeID() -> Int? {
+        guard let layout = diffLayout, let staging = shownStaging else { return nil }
+        let scroll = mode == .leftOnly ? leftScroll : rightScroll
+        let anchor = Int((scroll.contentView.bounds.minY - DiffTheme.inset.height) / DiffTheme.lineHeight)
+        var spans: [(id: Int, rows: Range<Int>)] = []
+        for s in layout.segments {
+            guard case .hunk(let id) = s.kind, let h = staging.hunks.first(where: { $0.id == id }),
+                  (pendingHunks[id] ?? staging.state(of: h)) != .staged else { continue }
+            let rows = unifiedHunks[id] ?? (mode == .leftOnly ? s.left : s.right)
+            spans.append((id, rows.isEmpty ? rows.lowerBound..<(rows.lowerBound + 1) : rows))
+        }
+        if let onScreen = spans.first(where: { $0.rows.upperBound > anchor }) { return onScreen.id }
+        return spans.last?.id
+    }
+
+    /// Approves the change you're on and scrolls to the next unreviewed one; with none left in
+    /// this file, moves on to the next file.
+    func approveAndNext() {
+        guard let staging = shownStaging, let layout = diffLayout else { return }
+        guard let id = currentChangeID() else { onFileDone?(); return }
+        let remaining = staging.hunks.filter { $0.id != id && (pendingHunks[$0.id] ?? staging.state(of: $0)) != .staged }
+        onToggle?(id, true, staging.snapshotID)
+        // The next unreviewed change below this one, else the first one above.
+        func row(_ s: DiffLayout.Segment) -> Int { if case .hunk(let n) = s.kind, let r = unifiedHunks[n] { r.lowerBound } else { s.right.lowerBound } }
+        let pending = layout.segments.filter { s in if case .hunk(let n) = s.kind { remaining.contains { $0.id == n } } else { false } }
+        let here = layout.segments.first { if case .hunk(let n) = $0.kind { n == id } else { false } }.map(row) ?? 0
+        guard let next = pending.first(where: { row($0) > here }) ?? pending.first else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.onFileDone?() }
+            return
+        }
+        var line = next.right.lowerBound
+        if case .hunk(let n) = next.kind, let r = unifiedHunks[n] { line = r.lowerBound }
+        let scroll = mode == .leftOnly ? leftScroll : rightScroll
+        scrollRight(toLine: max(0, line - Int(scroll.contentView.bounds.height / DiffTheme.lineHeight / 3)))
     }
 
     /// Scrolls to the previous or next section relative to the middle of the view.
@@ -934,6 +1029,56 @@ final class ChangeMapView: NSView {
     override func mouseDown(with event: NSEvent) {
         let y = convert(event.locationInWindow, from: nil).y
         onJump?(Int(y / max(1, bounds.height) * CGFloat(total)))
+    }
+}
+
+/// The "row" design: a slim header above each change, with the system checkbox and what changed.
+final class ChangeHeaderView: NSView {
+    private let check: NSButton
+    private let onToggle: (Bool) -> Void
+    private let state: StageState
+    private let tint: NSColor
+    override var isFlipped: Bool { true }
+
+    init(index: Int, of total: Int, added: Int, removed: Int, state: StageState, tint: NSColor, onToggle: @escaping (Bool) -> Void) {
+        self.onToggle = onToggle
+        self.state = state
+        self.tint = tint
+        check = NSButton(checkboxWithTitle: "Reviewed", target: nil, action: nil)
+        super.init(frame: .zero)
+        check.allowsMixedState = true
+        check.controlSize = .small
+        check.font = .systemFont(ofSize: 11)
+        check.state = switch state { case .staged: .on; case .unstaged: .off; case .partial: .mixed }
+        check.target = self
+        check.action = #selector(clicked)
+        addSubview(check)
+        let info = NSTextField(labelWithString: "Change \(index) of \(total)   +\(added)  −\(removed)")
+        info.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
+        info.textColor = DiffTheme.foldLabel
+        info.tag = 1
+        addSubview(info)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func clicked() { onToggle(state != .staged) }
+
+    override func layout() {
+        super.layout()
+        check.sizeToFit()
+        check.frame.origin = NSPoint(x: 10, y: (bounds.height - check.frame.height) / 2)
+        if let info = viewWithTag(1) as? NSTextField {
+            info.sizeToFit()
+            info.frame.origin = NSPoint(x: check.frame.maxX + 14, y: (bounds.height - info.frame.height) / 2)
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        DiffTheme.header.setFill(); bounds.fill()
+        tint.withAlphaComponent(state == .staged ? 0.35 : 0.9).setFill()
+        NSRect(x: 0, y: 0, width: 3, height: bounds.height).fill()
+        DiffTheme.foldPillBorder.setFill()
+        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
     }
 }
 

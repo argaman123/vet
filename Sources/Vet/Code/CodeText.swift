@@ -56,7 +56,8 @@ enum CodeText {
                 attrs[.foregroundColor] = NSColor.clear
                 attrs[.vetFold] = id
                 let scope = foldStarts[id].map { ScopeLabel.chain(lines, at: $0) } ?? ""
-                let label = scope.isEmpty ? "\(hidden) unchanged lines" : "\(scope)  ·  \(hidden) lines"
+                let label = id < 0 ? "Reviewed  ·  \(hidden) line\(hidden == 1 ? "" : "s")"
+                    : scope.isEmpty ? "\(hidden) unchanged lines" : "\(scope)  ·  \(hidden) lines"
                 attrs[.vetFoldLabel] = label
                 attrs[.font] = NSFont.systemFont(ofSize: 11)
                 out.append(NSAttributedString(string: "      " + label + newline, attributes: attrs))

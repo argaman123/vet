@@ -118,16 +118,70 @@ extension Palette {
         function: 0xFFD27A, property: 0xF0A3B5, parameter: 0xD7B6FF, classType: 0x8FD3C7, constant: 0xFF7B6B, namespace: 0x8FD3C7,
         fileModified: 0xFFB454, fileAdded: 0x8CCF5A, fileDeleted: 0xFF6B5B, fileConflict: 0xFF6B5B)
 
-    static let all: [Palette] = [.vet, .graphite, .ember, .monokai, .neon]
+    /// Near-black greys with no tint (like your VS Code's Monokai Black), Vet's code colors.
+    static let carbon: Palette = {
+        var p = Palette.vet
+        p = Palette(id: "carbon", name: "Carbon",
+            window: 0x0B0B0B, sidebar: 0x0E0E0E, header: 0x111111, accent: 0x4F8BFF, folder: 0x9AA3B2,
+            background: 0x141414, text: 0xD9D9D9, lineNumber: 0x404040, lineNumberCurrent: 0xB0B0B0, selection: 0x37393D,
+            foldPill: 0x1B1B1B, foldPillHover: 0x262626, foldPillBorder: 0x2C2C2C, foldLabel: 0x8C8C8C, foldWave: 0x2A2A2A,
+            inlayBackground: 0x1F1F1F, inlayText: 0x8F8F8F, lensText: 0x6E6E6E, searchMatch: 0x5A4416,
+            inserted: 0x1A3022, modified: 0x1C2A40, deleted: 0x371B20,
+            insertedWord: 0x2A5538, modifiedWord: 0x2A4675, deletedWord: 0x632430,
+            addedMark: 0x3FB950, modifiedMark: 0x58A6FF, removedMark: 0xF85149,
+            keyword: p.keyword, string: p.string, comment: 0x5E5E5E, number: p.number, type: p.type,
+            decorator: p.decorator, tag: p.tag, attribute: p.attribute,
+            function: p.function, property: p.property, parameter: p.parameter, classType: p.classType, constant: p.constant, namespace: p.namespace,
+            fileModified: 0x58A6FF, fileAdded: 0x3FB950, fileDeleted: 0xF85149, fileConflict: 0xD29922)
+        return p
+    }()
+
+    /// Deeper: almost black, the chrome nearly vanishes, code at full strength.
+    static let obsidian: Palette = {
+        var p = Palette.carbon
+        p = Palette(id: "obsidian", name: "Obsidian",
+            window: 0x070707, sidebar: 0x090909, header: 0x0B0B0B, accent: 0x5E9BFF, folder: 0x8F96A3,
+            background: 0x0D0D0D, text: 0xE4E4E4, lineNumber: 0x383838, lineNumberCurrent: 0xBDBDBD, selection: 0x333539,
+            foldPill: 0x161616, foldPillHover: 0x212121, foldPillBorder: 0x262626, foldLabel: 0x878787, foldWave: 0x232323,
+            inlayBackground: 0x191919, inlayText: 0x8A8A8A, lensText: 0x666666, searchMatch: 0x5A4416,
+            inserted: 0x14301E, modified: 0x172842, deleted: 0x381419,
+            insertedWord: 0x245C36, modifiedWord: 0x26487E, deletedWord: 0x6A1F2C,
+            addedMark: 0x3FB950, modifiedMark: 0x58A6FF, removedMark: 0xF85149,
+            keyword: p.keyword, string: p.string, comment: 0x5A5A5A, number: p.number, type: p.type,
+            decorator: p.decorator, tag: p.tag, attribute: p.attribute,
+            function: p.function, property: p.property, parameter: p.parameter, classType: p.classType, constant: p.constant, namespace: p.namespace,
+            fileModified: 0x58A6FF, fileAdded: 0x3FB950, fileDeleted: 0xF85149, fileConflict: 0xD29922)
+        return p
+    }()
+
+    /// A step lighter: dark charcoal grey, softer contrast, still neutral.
+    static let charcoal: Palette = {
+        var p = Palette.carbon
+        p = Palette(id: "charcoal", name: "Charcoal",
+            window: 0x151515, sidebar: 0x181818, header: 0x1B1B1B, accent: 0x4F8BFF, folder: 0x9AA3B2,
+            background: 0x1E1E1E, text: 0xD4D4D4, lineNumber: 0x4A4A4A, lineNumberCurrent: 0xB4B4B4, selection: 0x3A3D41,
+            foldPill: 0x252525, foldPillHover: 0x2F2F2F, foldPillBorder: 0x353535, foldLabel: 0x8E8E8E, foldWave: 0x313131,
+            inlayBackground: 0x2A2A2A, inlayText: 0x939393, lensText: 0x737373, searchMatch: 0x5A4416,
+            inserted: 0x213626, modified: 0x223249, deleted: 0x3D2226,
+            insertedWord: 0x305B3D, modifiedWord: 0x304D7C, deletedWord: 0x672C35,
+            addedMark: 0x3FB950, modifiedMark: 0x58A6FF, removedMark: 0xF85149,
+            keyword: p.keyword, string: p.string, comment: 0x6A6A6A, number: p.number, type: p.type,
+            decorator: p.decorator, tag: p.tag, attribute: p.attribute,
+            function: p.function, property: p.property, parameter: p.parameter, classType: p.classType, constant: p.constant, namespace: p.namespace,
+            fileModified: 0x58A6FF, fileAdded: 0x3FB950, fileDeleted: 0xF85149, fileConflict: 0xD29922)
+        return p
+    }()
+
+    static let all: [Palette] = [.vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .monokai, .neon]
 }
 
 /// Design variants being tried (Settings-free switches read from defaults; mockups for now).
 enum Design {
     /// How a file or section is marked reviewed.
-    enum Marker: String { case ring, native, dot, inline }
+    enum Marker: String { case ring, native, dot, inline, bar, row }
     /// What joins the two sides of the diff.
     enum Bridge: String { case ribbon, lines, map }
-    static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .ring }
+    static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .native }
     static var bridge: Bridge { Bridge(rawValue: UserDefaults.standard.string(forKey: "design.bridge") ?? "") ?? .ribbon }
 }
 

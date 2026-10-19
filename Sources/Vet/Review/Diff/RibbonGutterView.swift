@@ -10,12 +10,14 @@ final class RibbonGutterView: NSView {
     static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : 36 }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
-    static var checkWidth: CGFloat { Design.marker == .inline ? 4 : 24 }
+    static var checkWidth: CGFloat { Design.marker == .inline || Design.marker == .row ? 4 : 24 }
 
     var mode: Mode = .split { didSet { needsDisplay = true } }
     var diffLayout: DiffLayout?
     var hunks: [Hunk] = []
     var states: [Int: StageState] = [:]
+    /// The change ⌘↩ / Space would approve (outlined in the accent color).
+    var currentID: Int? { didSet { if oldValue != currentID { needsDisplay = true } } }
     var leftNumbers: [Int?] = []  // display line → file line (nil for folds)
     var rightNumbers: [Int?] = []
     /// Display lines pinned at the top of each pane (sticky lines); their numbers cover the
@@ -54,7 +56,8 @@ final class RibbonGutterView: NSView {
         for seg in diffLayout?.segments ?? [] { if case .hunk(let id) = seg.kind { segments[id] = seg } }
         for h in hunks {
             let b = StageToggle(id: h.id) { [weak self] id in self?.toggled(id) }
-            b.isHidden = Design.marker == .inline
+            b.tint = DiffTheme.marker(DiffTheme.change(head: h.head, work: h.work))
+            b.isHidden = Design.marker == .inline || Design.marker == .row
             addSubview(b)
             boxes[h.id] = b
         }
@@ -96,7 +99,7 @@ final class RibbonGutterView: NSView {
 
     private func placeCheckboxes() {
         let (x0, x1) = ribbonX
-        if Design.marker == .inline { boxes.values.forEach { $0.isHidden = true }; return }
+        if Design.marker == .inline || Design.marker == .row { boxes.values.forEach { $0.isHidden = true }; return }
         for (id, b) in boxes {
             if mode == .unified {
                 guard let r = unifiedRanges[id] else { b.isHidden = true; continue }
@@ -113,7 +116,12 @@ final class RibbonGutterView: NSView {
                 let top = s.right.isEmpty ? max(y(0, left: false) - DiffTheme.inset.height + 1, y(s.right.lowerBound, left: false) - DiffTheme.lineHeight / 2)
                     : y(s.right.lowerBound, left: false)
                 let x = Self.numbersWidth * 2 + Self.ribbonWidth + (Self.checkWidth - 16) / 2
-                b.frame = NSRect(x: x, y: top + (DiffTheme.lineHeight - 16) / 2, width: 16, height: 16)
+                if Design.marker == .bar {
+                    let bottom = s.right.isEmpty ? top + DiffTheme.lineHeight : y(s.right.upperBound, left: false)
+                    b.frame = NSRect(x: x, y: top, width: 16, height: bottom - top)
+                } else {
+                    b.frame = NSRect(x: x, y: top + (DiffTheme.lineHeight - 16) / 2, width: 16, height: 16)
+                }
                 b.isHidden = top < -20 || top > bounds.height + 20
                 continue
             }
@@ -177,6 +185,11 @@ final class RibbonGutterView: NSView {
                 }
                 DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: staged).setFill()
                 path.fill()
+                if h.id == currentID {
+                    DiffTheme.accent.setStroke()
+                    path.lineWidth = 1.5
+                    path.stroke()
+                }
 
             }
         }
@@ -286,8 +299,14 @@ final class StageToggle: NSView {
     /// The system checkbox, in the "native" design.
     private var native: NSButton?
 
-    init(id: Int, onToggle: @escaping (Int) -> Void) {
+    /// How this toggle draws: the gutter follows the design; file rows use the system checkbox
+    /// for the "bar" and "row" designs.
+    let style: Design.Marker
+
+    init(id: Int, inList: Bool = false, onToggle: @escaping (Int) -> Void) {
         self.id = id
+        let m = Design.marker
+        style = inList && (m == .bar || m == .row) ? .native : m
         self.onToggle = onToggle
         super.init(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
         toolTip = "Stage this section (mark it reviewed)"
@@ -295,7 +314,7 @@ final class StageToggle: NSView {
         setAccessibilityRole(.checkBox)
         setAccessibilityLabel("Stage this section (mark it reviewed)")
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
-        if Design.marker == .native {
+        if style == .native {
             let b = NSButton(checkboxWithTitle: "", target: self, action: #selector(nativeClicked))
             b.allowsMixedState = true
             b.controlSize = .small
@@ -315,9 +334,10 @@ final class StageToggle: NSView {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     override func draw(_ dirtyRect: NSRect) {
-        switch Design.marker {
-        case .native: return
+        switch style {
+        case .native, .row: return
         case .dot, .inline: drawDot(); return
+        case .bar: drawBar(); return
         case .ring: break
         }
         let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 1.5))
@@ -341,6 +361,32 @@ final class StageToggle: NSView {
                 dash.lineWidth = 1.8; dash.lineCapStyle = .round
                 DiffTheme.added.setStroke(); dash.stroke()
             }
+        }
+    }
+
+    /// The change's color as the marker (the "bar" design).
+    var tint: NSColor = .systemBlue
+
+    /// A bar the height of the change: its color while to review, green with a check once reviewed.
+    private func drawBar() {
+        let r = NSRect(x: bounds.midX - 3.5, y: bounds.minY + 1, width: 7, height: max(6, bounds.height - 2))
+        let bar = NSBezierPath(roundedRect: r, xRadius: 3.5, yRadius: 3.5)
+        switch state {
+        case .staged:
+            DiffTheme.added.setFill(); bar.fill()
+            if r.height >= 14 {
+                let c = NSPoint(x: r.midX, y: r.minY + 7)
+                let check = NSBezierPath()
+                check.move(to: NSPoint(x: c.x - 2.2, y: c.y)); check.line(to: NSPoint(x: c.x - 0.6, y: c.y + 1.8)); check.line(to: NSPoint(x: c.x + 2.4, y: c.y - 2))
+                check.lineWidth = 1.4; check.lineCapStyle = .round; check.lineJoinStyle = .round
+                NSColor.black.withAlphaComponent(0.75).setStroke(); check.stroke()
+            }
+        case .partial:
+            tint.withAlphaComponent(hovering ? 1 : 0.85).setFill(); bar.fill()
+            NSGraphicsContext.saveGraphicsState(); NSRect(x: r.minX, y: r.minY, width: r.width, height: r.height / 2).clip()
+            DiffTheme.added.setFill(); bar.fill(); NSGraphicsContext.restoreGraphicsState()
+        case .unstaged:
+            tint.withAlphaComponent(hovering ? 1 : 0.8).setFill(); bar.fill()
         }
     }
 

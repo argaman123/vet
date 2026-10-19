@@ -79,6 +79,26 @@ actor GitRepo {
         return root.appendingPathComponent(".git", isDirectory: true)
     }
 
+    /// Changed lines per file against HEAD, and how many of them are staged (reviewed):
+    /// `git diff HEAD --numstat` and `git diff --cached --numstat`. Binary files count as one line.
+    func reviewProgress() throws -> [String: (total: Int, staged: Int)] {
+        func numstat(_ args: [String]) throws -> [String: Int] {
+            let text = String(decoding: try run(args + ["--numstat", "-z", "--no-renames"]), as: UTF8.self)
+            var out: [String: Int] = [:]
+            for record in text.split(separator: "\0") {
+                let parts = record.split(separator: "\t", maxSplits: 2)
+                guard parts.count == 3 else { continue }
+                out[String(parts[2])] = max(1, (Int(parts[0]) ?? 1) + (Int(parts[1]) ?? 0))
+            }
+            return out
+        }
+        let total = try numstat(["diff", "HEAD"])
+        let staged = try numstat(["diff", "--cached"])
+        var out: [String: (Int, Int)] = [:]
+        for (path, t) in total { out[path] = (t, min(t, staged[path] ?? 0)) }
+        return out
+    }
+
     func status() throws -> [FileChange] {
         let changes = StatusParser.parse(try run(["status", "--porcelain=v2", "-z", "--untracked-files=all", "--find-renames"]))
         return (try? pairUnstagedRenames(changes)) ?? changes

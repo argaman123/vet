@@ -199,10 +199,14 @@ extension CodeTextView {
             let row = NSRect(x: 0, y: frame.minY, width: max(bounds.width, enclosingScrollView?.contentSize.width ?? 0), height: DiffTheme.lineHeight)
             Self.drawWave(in: row)
             let lit = hovered == line(at: NSPoint(x: 0, y: row.midY))
+            let reviewed = ((storage.attribute(.vetFold, at: r.location, effectiveRange: nil) as? Int) ?? 0) < 0
             let fg = lit ? DiffTheme.text : DiffTheme.foldLabel
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: fg, .paragraphStyle: HintBox.paragraph]
             let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold).applying(.init(paletteColors: [fg]))
-            let chevron = NSImage(systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: "Show unchanged lines")?.withSymbolConfiguration(config)
+            let chevron = reviewed
+                ? NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Reviewed; show the change")?
+                    .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold).applying(.init(paletteColors: [DiffTheme.added])))
+                : NSImage(systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: "Show unchanged lines")?.withSymbolConfiguration(config)
             let size = (label as NSString).size(withAttributes: attrs)
             let chevronWidth = chevron?.size.width ?? 0
             let pill = NSRect(x: textContainerOrigin.x, y: row.minY + 1.5, width: ceil(size.width) + chevronWidth + 22, height: DiffTheme.lineHeight - 3)

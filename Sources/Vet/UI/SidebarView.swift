@@ -86,6 +86,8 @@ struct ChangesTool: View {
             }
         }
         .onChange(of: review.selectedPath) { _, path in row = path }
+        // Space approves the change in view and moves on, as in the diff.
+        .onKeyPress(.space) { review.approveAndNext(); return .handled }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
     }
@@ -152,6 +154,7 @@ struct ChangeNodeRow: View {
                         .lineLimit(1)
                         .opacity(review.stage(of: node) == .staged ? 0.65 : 1) // reviewed names recede
                     Spacer(minLength: 0)
+                    ReviewBar(fraction: review.reviewedFraction(node))
                 }
             }
             .tag(node.path)
@@ -211,8 +214,26 @@ private struct FileChangeLabel: View {
                 }
             }
             Spacer(minLength: 4)
+            ReviewBar(fraction: review.reviewedFraction(node))
         }
         .help(change.kind.help)
+    }
+}
+
+/// How much of a file is reviewed: a short capsule that fills green.
+struct ReviewBar: View {
+    let fraction: Double?
+    var body: some View {
+        if let fraction {
+            Capsule().fill(Color(nsColor: DiffTheme.foldPillBorder))
+                .overlay(alignment: .leading) {
+                    GeometryReader { g in
+                        Capsule().fill(Color(nsColor: DiffTheme.added)).frame(width: max(fraction > 0 ? 4 : 0, g.size.width * fraction))
+                    }
+                }
+                .frame(width: 26, height: 4)
+                .help(fraction >= 1 ? "Reviewed" : fraction <= 0 ? "Not reviewed yet" : "\(Int(fraction * 100))% reviewed")
+        }
     }
 }
 

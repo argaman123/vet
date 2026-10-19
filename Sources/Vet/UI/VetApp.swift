@@ -288,6 +288,8 @@ struct VetCommands: Commands {
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
             Button("Next Change") { app.workspace.review.jumpToChange(forward: true) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            Button("Approve Change and Next") { app.workspace.review.approveAndNext() }
+                .keyboardShortcut(.return, modifiers: .command)
             Button("Next Unreviewed File") { app.workspace.review.nextUnreviewed(); if let p = app.workspace.review.selectedPath { app.ui.show(.diff(path: p)) } }
                 .keyboardShortcut("u", modifiers: [.command, .option])
             Divider()

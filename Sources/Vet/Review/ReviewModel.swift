@@ -82,6 +82,24 @@ final class ReviewModel {
     /// Section clicks run one after another, each against the file's state after the previous one.
     private var hunkQueue: Task<Void, Never>?
 
+    /// Per file: changed lines and how many are reviewed (for the sidebar's progress bars).
+    private(set) var progress: [String: (total: Int, staged: Int)] = [:]
+
+    /// The reviewed fraction of a file or folder (nil when unknown).
+    func reviewedFraction(_ node: FileTreeNode) -> Double? {
+        var total = 0, staged = 0
+        for c in node.fileChanges {
+            switch stage(of: c) {
+            case .staged: let t = progress[c.path]?.total ?? 1; total += t; staged += t
+            case .unstaged: total += progress[c.path]?.total ?? 1
+            case .partial:
+                guard let p = progress[c.path] else { return nil }
+                total += p.total; staged += p.staged
+            }
+        }
+        return total == 0 ? nil : Double(staged) / Double(total)
+    }
+
     var reviewedCount: Int { changes.filter { stage(of: $0) == .staged }.count }
 
     // MARK: Branch, layout and commit (wired to GitRepo's branch/commit operations)
@@ -214,6 +232,7 @@ final class ReviewModel {
             // A file that left the list (say Claude committed it) closes, unless you're editing it.
             if let sel = selectedPath, !fresh.contains(where: { $0.path == sel }), !diffDirty { selectedPath = nil }
             version += 1
+            progress = (try? await repo.reviewProgress()) ?? progress
             await refreshBranches()
             await loadDiff()
             await autoStageUnimportant()
@@ -359,6 +378,13 @@ final class ReviewModel {
     }
 
     func jumpToChange(forward: Bool) { jump = (jump.serial + 1, forward) }
+
+    /// Bumped to approve the change in view and move to the next one (the diff view does it).
+    private(set) var approveSerial = 0
+    func approveAndNext() {
+        guard diff?.staging != nil else { nextUnreviewed(); return }
+        approveSerial += 1
+    }
 
     /// Stages or unstages one section of the open file. `snapshot` is the snapshot the clicked
     /// checkbox was drawn from; if HEAD, the index or the file changed since, the click is refused.

@@ -78,7 +78,7 @@ struct DiffScreen: View {
             if let doc = review.diff {
                 DiffHeader(app: app, doc: doc)
             }
-            RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial)
+            RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial)
         }
         .background(Color(nsColor: .textBackgroundColor))
     }

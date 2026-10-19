@@ -46,7 +46,12 @@ public struct DiffLayout: Sendable {
     public static let context = 4
     public static let minimumFold = 4
 
-    public init(headCount: Int, workCount: Int, hunks: [Hunk], folding: Bool, expanded: Set<Int>, notes: [NoteAnchor] = []) {
+    /// The fold id a reviewed (collapsed) section gets: negative, so it never meets an
+    /// unchanged-region fold's id (a HEAD line number).
+    public static func reviewedFoldID(_ hunkID: Int) -> Int { -(hunkID + 1) }
+
+    /// `reviewed`: sections to show as one "Reviewed" row each (unless their fold id is in `expanded`).
+    public init(headCount: Int, workCount: Int, hunks: [Hunk], folding: Bool, expanded: Set<Int>, notes: [NoteAnchor] = [], reviewed: Set<Int> = []) {
         var left: [DisplayLine] = [], right: [DisplayLine] = [], segments: [Segment] = []
         var foldHead: [Int: Range<Int>] = [:], foldWork: [Int: Range<Int>] = [:]
         func same(_ h: Range<Int>, _ w: Range<Int>) {
@@ -62,6 +67,17 @@ public struct DiffLayout: Sendable {
             return [(hp..<h.head.lowerBound, wp..<h.work.lowerBound, nil), (h.head, h.work, h)]
         } + [(hp..<headCount, wp..<workCount, nil)]
         for (k, (h, w, hunk)) in blocks.enumerated() {
+            if let hunk, reviewed.contains(hunk.id), !expanded.contains(Self.reviewedFoldID(hunk.id)) {
+                // A reviewed section folds to one row on each side.
+                let id = Self.reviewedFoldID(hunk.id)
+                let l = left.count, r = right.count
+                left.append(.fold(id: id, hidden: max(h.count, w.count)))
+                right.append(.fold(id: id, hidden: max(h.count, w.count)))
+                foldHead[id] = h
+                foldWork[id] = w
+                segments.append(Segment(left: l..<(l + 1), right: r..<(r + 1), kind: .fold(id: id)))
+                continue
+            }
             if let hunk {
                 let l = left.count, r = right.count
                 left += h.map { .code($0) }

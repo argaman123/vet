@@ -146,6 +146,17 @@ final class CodeTextView: NSTextView {
 
     @objc func vetSave(_ sender: Any?) { onSave?() }
 
+    /// Space in a read-only pane (approve and move on).
+    var onSpace: (() -> Void)?
+    override func keyDown(with event: NSEvent) {
+        if !isEditable, let onSpace, event.charactersIgnoringModifiers == " ",
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+            onSpace()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     /// Force click (a deep press on the trackpad): usages of the symbol, or its declaration when
     /// nothing uses it. (Replaces the system's Look Up in code.)
     override func quickLook(with event: NSEvent) {
