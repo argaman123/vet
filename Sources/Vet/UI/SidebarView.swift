@@ -111,6 +111,9 @@ struct ChangesTool: View {
             }
         }
         .onChange(of: review.selectedPath) { _, path in row = path }
+        // Rebuilt lists never animate row moves: AppKit's outline view leaves moved rows drawn
+        // over each other when a refresh reorders them mid-animation.
+        .transaction { $0.disablesAnimations = true; $0.animation = nil }
         // Space approves the change in view and moves on, as in the diff.
         .onKeyPress(.space) { review.approveAndNext(); return .handled }
         .listStyle(.sidebar)

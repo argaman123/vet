@@ -195,6 +195,7 @@ struct FindPopup: View {
                     }
                 }
                 .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
                 .environment(\.sidebarRowSize, .small)
                 .frame(minHeight: 160, idealHeight: 260)
                 Group {
@@ -208,8 +209,7 @@ struct FindPopup: View {
                 .frame(minHeight: 160, idealHeight: 300)
             }
         }
-        .background(Color(nsColor: DiffTheme.sidebar))
-        .tint(Color(nsColor: DiffTheme.accent))
+        .tint(Color(nsColor: DiffTheme.accent)) // the popover's own glass, like the sidebar
         .onAppear { focused = true }
         .onKeyPress(.upArrow) { find.move(-1); return .handled }
         .onKeyPress(.downArrow) { find.move(1); return .handled }

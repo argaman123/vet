@@ -31,6 +31,7 @@ struct ProjectTool: View {
                 }
                 .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+                .transaction { $0.disablesAnimations = true; $0.animation = nil }
                 // Double-click (or Return) opens or closes a folder.
                 .contextMenu(forSelectionType: String.self) { _ in EmptyView() } primaryAction: { ids in
                     for id in ids where !Self.isFile(id, files.tree) {

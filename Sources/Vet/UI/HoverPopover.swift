@@ -138,8 +138,7 @@ private struct HoverView: View {
         .padding(12)
         .frame(maxWidth: 560, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        // A solid surface: the popover's glass alone lets the code behind show through the text.
-        .background(Color(nsColor: DiffTheme.sidebar))
+
     }
 
     enum Block { case text(String), code(String) }

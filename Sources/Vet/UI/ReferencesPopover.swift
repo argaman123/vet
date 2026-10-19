@@ -179,13 +179,13 @@ struct ReferencesView: View {
                     }
                 }
                 .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
                 .environment(\.sidebarRowSize, .small)
                 .environment(\.defaultMinListRowHeight, 22)
                 .frame(minWidth: 260, idealWidth: 340, maxWidth: 520)
             }
         }
-        .background(Color(nsColor: DiffTheme.sidebar))
-        .tint(Color(nsColor: DiffTheme.accent))
+        .tint(Color(nsColor: DiffTheme.accent)) // the popover's own glass, like the sidebar
         .onKeyPress(.upArrow) { model.move(-1); return .handled }
         .onKeyPress(.downArrow) { model.move(1); return .handled }
     }

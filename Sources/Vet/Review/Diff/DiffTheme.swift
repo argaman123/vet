@@ -66,7 +66,7 @@ enum DiffTheme {
     /// Change markers (gutter bars, the thin line where the other side has nothing).
     static var added: NSColor { color("addedMark") { $0.addedMark } }
     static var modified: NSColor { color("modifiedMark") { $0.modifiedMark } }
-    static var removed: NSColor { color("removedMark") { $0.removedMark } }
+    static var removed: NSColor { dynamic(light: hex(0x9A9DA6), dark: hex(0x7C808A)) } // grey, as deleted files
 
     /// Diff blocks: inserted green, modified blue, deleted red.
     enum Change { case inserted, modified, deleted }
@@ -82,7 +82,7 @@ enum DiffTheme {
         switch change {
         case .inserted: return veil(color("inserted") { $0.inserted }, 0.85)
         case .modified: return veil(color("modified") { $0.modified }, 0.85)
-        case .deleted: return veil(color("deleted") { $0.deleted }, 0.85)
+        case .deleted: return veil(dynamic(light: hex(0xE2E3E6), dark: hex(0x2B2C30)), 0.85) // removed: grey, as in the file list
         }
     }
     static func change(head: Range<Int>, work: Range<Int>) -> Change {
@@ -91,7 +91,7 @@ enum DiffTheme {
     /// Unified layout: HEAD lines red, new lines green, so the two read apart in one column.
     static var unifiedRemoved: NSColor { block(.deleted) }
     static var unifiedAdded: NSColor { block(.inserted) }
-    static var unifiedRemovedWord: NSColor { color("deletedWord") { $0.deletedWord } }
+    static var unifiedRemovedWord: NSColor { dynamic(light: hex(0xC9CBD1), dark: hex(0x44464C)) }
     static var unifiedAddedWord: NSColor { color("insertedWord") { $0.insertedWord } }
 
     // Code text size: pinch a code pane, or ⌘+ / ⌘− / ⌘0. Rows are 1.5× the font size.
@@ -144,7 +144,7 @@ enum DiffTheme {
     /// Semantic token colors (from the language server).
     static func semantic(_ type: String, modifiers: Set<String>) -> NSColor? {
         switch type {
-        case "function", "method": return color("function") { $0.function }
+        case "function", "method", "member": return color("function") { $0.function } // TypeScript calls methods "member"
         case "property": return color("property") { $0.property }
         case "enumMember": return color("constant") { $0.constant }
         case "parameter": return color("parameter") { $0.parameter }
