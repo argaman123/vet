@@ -252,7 +252,7 @@ enum Design {
     /// ring on top of it; thread: a single thin curve between the two blocks; straight: straight edges.
     enum Bridge: String { case ribbon, lines, map, flow, thread, straight }
     static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .progress }
-    static var bridge: Bridge { Bridge(rawValue: UserDefaults.standard.string(forKey: "design.bridge") ?? "") ?? .ribbon }
+    static var bridge: Bridge { Bridge(rawValue: UserDefaults.standard.string(forKey: "design.bridge") ?? "") ?? .flow }
 }
 
 /// The code font choices (SF Mono is the system's; Google Sans Code ships with Vet).
