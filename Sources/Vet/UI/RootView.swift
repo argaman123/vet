@@ -13,9 +13,11 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 230, ideal: 290, max: 460)
         } detail: {
             MainArea(app: app)
-                .background(Color(nsColor: DiffTheme.background))
+                // Frame: the work stops below the top bar, which shows the window's frost like the sidebar.
+                .background { TopBarBackdrop() }
                 // Studio: the work sits on an inset panel, floating on the window.
-                .clipShape(RoundedRectangle(cornerRadius: Design.direction == .studio ? 12 : 0, style: .continuous))
+                // (Only Studio clips: a clip would also cut the backdrop off at the top bar.)
+                .modifier(StudioClip())
                 .overlay {
                     if Design.direction == .studio {
                         RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.07))
@@ -29,15 +31,15 @@ struct RootView: View {
                 .toolbarTitleMenu { ProjectMenu(app: app) }
                 .toolbar { MainToolbar(app: app) }
                 // A frosted top bar, like the sidebar (not a see-through one).
-                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-                .toolbarBackground(.regularMaterial, for: .windowToolbar)
+                .modifier(TopBarMaterial())
                 .searchable(text: Bindable(ui).search, isPresented: Bindable(ui).focusSearch, placement: .toolbar, prompt: "Search Everywhere")
                 .searchSuggestions { SearchEverywhereSuggestions(app: app) }
         }
         .onChange(of: ui.search) { _, query in app.searchEverywhere.update(query) }
         .tint(Color(nsColor: DiffTheme.accent)) // the theme's accent on every control
         .focusEffectDisabled()
-        .background { if Design.frosted { BehindWindowBlur() } }
+        // Up under the title bar too, or the window frame's own grey shows there.
+        .background { if Design.frosted { BehindWindowBlur().ignoresSafeArea() } }
         .id(ui.themeID) // a new theme redraws everything with its colors
         .background(WindowTint())
         .task(id: app.projects.current) {
@@ -182,6 +184,39 @@ private struct WindowTint: NSViewRepresentable {
         // Glass keeps a solid window (the sidebar's own glass frosts it); Frosted lets the desktop through.
         w.isOpaque = !Design.frosted
         w.backgroundColor = Design.frosted ? .clear : DiffTheme.window
+    }
+}
+
+/// The work's surface, and what sits behind the top bar over it: the code itself running up
+/// under the bar (column), the same glass as the sidebar (frame), or the bar's material.
+private struct TopBarBackdrop: View {
+    var body: some View {
+        GeometryReader { g in
+            VStack(spacing: 0) {
+                if Design.chrome == .frame {
+                    Rectangle().fill(.clear).glassEffect(.regular, in: Rectangle()).frame(height: max(g.safeAreaInsets.top, 52))
+                }
+                Color(nsColor: DiffTheme.background)
+            }
+            .ignoresSafeArea()
+        }
+    }
+}
+
+private struct StudioClip: ViewModifier {
+    func body(content: Content) -> some View {
+        if Design.direction == .studio { content.clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) } else { content }
+    }
+}
+
+/// The top bar's own frosted material (material), or none, so what is under it shows.
+private struct TopBarMaterial: ViewModifier {
+    func body(content: Content) -> some View {
+        if Design.chrome == .material {
+            content.toolbarBackgroundVisibility(.visible, for: .windowToolbar).toolbarBackground(.regularMaterial, for: .windowToolbar)
+        } else {
+            content.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        }
     }
 }
 

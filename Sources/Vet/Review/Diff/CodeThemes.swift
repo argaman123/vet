@@ -239,6 +239,13 @@ enum Design {
     static var monoIcons: Bool { direction == .monolith }
     static var accentFolders: Bool { false }
     /// Surfaces let the desktop through, in levels: window clear, bars thin, code a dark veil.
+    /// The changes list's layout (study): the folder tree, a flat list, or files under folder headers.
+    enum SidebarStyle: String { case current, tree, list, groups }
+    static var sidebar: SidebarStyle { SidebarStyle(rawValue: UserDefaults.standard.string(forKey: "design.sidebar") ?? "") ?? .current }
+    /// How the top bar meets the sidebar (study): its own material, one frosted frame with the
+    /// sidebar, or the code running up under it.
+    enum Chrome: String { case material, frame, column }
+    static var chrome: Chrome { Chrome(rawValue: UserDefaults.standard.string(forKey: "design.chrome") ?? "") ?? .material }
     static var frosted: Bool { UserDefaults.standard.object(forKey: "design.frosted") as? Bool ?? true }
     /// What joins the two sides of the diff.
     enum Bridge: String { case ribbon, lines, map }

@@ -12,7 +12,8 @@ struct SidebarView: View {
         // No tool strip: the changes are the sidebar; the project's files come up with ⌘2.
         Group {
             switch app.ui.tool {
-            case .changes: ChangesTool(app: app)
+            case .changes:
+                if Design.sidebar == .current { ChangesTool(app: app) } else { ChangesVariant(app: app, style: Design.sidebar) }
             case .project: ProjectTool(app: app)
             }
         }

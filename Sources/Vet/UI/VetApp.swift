@@ -77,6 +77,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHook.on("center") { _ in
             for w in NSApp.windows where w.isVisible && w.frame.width > 400 { w.setFrame(NSRect(x: 218, y: 92, width: 1440, height: 900), display: true) }
         }
+        SnapshotHook.on("views") { _ in
+            // views: the main window's view tree (class, frame, effect material) to VET_SNAPSHOT_DIR/views.txt
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"],
+                  let w = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 }), let root = w.contentView?.superview else { return }
+            var out = ""
+            func walk(_ v: NSView, _ d: Int) {
+                let f = v.convert(v.bounds, to: nil)
+                var extra = ""
+                if let e = v as? NSVisualEffectView { extra = " material=\(e.material.rawValue) blend=\(e.blendingMode.rawValue)" }
+                if let l = v.layer, let bg = l.backgroundColor { extra += " bg=\(bg)" }
+                out += String(repeating: "  ", count: d) + "\(type(of: v)) \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))\(v.isHidden ? " hidden" : "")\(extra)\n"
+                if d < 14 { v.subviews.forEach { walk($0, d + 1) } }
+            }
+            walk(root, 0)
+            try? out.write(toFile: dir + "/views.txt", atomically: true, encoding: .utf8)
+        }
         SnapshotHook.on("stagehunk") { [weak self] args in
             // stagehunk <n>: mark the open diff's nth change reviewed
             guard let self, let staging = self.workspace.review.diff?.staging, let n = Int(args.first ?? "0"), n < staging.hunks.count else { return }
