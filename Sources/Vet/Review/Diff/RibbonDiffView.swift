@@ -875,6 +875,23 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         syncGutter()
     }
 
+    /// Test aid: puts both panes at `y` (even past the top, as a bounce does) and redraws just
+    /// the newly exposed strip at the top, as scrolling does.
+    func debugScroll(to y: CGFloat) {
+        for scroll in [leftScroll, rightScroll] {
+            scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: y))
+            // Responsive scrolling draws ahead of the visible area, even above the first line:
+            // draw such a strip the way it does.
+            guard let tv = scroll.documentView as? CodeTextView else { continue }
+            let image = NSImage(size: NSSize(width: max(1, tv.bounds.width), height: 30))
+            image.lockFocusFlipped(true)
+            tv.drawBackground(in: NSRect(x: 0, y: y, width: tv.bounds.width, height: 30))
+            image.unlockFocus()
+        }
+        syncGutter()
+        display()
+    }
+
     /// Where a pane may scroll to: from its top (above the document, under the header) to its end.
     private func clampY(_ y: CGFloat, _ scroll: NSScrollView) -> CGFloat {
         let i = scroll.contentInsets

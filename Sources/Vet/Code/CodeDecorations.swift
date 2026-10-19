@@ -95,8 +95,10 @@ extension CodeTextView {
     func drawDecorations(in rect: NSRect) {
         guard let storage = textStorage, storage.length > 0 else { lensRects = []; return }
         let ns = storage.string as NSString
+        // The view can scroll above its first line (under the floating header, or bouncing at the
+        // top), so a dirty rect can lie entirely before line 0: clamp both ends.
         let firstLine = max(0, line(at: NSPoint(x: 0, y: rect.minY)))
-        let lastLine = line(at: NSPoint(x: 0, y: rect.maxY)) + 1
+        let lastLine = max(firstLine, line(at: NSPoint(x: 0, y: rect.maxY)) + 1)
         // Character range of the dirty rows.
         var starts: [Int] = [0], location = 0
         while starts.count <= lastLine + 1 {

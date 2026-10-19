@@ -292,8 +292,12 @@ final class RibbonGutterView: NSView {
             let band = pinned.isEmpty ? 0 : CGFloat(pinned.count) * DiffTheme.lineHeight + 2
             let first = max(0, Int(((left ? leftOffset : rightOffset) - DiffTheme.inset.height) / DiffTheme.lineHeight))
             let count = Int(bounds.height / DiffTheme.lineHeight) + 2
+            // The pinned rows sit just below the floating header, like the panes' sticky lines.
+            let top = covered.top
             NSGraphicsContext.saveGraphicsState()
-            NSRect(x: x, y: band, width: Self.numbersWidth, height: bounds.height - band).clip()
+            let open = NSBezierPath(rect: NSRect(x: x, y: 0, width: Self.numbersWidth, height: top))
+            open.append(NSBezierPath(rect: NSRect(x: x, y: top + band, width: Self.numbersWidth, height: max(0, bounds.height - top - band))))
+            open.addClip()
             let changed = left ? changedLeft : changedRight, current = left ? currentLeft : currentRight
             for i in first..<min(list.count, first + count) {
                 if let n = list[i] { number(n, x: x, y: y(i, left: left), changed: changed.contains(i), current: current.contains(i)) }
@@ -301,12 +305,12 @@ final class RibbonGutterView: NSView {
             NSGraphicsContext.restoreGraphicsState()
             guard band > 0 else { return }
             DiffTheme.background.setFill()
-            NSRect(x: x, y: 0, width: Self.numbersWidth, height: band).fill()
+            NSRect(x: x, y: top, width: Self.numbersWidth, height: band).fill()
             for (row, line) in pinned.enumerated() where line < list.count {
-                if let n = list[line] { number(n, x: x, y: CGFloat(row) * DiffTheme.lineHeight) }
+                if let n = list[line] { number(n, x: x, y: top + CGFloat(row) * DiffTheme.lineHeight) }
             }
             NSColor.separatorColor.setFill()
-            NSRect(x: x, y: band - 1, width: Self.numbersWidth, height: 1).fill()
+            NSRect(x: x, y: top + band - 1, width: Self.numbersWidth, height: 1).fill()
         }
         switch mode {
         case .split:
@@ -341,7 +345,7 @@ final class RibbonGutterView: NSView {
     override func mouseUp(with event: NSEvent) { dragStart = nil }
 
     /// The bands the glass header and actions cover: no resize cursor under them.
-    var covered: (top: CGFloat, bottom: CGFloat) = (0, 0) { didSet { window?.invalidateCursorRects(for: self) } }
+    var covered: (top: CGFloat, bottom: CGFloat) = (0, 0) { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
 
     override func resetCursorRects() {
         guard mode == .split else { return }

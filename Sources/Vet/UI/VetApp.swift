@@ -93,6 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             walk(root, 0)
             try? out.write(toFile: dir + "/views.txt", atomically: true, encoding: .utf8)
         }
+        SnapshotHook.on("scrollto") { [weak self] args in
+            // scrollto <y>: both diff panes to y (negative = past the top), drawn at once
+            guard let self, let y = Double(args.first ?? "") else { return }
+            self.workspace.review.diffView.debugScroll(to: y)
+        }
         SnapshotHook.on("stagehunk") { [weak self] args in
             // stagehunk <n>: mark the open diff's nth change reviewed
             guard let self, let staging = self.workspace.review.diff?.staging, let n = Int(args.first ?? "0"), n < staging.hunks.count else { return }
