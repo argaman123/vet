@@ -197,9 +197,9 @@ extension CodeTextView {
         storage.enumerateAttribute(.vetFoldLabel, in: range) { value, r, _ in
             guard let label = value as? String, let frame = segmentFrame(NSRange(location: r.location, length: 1)) else { return }
             let row = NSRect(x: 0, y: frame.minY, width: max(bounds.width, enclosingScrollView?.contentSize.width ?? 0), height: DiffTheme.lineHeight)
-            Self.drawWave(in: row)
             let lit = hovered == line(at: NSPoint(x: 0, y: row.midY))
             let reviewed = ((storage.attribute(.vetFold, at: r.location, effectiveRange: nil) as? Int) ?? 0) < 0
+            if reviewed { DiffTheme.reviewedBand.setFill(); row.fill() } else { Self.drawWave(in: row) }
             let fg = lit ? DiffTheme.text : DiffTheme.foldLabel
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: fg, .paragraphStyle: HintBox.paragraph]
             let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold).applying(.init(paletteColors: [fg]))
@@ -209,7 +209,7 @@ extension CodeTextView {
             let size = (label as NSString).size(withAttributes: attrs)
             let chevronWidth = chevron?.size.width ?? 0
             let pill = NSRect(x: textContainerOrigin.x, y: row.minY + 1.5, width: ceil(size.width) + chevronWidth + 22, height: DiffTheme.lineHeight - 3)
-            (lit ? DiffTheme.foldPillHover : DiffTheme.foldPill).setFill()
+            (reviewed ? DiffTheme.reviewedPill : lit ? DiffTheme.foldPillHover : DiffTheme.foldPill).setFill()
             let shape = NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2)
             shape.fill()
             DiffTheme.foldPillBorder.setStroke(); shape.lineWidth = 1; shape.stroke()

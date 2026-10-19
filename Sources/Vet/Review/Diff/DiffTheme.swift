@@ -48,6 +48,9 @@ enum DiffTheme {
     static var foldPillBorder: NSColor { color("foldPillBorder") { $0.foldPillBorder } }
     static var foldWave: NSColor { color("foldWave") { $0.foldWave } }
     static var foldBand: NSColor { foldPill }
+    /// A change you've reviewed and folded away: a quiet green, so it reads apart from unchanged lines.
+    static var reviewedBand: NSColor { solid(added, 0.09) }
+    static var reviewedPill: NSColor { solid(added, 0.18) }
     static var text: NSColor { color("text") { $0.text } }
     static var lineNumber: NSColor { color("lineNumber") { $0.lineNumber } }
     static var lineNumberCurrent: NSColor { color("lineNumberCurrent") { $0.lineNumberCurrent } }

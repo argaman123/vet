@@ -6,17 +6,17 @@ import VetCore
 final class RibbonGutterView: NSView {
     /// `unified`: one pane; both number columns (HEAD, working file) then the checkboxes.
     enum Mode { case split, rightOnly, leftOnly, unified }
-    static let numbersWidth: CGFloat = 40
-    static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : ringInBridge ? 46 : 36 }
+    static let numbersWidth: CGFloat = 34
+    static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : ringInBridge ? 38 : 30 }
     /// The review ring sits in the bridge (in a flat stretch on the taller side, so it always fits).
     static var ringInBridge: Bool { [.native, .mono, .check, .circle, .progress].contains(Design.marker) }
-    static let ringZone: CGFloat = 18
+    static let ringZone: CGFloat = 16
 
     /// Where a change's bridge runs flat for its ring: the side with more lines.
     func ringOnRight(_ s: DiffLayout.Segment) -> Bool { s.right.count >= s.left.count }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
-    static var checkWidth: CGFloat { [.inline, .row, .native, .mono, .check, .circle, .progress].contains(Design.marker) ? 4 : 24 }
+    static var checkWidth: CGFloat { [.inline, .row, .native, .mono, .check, .circle, .progress].contains(Design.marker) ? 0 : 24 }
 
     var mode: Mode = .split { didSet { needsDisplay = true } }
     var diffLayout: DiffLayout?
@@ -210,7 +210,21 @@ final class RibbonGutterView: NSView {
         }
         // Folded rows: the wave continues through the number columns (each side at its own scroll).
         for s in diffLayout.segments {
-            guard case .fold = s.kind else { continue }
+            guard case .fold(let fid) = s.kind else { continue }
+            if fid < 0, mode == .split { // a reviewed change: the same quiet green band as in the panes
+                DiffTheme.reviewedBand.setFill()
+                NSRect(x: 0, y: y(s.left.lowerBound, left: true), width: Self.numbersWidth, height: DiffTheme.lineHeight).fill()
+                let x1 = Self.numbersWidth + Self.ribbonWidth
+                NSRect(x: x1, y: y(s.right.lowerBound, left: false), width: bounds.width - x1, height: DiffTheme.lineHeight).fill()
+                let l0 = y(s.left.lowerBound, left: true), r0 = y(s.right.lowerBound, left: false), h = DiffTheme.lineHeight
+                let p = NSBezierPath()
+                p.move(to: NSPoint(x: Self.numbersWidth, y: l0))
+                p.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: Self.numbersWidth + Self.ribbonWidth / 2, y: l0), controlPoint2: NSPoint(x: Self.numbersWidth + Self.ribbonWidth / 2, y: r0))
+                p.line(to: NSPoint(x: x1, y: r0 + h))
+                p.curve(to: NSPoint(x: Self.numbersWidth, y: l0 + h), controlPoint1: NSPoint(x: Self.numbersWidth + Self.ribbonWidth / 2, y: r0 + h), controlPoint2: NSPoint(x: Self.numbersWidth + Self.ribbonWidth / 2, y: l0 + h))
+                p.close(); p.fill()
+                continue
+            }
             switch mode {
             case .split:
                 CodeTextView.drawWave(in: NSRect(x: 0, y: y(s.left.lowerBound, left: true), width: Self.numbersWidth, height: DiffTheme.lineHeight))
@@ -245,7 +259,7 @@ final class RibbonGutterView: NSView {
         func number(_ n: Int, x: CGFloat, y: CGFloat, changed: Bool = false, current: Bool = false) {
             let s = NSAttributedString(string: "\(n + 1)", attributes: current ? lit : changed ? bright : attrs)
             let size = s.size()
-            s.draw(at: NSPoint(x: x + Self.numbersWidth - 6 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2))
+            s.draw(at: NSPoint(x: x + Self.numbersWidth - 4 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2))
         }
         func numbers(_ list: [Int?], left: Bool, x: CGFloat) {
             let pinned = left ? leftPinned : rightPinned
