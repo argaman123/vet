@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         CodeFont.registerBundled()
         installDoubleShift()
+        hideFocusRings()
         mcp = MCPServer(tools: VetTools.make(self))
         mcp?.start()
         searchEverywhere.app = self
@@ -80,6 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // stagehunk <n>: mark the open diff's nth change reviewed
             guard let self, let staging = self.workspace.review.diff?.staging, let n = Int(args.first ?? "0"), n < staging.hunks.count else { return }
             self.workspace.review.setHunk(staging.hunks[n].id, staged: true, snapshot: staging.snapshotID)
+        }
+        SnapshotHook.on("type") { [weak self] args in
+            // type <needle> <text…>: type text after the first match of needle in the diff's new side
+            guard let self, args.count >= 2 else { return }
+            self.workspace.review.diffView.debugType(args.dropFirst().joined(separator: " "), after: args[0])
         }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
@@ -161,6 +167,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(cmd, forType: .string)
         default: break
+        }
+    }
+
+    /// No focus rings on text fields (search, address, configurations): the caret shows focus.
+    private func hideFocusRings() {
+        NotificationCenter.default.addObserver(forName: NSWindow.didUpdateNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                guard let w = NSApp.keyWindow, let fr = w.firstResponder as? NSTextView, fr.isFieldEditor,
+                      let field = fr.delegate as? NSTextField, field.focusRingType != .none else { return }
+                field.focusRingType = .none
+                field.needsDisplay = true
+                field.superview?.needsDisplay = true
+            }
         }
     }
 

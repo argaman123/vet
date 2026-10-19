@@ -80,10 +80,8 @@ struct DiffScreen: View {
                 if let f = review.plan?.file(doc.change.path) { PlanSummary(file: f, index: review.plan?.index(of: f.path), total: review.plan?.files.count ?? 0) }
             }
             RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial)
-                .overlay(alignment: .bottomTrailing) {
-                    if Design.direction == .glass { ReviewFooter(app: app, floating: true) }
-                }
-            if Design.direction != .glass { ReviewFooter(app: app) }
+            // Under the code, not over it (over the code the text would take the pointer).
+            ReviewFooter(app: app, floating: Design.direction == .glass)
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
@@ -100,7 +98,7 @@ struct DiffHeader: View {
         let change = review.changes.first { $0.path == doc.change.path } ?? doc.change
         HeaderBar {
             let node = FileTreeNode.build([change]).first.map(leaf)
-            TriStateCheckbox(state: review.stage(of: change), fraction: node.flatMap { review.reviewedFraction($0) }) { on in
+            TriStateCheckbox(state: review.stage(of: change)) { on in
                 if let node { review.setStaged(node, on) }
             }
             Image(nsImage: FileIcons.icon(for: change.path)).resizable().frame(width: 16, height: 16)
@@ -128,11 +126,12 @@ struct DiffHeader: View {
                 .help("Previous Change (⌥⌘↑)")
             Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down") }
                 .help("Next Change (⌥⌘↓)")
-            Picker("Layout", selection: Bindable(review).unified) {
-                Image(systemName: "rectangle.split.2x1").accessibilityLabel("Side by Side").help("Side by Side").tag(false)
-                Image(systemName: "rectangle.grid.1x2").accessibilityLabel("Unified").help("Unified").tag(true)
+            // One button that flips the layout (its icon shows the other one).
+            Button { withAnimation(.easeInOut(duration: 0.2)) { review.unified.toggle() } } label: {
+                Image(systemName: review.unified ? "rectangle.split.2x1" : "rectangle.grid.1x2")
             }
-            .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+            .help(review.unified ? "Side by Side" : "Unified")
+            .accessibilityLabel(review.unified ? "Side by Side" : "Unified")
             Menu {
                 Button("Open in Editor") { if let url = review.url(for: change.path) { app.showFile(url) } }
                 Button(review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { review.folding.toggle() }
@@ -338,11 +337,16 @@ struct ReviewFooter: View {
         .font(.callout)
         .buttonStyle(.borderless)
         if floating {
-            buttons
-                .padding(.horizontal, 16)
-                .frame(height: 34)
-                .glassEffect(.regular, in: .capsule)
-                .padding(14)
+            HStack {
+                Spacer()
+                buttons
+                    .padding(.horizontal, 16)
+                    .frame(height: 32)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: DiffTheme.background))
         } else {
             HStack { Spacer(); buttons }
                 .padding(.horizontal, 16)

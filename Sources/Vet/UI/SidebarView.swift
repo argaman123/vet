@@ -18,7 +18,7 @@ struct SidebarView: View {
         }
         .frame(maxHeight: .infinity)
         // IDE trees want dense rows (Xcode's navigators use the small size too).
-        .environment(\.sidebarRowSize, .large)
+        .environment(\.sidebarRowSize, .medium)
     }
 }
 
@@ -133,8 +133,7 @@ private struct SectionHeader: View {
             Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
             Text("\(files.count)").font(.subheadline).foregroundStyle(.tertiary).monospacedDigit()
             Spacer()
-            TriStateCheckbox(state: states == [.staged] ? .staged : states == [.unstaged] ? .unstaged : .partial,
-                             fraction: Self.fraction(nodes, review)) { on in
+            TriStateCheckbox(state: states == [.staged] ? .staged : states == [.unstaged] ? .unstaged : .partial) { on in
                 for n in nodes { review.setStaged(n, on) }
             }
             .alignedToTextBaseline()
@@ -183,7 +182,6 @@ struct ChangeNodeRow: View {
                         .lineLimit(1)
                         .opacity(review.stage(of: node) == .staged ? 0.65 : 1) // reviewed names recede
                     Spacer(minLength: 0)
-                    ReviewBar(fraction: review.reviewedFraction(node)).alignedToTextBaseline().alignedToTextBaseline()
                     TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
                 }
             }
@@ -214,7 +212,8 @@ struct ChangeMenu: View {
         }
         Button(review.isDirectlyMarked(node.path) ? "Remove Unimportant Mark" : "Mark as Unimportant") { review.toggleMark(node) }
             .disabled(!review.isDirectlyMarked(node.path) && review.isMarked(node.path))
-        Button("Unstage") { review.setStaged(node, false) }.disabled(review.stage(of: node) == .unstaged)
+        Button("Mark as Reviewed") { review.setStaged(node, true) }.disabled(review.stage(of: node) == .staged)
+        Button("Mark as Not Reviewed") { review.setStaged(node, false) }.disabled(review.stage(of: node) == .unstaged)
         Divider()
         Button("Show in Finder") { if let url = review.url(for: node.path) { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
         Button("Copy Path") {
@@ -246,7 +245,7 @@ private struct PlanRow: View {
             }
             .opacity(reviewed && prominence != .increased ? 0.65 : 1)
             Spacer(minLength: 4)
-            TriStateCheckbox(state: review.stage(of: node), fraction: review.reviewedFraction(node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
+            TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
         }
         .help(summary.isEmpty ? node.path : summary)
     }
@@ -270,7 +269,7 @@ private struct FileChangeLabel: View {
                 }
             }
             Spacer(minLength: 4)
-            TriStateCheckbox(state: review.stage(of: node), fraction: review.reviewedFraction(node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
+            TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
         }
         .help(change.kind.help)
     }

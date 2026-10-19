@@ -7,13 +7,19 @@ final class RibbonGutterView: NSView {
     /// `unified`: one pane; both number columns (HEAD, working file) then the checkboxes.
     enum Mode { case split, rightOnly, leftOnly, unified }
     static let numbersWidth: CGFloat = 34
-    static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : ringInBridge ? 38 : 30 }
+    static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : ringInBridge ? 44 : 30 }
     /// The review ring sits in the bridge (in a flat stretch on the taller side, so it always fits).
     static var ringInBridge: Bool { [.native, .mono, .check, .circle, .progress].contains(Design.marker) }
     static let ringZone: CGFloat = 16
 
     /// Where a change's bridge runs flat for its ring: the side with more lines.
     func ringOnRight(_ s: DiffLayout.Segment) -> Bool { s.right.count >= s.left.count }
+
+    /// The band (one line tall) the ring sits in: the taller side's first line.
+    func ringBand(_ s: DiffLayout.Segment) -> (CGFloat, CGFloat) {
+        let top = ringOnRight(s) ? y(s.right.lowerBound, left: false) : y(s.left.lowerBound, left: true)
+        return (top, top + DiffTheme.lineHeight)
+    }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
     static var checkWidth: CGFloat { [.inline, .row, .native, .mono, .check, .circle, .progress].contains(Design.marker) ? 0 : 24 }
@@ -117,10 +123,9 @@ final class RibbonGutterView: NSView {
             guard let s = segment(for: id) else { b.isHidden = true; continue }
             if mode == .split, [.native, .mono, .check, .circle, .progress].contains(b.style) {
                 // In the bridge's flat stretch on the taller side, centered on that side's first line.
-                let right = ringOnRight(s)
-                let top = right ? y(s.right.lowerBound, left: false) : y(s.left.lowerBound, left: true)
+                let (top, _) = ringBand(s)
                 let cy = top + DiffTheme.lineHeight / 2
-                let cx = right ? Self.numbersWidth + Self.ribbonWidth - Self.ringZone / 2 : Self.numbersWidth + Self.ringZone / 2
+                let cx = Self.numbersWidth + Self.ribbonWidth / 2
                 b.frame = NSRect(x: cx - 8, y: cy - 8, width: 16, height: 16)
                 b.isHidden = cy < -20 || cy > bounds.height + 20
                 continue
@@ -173,18 +178,35 @@ final class RibbonGutterView: NSView {
                 let staged = states[h.id] == .staged
                 // WebStorm's curve: control points at 30% and 70% across the ribbon.
                 let path = NSBezierPath()
-                // With the ring in the bridge, the curve leaves a flat stretch on the taller side.
-                var a = x0, b = x1
-                if Self.ringInBridge && mode == .split { if ringOnRight(s) { b = x1 - Self.ringZone } else { a = x0 + Self.ringZone } }
-                let c1 = a + (b - a) * 0.45, c2 = a + (b - a) * 0.55
-                path.move(to: NSPoint(x: 0, y: l0))
-                path.line(to: NSPoint(x: a, y: l0))
-                path.curve(to: NSPoint(x: b, y: r0), controlPoint1: NSPoint(x: c1, y: l0), controlPoint2: NSPoint(x: c2, y: r0))
-                path.line(to: NSPoint(x: bounds.width, y: r0))
-                path.line(to: NSPoint(x: bounds.width, y: r1))
-                path.line(to: NSPoint(x: b, y: r1))
-                path.curve(to: NSPoint(x: a, y: l1), controlPoint1: NSPoint(x: c2, y: r1), controlPoint2: NSPoint(x: c1, y: l1))
-                path.line(to: NSPoint(x: 0, y: l1))
+                let c1 = x0 + (x1 - x0) * 0.45, c2 = x0 + (x1 - x0) * 0.55
+                if Self.ringInBridge && mode == .split {
+                    // The ring sits in the middle of the bridge, in a flat band one line tall at the
+                    // taller side's first line; each side curves into that band.
+                    let (m0, m1) = ringBand(s)
+                    let mid = Self.numbersWidth + Self.ribbonWidth / 2, a = mid - Self.ringZone / 2, b = mid + Self.ringZone / 2
+                    let k = (a - x0) * 0.5
+                    path.move(to: NSPoint(x: 0, y: l0))
+                    path.line(to: NSPoint(x: x0, y: l0))
+                    path.curve(to: NSPoint(x: a, y: m0), controlPoint1: NSPoint(x: x0 + k, y: l0), controlPoint2: NSPoint(x: a - k, y: m0))
+                    path.line(to: NSPoint(x: b, y: m0))
+                    path.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: b + k, y: m0), controlPoint2: NSPoint(x: x1 - k, y: r0))
+                    path.line(to: NSPoint(x: bounds.width, y: r0))
+                    path.line(to: NSPoint(x: bounds.width, y: r1))
+                    path.line(to: NSPoint(x: x1, y: r1))
+                    path.curve(to: NSPoint(x: b, y: m1), controlPoint1: NSPoint(x: x1 - k, y: r1), controlPoint2: NSPoint(x: b + k, y: m1))
+                    path.line(to: NSPoint(x: a, y: m1))
+                    path.curve(to: NSPoint(x: x0, y: l1), controlPoint1: NSPoint(x: a - k, y: m1), controlPoint2: NSPoint(x: x0 + k, y: l1))
+                    path.line(to: NSPoint(x: 0, y: l1))
+                } else {
+                    path.move(to: NSPoint(x: 0, y: l0))
+                    path.line(to: NSPoint(x: x0, y: l0))
+                    path.curve(to: NSPoint(x: x1, y: r0), controlPoint1: NSPoint(x: c1, y: l0), controlPoint2: NSPoint(x: c2, y: r0))
+                    path.line(to: NSPoint(x: bounds.width, y: r0))
+                    path.line(to: NSPoint(x: bounds.width, y: r1))
+                    path.line(to: NSPoint(x: x1, y: r1))
+                    path.curve(to: NSPoint(x: x0, y: l1), controlPoint1: NSPoint(x: c2, y: r1), controlPoint2: NSPoint(x: c1, y: l1))
+                    path.line(to: NSPoint(x: 0, y: l1))
+                }
                 path.close()
                 let change = DiffTheme.change(head: h.head, work: h.work)
                 if Design.bridge == .lines {
@@ -350,10 +372,10 @@ final class StageToggle: NSView {
         style = inList && (m == .bar || m == .row) ? .native : m
         self.onToggle = onToggle
         super.init(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
-        toolTip = "Stage this section (mark it reviewed)"
+        toolTip = "Mark this change reviewed"
         setAccessibilityElement(true)
         setAccessibilityRole(.checkBox)
-        setAccessibilityLabel("Stage this section (mark it reviewed)")
+        setAccessibilityLabel("Mark this change reviewed")
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
         if style == .native || style == .mono {
             let b = NSButton(checkboxWithTitle: "", target: self, action: #selector(nativeClicked))

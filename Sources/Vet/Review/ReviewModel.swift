@@ -300,7 +300,7 @@ final class ReviewModel {
                 // One git command for the whole folder: it either applies or it doesn't.
                 if staged { try await repo.stageFiles(targets) } else { try await repo.unstageFiles(targets) }
             } catch {
-                show("Couldn't \(staged ? "stage" : "unstage"): \(error)")
+                show("Couldn't mark \(staged ? "reviewed" : "not reviewed"): \(error)")
             }
             for c in targets {
                 inFlight[c.path, default: 1] -= 1
@@ -424,7 +424,7 @@ final class ReviewModel {
                 let outcome = try await repo.setSection(change, hunkID: id, staged: staged, expectedSnapshot: expected)
                 if outcome == .stale { show("The file changed, so the diff was refreshed. Check it and click again.") }
             } catch {
-                show("Couldn't \(staged ? "stage" : "unstage") the section: \(error)")
+                show("Couldn't mark the change \(staged ? "reviewed" : "not reviewed"): \(error)")
             }
             hunkInFlight[id, default: 1] -= 1
             if hunkInFlight[id] == 0 { hunkInFlight[id] = nil; pendingHunks[id] = nil }

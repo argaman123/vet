@@ -172,7 +172,23 @@ extension Palette {
         return p
     }()
 
-    static let all: [Palette] = [.vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .monokai, .neon]
+    /// Aurora: Vet's own. One cool family from the logo (blue → cyan → mint → green) for code
+    /// structure, a single warm amber for values, quiet slate neutrals.
+    static let aurora = Palette(
+        id: "aurora", name: "Aurora",
+        window: 0x0C0D10, sidebar: 0x0F1014, header: 0x121318, accent: 0x6E9BFF, folder: 0x7D8796,
+        background: 0x14161B, text: 0xD6DCE8, lineNumber: 0x434A58, lineNumberCurrent: 0xAEB7C8, selection: 0x2C3A55,
+        foldPill: 0x1B1E25, foldPillHover: 0x252935, foldPillBorder: 0x2B303B, foldLabel: 0x8892A6, foldWave: 0x272B35,
+        inlayBackground: 0x1D2028, inlayText: 0x8590A4, lensText: 0x6C7689, searchMatch: 0x4A3E1C,
+        inserted: 0x14302A, modified: 0x182A46, deleted: 0x3A1D26,
+        insertedWord: 0x1F5446, modifiedWord: 0x26477A, deletedWord: 0x66283A,
+        addedMark: 0x48D7A4, modifiedMark: 0x6E9BFF, removedMark: 0xF0708A,
+        keyword: 0x7EA6FF, string: 0x9CDE8A, comment: 0x5E687C, number: 0xFFC27A, type: 0x5FD3E6,
+        decorator: 0xFFC27A, tag: 0x7EA6FF, attribute: 0x5FD3E6,
+        function: 0x67E3C2, property: 0xB9C6F2, parameter: 0xD3DCF5, classType: 0x5FD3E6, constant: 0xFFC27A, namespace: 0x5FD3E6,
+        fileModified: 0x6E9BFF, fileAdded: 0x48D7A4, fileDeleted: 0xF0708A, fileConflict: 0xFFC27A)
+
+    static let all: [Palette] = [.aurora, .vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .monokai, .neon]
 }
 
 /// Design variants being tried (Settings-free switches read from defaults; mockups for now).
@@ -184,9 +200,11 @@ enum Design {
     static var direction: Direction { Direction(rawValue: UserDefaults.standard.string(forKey: "design.direction") ?? "") ?? .glass }
     /// How changed files' names show their status.
     enum Names { case colored, dot, glyph }
-    static var names: Names { switch direction { case .glass: .dot; case .monolith: .glyph; default: .colored } }
+    static var names: Names { direction == .monolith ? .glyph : .colored }
     static var monoIcons: Bool { direction == .monolith }
-    static var accentFolders: Bool { direction == .glass }
+    static var accentFolders: Bool { false }
+    /// Surfaces let the desktop through, in levels: window clear, bars thin, code a dark veil.
+    static var frosted: Bool { UserDefaults.standard.object(forKey: "design.frosted") as? Bool ?? false }
     /// What joins the two sides of the diff.
     enum Bridge: String { case ribbon, lines, map }
     static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .progress }

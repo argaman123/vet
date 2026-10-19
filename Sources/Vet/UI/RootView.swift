@@ -28,11 +28,16 @@ struct RootView: View {
                 .navigationSubtitle(subtitle)
                 .toolbarTitleMenu { ProjectMenu(app: app) }
                 .toolbar { MainToolbar(app: app) }
+                // A frosted top bar, like the sidebar (not a see-through one).
+                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+                .toolbarBackground(.regularMaterial, for: .windowToolbar)
                 .searchable(text: Bindable(ui).search, isPresented: Bindable(ui).focusSearch, placement: .toolbar, prompt: "Search Everywhere")
                 .searchSuggestions { SearchEverywhereSuggestions(app: app) }
         }
         .onChange(of: ui.search) { _, query in app.searchEverywhere.update(query) }
         .tint(Color(nsColor: DiffTheme.accent)) // the theme's accent on every control
+        .focusEffectDisabled()
+        .background { if Design.frosted { BehindWindowBlur() } }
         .id(ui.themeID) // a new theme redraws everything with its colors
         .background(WindowTint())
         .task(id: app.projects.current) {
@@ -170,9 +175,20 @@ private struct WindowTint: NSViewRepresentable {
     /// Glass: the window lets the desktop through, so the Liquid Glass sidebar picks up the wallpaper.
     private static func apply(_ w: NSWindow?) {
         guard let w else { return }
-        let glass = Design.direction == .glass
-        w.isOpaque = !glass
-        w.backgroundColor = glass ? .clear : DiffTheme.window
+        // Glass keeps a solid window (the sidebar's own glass frosts it); Frosted lets the desktop through.
+        w.isOpaque = !Design.frosted
+        w.backgroundColor = Design.frosted ? .clear : DiffTheme.window
     }
 }
 
+/// The desktop, blurred, behind the whole window (Frosted).
+private struct BehindWindowBlur: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = .underWindowBackground
+        v.blendingMode = .behindWindow
+        v.state = .active
+        return v
+    }
+    func updateNSView(_ v: NSVisualEffectView, context: Context) {}
+}

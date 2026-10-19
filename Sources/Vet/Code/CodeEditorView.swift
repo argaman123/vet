@@ -9,6 +9,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     private var language: CodeLanguage = .plain
     private var lines = TextLines(lines: [])
     private var rehighlight: DispatchWorkItem?
+    private var autosave: DispatchWorkItem?
     private(set) var isDirty = false { didSet { if oldValue != isDirty { onDirtyChange?(isDirty) } } }
     var onDirtyChange: ((Bool) -> Void)?
     var onSave: ((String) -> Void)?
@@ -207,6 +208,11 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         isDirty = true
+        // Autosave a moment after typing stops.
+        autosave?.cancel()
+        let save = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.save() } }
+        autosave = save
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: save)
         let count = textView.string.reduce(into: 1) { if $1 == "\n" { $0 += 1 } }
         if count != gutter.numbers.count { gutter.numbers = (0..<count).map { $0 }; sizeDocument(lineCount: count) }
         rehighlight?.cancel()

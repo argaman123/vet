@@ -84,6 +84,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private var cardPlaces: [(card: NoteCardView, left: Bool, rect: NSRect)] = []
     private(set) var isDirty = false { didSet { if oldValue != isDirty { onDirtyChange?(isDirty) } } }
     private var rehighlight: DispatchWorkItem?
+    private var autosave: DispatchWorkItem?
     private var shownStaging: SectionStaging?
     /// The working-file bytes the right pane was built from (or last saved).
     var editBase: Data? { savedBase ?? shownStaging?.work.joined() }
@@ -132,6 +133,16 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let src = first.left ? staging.head : staging.work
         let text = lines.compactMap { $0 < src.count ? String(src.lines[$0].text) : nil }.joined(separator: "\n")
         return (first.left, lines, text, r.length > 0)
+    }
+
+    /// Test aid: types `text` at the end of the right pane's line containing `needle`, as typing would.
+    func debugType(_ text: String, after needle: String) {
+        let ns = rightText.string as NSString
+        let r = ns.range(of: needle)
+        guard r.location != NSNotFound else { return }
+        window?.makeFirstResponder(rightText)
+        rightText.setSelectedRange(NSRange(location: NSMaxRange(r), length: 0))
+        rightText.insertText(text, replacementRange: rightText.selectedRange())
     }
 
     /// File lines visible in the new (right) pane.
@@ -229,6 +240,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         shownLanguage = doc.language
         rightText.isEditable = doc.change.kind != .deleted
         let keepLeft = leftScroll.contentView.bounds.origin, keepRight = rightScroll.contentView.bounds.origin
+        // Keep the caret where it was (an autosave refreshes the pane while you're in it).
+        let keepSelection = shownPath == doc.change.path ? rightText.selectedRange() : nil
+        defer {
+            if let keepSelection, NSMaxRange(keepSelection) <= (rightText.textStorage?.length ?? 0) { rightText.setSelectedRange(keepSelection) }
+        }
         // Remember what you were reading (a line's text and number), not just a pixel offset,
         // so lines Claude inserts above it don't shift your place.
         let anchor = samePath ? readingAnchor() : nil
@@ -667,10 +683,10 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             item("Go to implementation") { [weak self] in self?.onNavigate?(.implementation, left, line, character) },
             item("Find references") { [weak self] in self?.onNavigate?(.references, left, line, character) },
             .separator(),
-            item("Stage selected lines", enabled: !left && !isDirty) { [weak self] in
+            item("Mark Selected Lines Reviewed", enabled: !left && !isDirty) { [weak self] in
                 self?.onStageLines?(span.lowerBound..<(span.upperBound + 1), staging.snapshotID)
             },
-            item("Unstage this section", enabled: hunk.map { staging.state(of: $0) != .unstaged } ?? false) { [weak self] in
+            item("Mark Change Not Reviewed", enabled: hunk.map { staging.state(of: $0) != .unstaged } ?? false) { [weak self] in
                 if let hunk { self?.onToggle?(hunk.id, false, staging.snapshotID) }
             },
             .separator(),
@@ -692,6 +708,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         isDirty = true
+        // Autosave a moment after typing stops.
+        autosave?.cancel()
+        let save = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.save(quietly: true) } }
+        autosave = save
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: save)
         rightText.lenses = [] // their rows shift as you type; they come back with the next refresh
         rehighlight?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -746,9 +767,10 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         return String(decoding: EditedText.rebuild(rows: rows, original: staging.work), as: UTF8.self)
     }
 
-    func save() {
+    func save(quietly: Bool = false) {
         guard isDirty else { return }
         guard let text = editedFileText() else {
+            if quietly { return } // an autosave just waits; ⌘S explains
             NSSound.beep()
             onSaveRefused?()
             return

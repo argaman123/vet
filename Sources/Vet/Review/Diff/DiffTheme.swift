@@ -39,8 +39,10 @@ enum DiffTheme {
     static var accent: NSColor { current.systemAccent ? .controlAccentColor : color("accent") { $0.accent } }
     static var folder: NSColor { color("folder") { $0.folder } }
     static var sidebar: NSColor { color("sidebar") { $0.sidebar } }
-    static var header: NSColor { color("header") { $0.header } }
-    static var background: NSColor { color("background") { $0.background } }
+    static var header: NSColor { veil(color("header") { $0.header }, 0.55) }
+    static var background: NSColor { veil(color("background") { $0.background }, 0.8) }
+    /// Frosted: a surface becomes a veil over the desktop (its alpha), else stays solid.
+    static func veil(_ c: NSColor, _ alpha: CGFloat) -> NSColor { Design.frosted ? c.withAlphaComponent(alpha) : c }
     static var gutter: NSColor { background }
     static var foldLabel: NSColor { color("foldLabel") { $0.foldLabel } }
     static var foldPill: NSColor { color("foldPill") { $0.foldPill } }
@@ -78,9 +80,9 @@ enum DiffTheme {
             }
         }
         switch change {
-        case .inserted: return color("inserted") { $0.inserted }
-        case .modified: return color("modified") { $0.modified }
-        case .deleted: return color("deleted") { $0.deleted }
+        case .inserted: return veil(color("inserted") { $0.inserted }, 0.85)
+        case .modified: return veil(color("modified") { $0.modified }, 0.85)
+        case .deleted: return veil(color("deleted") { $0.deleted }, 0.85)
         }
     }
     static func change(head: Range<Int>, work: Range<Int>) -> Change {
@@ -164,7 +166,7 @@ enum DiffTheme {
                 let c = color.usingColorSpace(.sRGB) ?? color, b = background.usingColorSpace(.sRGB) ?? .black
                 out = NSColor(srgbRed: b.redComponent + (c.redComponent - b.redComponent) * alpha,
                               green: b.greenComponent + (c.greenComponent - b.greenComponent) * alpha,
-                              blue: b.blueComponent + (c.blueComponent - b.blueComponent) * alpha, alpha: 1)
+                              blue: b.blueComponent + (c.blueComponent - b.blueComponent) * alpha, alpha: b.alphaComponent)
             }
             return out
         }
