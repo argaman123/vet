@@ -66,10 +66,18 @@ enum DiffTheme {
     /// Diff blocks: inserted green, modified blue, deleted red.
     enum Change { case inserted, modified, deleted }
     static func block(_ change: Change) -> NSColor {
+        // Monolith: the blocks are quiet greys; color is left to the changed words and the code.
+        if Design.direction == .monolith {
+            switch change {
+            case .inserted: return hex(0x1B231D)
+            case .modified: return hex(0x1E2128)
+            case .deleted: return hex(0x261C1E)
+            }
+        }
         switch change {
-        case .inserted: color("inserted") { $0.inserted }
-        case .modified: color("modified") { $0.modified }
-        case .deleted: color("deleted") { $0.deleted }
+        case .inserted: return color("inserted") { $0.inserted }
+        case .modified: return color("modified") { $0.modified }
+        case .deleted: return color("deleted") { $0.deleted }
         }
     }
     static func change(head: Range<Int>, work: Range<Int>) -> Change {
@@ -167,7 +175,7 @@ enum DiffTheme {
         staged ? solid(base, 0.35) : base
     }
     /// Changed words inside a modified section: a brighter shade of it, so they stand out.
-    static var modifiedWord: NSColor { color("modifiedWord") { $0.modifiedWord } }
+    static var modifiedWord: NSColor { Design.direction == .monolith ? hex(0x2D4A78) : color("modifiedWord") { $0.modifiedWord } }
     /// Changed words (faded once reviewed).
     static func word(_ base: NSColor, staged: Bool) -> NSColor { staged ? solid(base, 0.5) : base }
 

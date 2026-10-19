@@ -10,7 +10,7 @@ final class RibbonGutterView: NSView {
     static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : 36 }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
-    static var checkWidth: CGFloat { [.inline, .row, .native].contains(Design.marker) ? 4 : 24 }
+    static var checkWidth: CGFloat { [.inline, .row, .native, .mono, .check, .circle, .progress].contains(Design.marker) ? 4 : 24 }
 
     var mode: Mode = .split { didSet { needsDisplay = true } }
     var diffLayout: DiffLayout?
@@ -109,7 +109,7 @@ final class RibbonGutterView: NSView {
                 continue
             }
             guard let s = segment(for: id) else { b.isHidden = true; continue }
-            if mode == .split, b.style == .native {
+            if mode == .split, [.native, .mono, .check, .circle, .progress].contains(b.style) {
                 // In the bridge, between the two number columns, at the middle of the ribbon.
                 let l0 = y(s.left.lowerBound, left: true), l1 = s.left.isEmpty ? l0 : y(s.left.upperBound, left: true)
                 let r0 = y(s.right.lowerBound, left: false), r1 = s.right.isEmpty ? r0 : y(s.right.upperBound, left: false)
@@ -304,12 +304,16 @@ final class StageToggle: NSView {
     var state: StageState = .unstaged {
         didSet {
             guard oldValue != state else { return }
-            needsDisplay = true
+            animateProgress()
             setAccessibilityValue(state == .staged ? 1 : state == .partial ? 2 : 0)
             native?.state = switch state { case .staged: .on; case .unstaged: .off; case .partial: .mixed }
         }
     }
     private var hovering = false { didSet { needsDisplay = true } }
+    /// How much is reviewed (files and folders); sections use their state.
+    var fraction: Double? { didSet { if oldValue != fraction { animateProgress() } } }
+    private var shown: Double = -1
+    private var progressTimer: Timer?
     /// The system checkbox, in the "native" design.
     private var native: NSButton?
 
@@ -328,12 +332,13 @@ final class StageToggle: NSView {
         setAccessibilityRole(.checkBox)
         setAccessibilityLabel("Stage this section (mark it reviewed)")
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
-        if style == .native {
+        if style == .native || style == .mono {
             let b = NSButton(checkboxWithTitle: "", target: self, action: #selector(nativeClicked))
             b.allowsMixedState = true
             b.controlSize = .small
             b.frame = bounds
             b.autoresizingMask = [.width, .height]
+            if style == .mono { b.contentTintColor = .secondaryLabelColor; b.bezelColor = .secondaryLabelColor }
             addSubview(b)
             native = b
         }
@@ -349,9 +354,12 @@ final class StageToggle: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         switch style {
-        case .native, .row: return
+        case .progress: drawProgress(); return
+        case .native, .row, .mono: return
         case .dot, .inline: drawDot(); return
         case .bar: drawBar(); return
+        case .check: drawQuietCheck(); return
+        case .circle: drawCircle(); return
         case .ring: break
         }
         let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 1.5))
@@ -401,6 +409,101 @@ final class StageToggle: NSView {
             DiffTheme.added.setFill(); bar.fill(); NSGraphicsContext.restoreGraphicsState()
         case .unstaged:
             tint.withAlphaComponent(hovering ? 1 : 0.8).setFill(); bar.fill()
+        }
+    }
+
+    private var target: Double {
+        if let fraction { return state == .staged ? 1 : min(fraction, state == .unstaged ? 0 : 0.99) }
+        return state == .staged ? 1 : state == .partial ? 0.5 : 0
+    }
+
+    /// Eases the ring to its new amount (a quarter second), unless motion is reduced.
+    private func animateProgress() {
+        needsDisplay = true
+        guard shown >= 0, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, window != nil else { shown = target; return }
+        progressTimer?.invalidate()
+        let from = shown, to = target, start = Date()
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let p = min(1, Date().timeIntervalSince(start) / 0.25)
+                let e = p < 0.5 ? 2 * p * p : 1 - pow(-2 * p + 2, 2) / 2
+                self.shown = from + (to - from) * e
+                self.needsDisplay = true
+                if p >= 1 { self.progressTimer?.invalidate() }
+            }
+        }
+    }
+
+    /// The review ring: a quiet track that fills as you review, and becomes a solid check when done.
+    private func drawProgress() {
+        if shown < 0 { shown = target }
+        if progressTimer?.isValid != true { shown = target }
+        let r = NSRect(x: bounds.midX - 6.5, y: bounds.midY - 6.5, width: 13, height: 13)
+        let c = NSPoint(x: r.midX, y: r.midY)
+        if shown >= 0.999 {
+            DiffTheme.accent.setFill()
+            NSBezierPath(ovalIn: r).fill()
+            // A checkmark (this view isn't flipped: y grows upward).
+            let check = NSBezierPath()
+            check.move(to: NSPoint(x: c.x - 3.1, y: c.y - 0.1))
+            check.line(to: NSPoint(x: c.x - 0.9, y: c.y - 2.3))
+            check.line(to: NSPoint(x: c.x + 3.2, y: c.y + 2.4))
+            check.lineWidth = 1.6; check.lineCapStyle = .round; check.lineJoinStyle = .round
+            NSColor.white.setStroke(); check.stroke()
+            return
+        }
+        let track = NSBezierPath(ovalIn: r.insetBy(dx: 0.8, dy: 0.8))
+        track.lineWidth = 1.6
+        (hovering ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor).setStroke()
+        track.stroke()
+        if shown > 0.001 {
+            let arc = NSBezierPath()
+            arc.appendArc(withCenter: c, radius: 5.7, startAngle: 90, endAngle: 90 - 360 * shown, clockwise: true)
+            arc.lineWidth = 1.9; arc.lineCapStyle = .round
+            DiffTheme.accent.setStroke()
+            arc.stroke()
+        }
+    }
+
+    /// Nothing until it matters: a faint outline under the pointer, a dash when partly reviewed,
+    /// a checkmark in the accent color once reviewed.
+    private func drawQuietCheck() {
+        let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 3, yRadius: 3)
+        switch state {
+        case .staged:
+            if let img = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "Reviewed")?
+                .withSymbolConfiguration(.init(pointSize: 11, weight: .bold).applying(.init(paletteColors: [DiffTheme.accent]))) {
+                let s = img.size
+                img.draw(in: NSRect(x: bounds.midX - s.width / 2, y: bounds.midY - s.height / 2, width: s.width, height: s.height))
+            }
+        case .partial:
+            let dash = NSBezierPath(); dash.move(to: NSPoint(x: 5, y: bounds.midY)); dash.line(to: NSPoint(x: bounds.width - 5, y: bounds.midY))
+            dash.lineWidth = 1.6; dash.lineCapStyle = .round; NSColor.secondaryLabelColor.setStroke(); dash.stroke()
+        case .unstaged:
+            if hovering { NSColor.tertiaryLabelColor.setStroke(); box.lineWidth = 1; box.stroke() }
+            else { NSColor.quaternaryLabelColor.setStroke(); box.lineWidth = 1; box.stroke() }
+        }
+    }
+
+    /// A thin grey ring; once reviewed it fills with the accent color and a white check.
+    private func drawCircle() {
+        let r = NSRect(x: bounds.midX - 6.5, y: bounds.midY - 6.5, width: 13, height: 13)
+        let circle = NSBezierPath(ovalIn: r)
+        switch state {
+        case .staged:
+            DiffTheme.accent.setFill(); circle.fill()
+            let c = NSPoint(x: r.midX, y: r.midY)
+            let check = NSBezierPath()
+            check.move(to: NSPoint(x: c.x - 3, y: c.y - 0.2)); check.line(to: NSPoint(x: c.x - 0.8, y: c.y - 2.4)); check.line(to: NSPoint(x: c.x + 3.2, y: c.y + 2.3))
+            check.lineWidth = 1.5; check.lineCapStyle = .round; check.lineJoinStyle = .round
+            NSColor.white.setStroke(); check.stroke()
+        case .partial:
+            NSColor.tertiaryLabelColor.setStroke(); circle.lineWidth = 1.2; circle.stroke()
+            NSGraphicsContext.saveGraphicsState(); NSRect(x: r.minX, y: r.minY, width: r.width / 2, height: r.height).clip()
+            DiffTheme.accent.withAlphaComponent(0.8).setFill(); circle.fill(); NSGraphicsContext.restoreGraphicsState()
+        case .unstaged:
+            (hovering ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor).setStroke(); circle.lineWidth = 1.2; circle.stroke()
         }
     }
 

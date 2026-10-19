@@ -7,6 +7,8 @@ import VetCore
 /// it; clicking an empty or partial one checks it.
 struct TriStateCheckbox: NSViewRepresentable {
     let state: StageState
+    /// How much is reviewed (the ring fills by it); nil for state alone.
+    var fraction: Double? = nil
     let action: (Bool) -> Void
 
     func makeNSView(context: Context) -> StageToggle {
@@ -19,7 +21,8 @@ struct TriStateCheckbox: NSViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.toggle = t
         t.state = state
-        t.toolTip = state == .staged ? "Reviewed (staged)" : "Mark reviewed (stage)"
+        t.fraction = fraction
+        t.toolTip = state == .staged ? "Reviewed" : fraction.map { $0 > 0 ? "\(Int($0 * 100))% reviewed · click to mark all reviewed" : "Mark reviewed" } ?? "Mark reviewed"
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: StageToggle, context: Context) -> CGSize? { CGSize(width: 16, height: 16) }

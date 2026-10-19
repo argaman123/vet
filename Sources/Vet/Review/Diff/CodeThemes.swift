@@ -178,10 +178,18 @@ extension Palette {
 /// Design variants being tried (Settings-free switches read from defaults; mockups for now).
 enum Design {
     /// How a file or section is marked reviewed.
-    enum Marker: String { case ring, native, dot, inline, bar, row }
+    enum Marker: String { case ring, native, dot, inline, bar, row, check, circle, mono, progress }
+    /// The whole app's look around the code.
+    enum Direction: String { case current, glass, monolith, studio }
+    static var direction: Direction { Direction(rawValue: UserDefaults.standard.string(forKey: "design.direction") ?? "") ?? .current }
+    /// How changed files' names show their status.
+    enum Names { case colored, dot, glyph }
+    static var names: Names { switch direction { case .glass: .dot; case .monolith: .glyph; default: .colored } }
+    static var monoIcons: Bool { direction == .monolith }
+    static var accentFolders: Bool { direction == .glass }
     /// What joins the two sides of the diff.
     enum Bridge: String { case ribbon, lines, map }
-    static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .native }
+    static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .progress }
     static var bridge: Bridge { Bridge(rawValue: UserDefaults.standard.string(forKey: "design.bridge") ?? "") ?? .ribbon }
 }
 

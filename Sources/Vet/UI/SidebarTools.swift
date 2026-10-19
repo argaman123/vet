@@ -88,7 +88,7 @@ struct ProjectNodeRow: View {
                 // Children are built only when the folder is open, so large projects stay fast.
                 ForEach(CompactFile.compact(node.children)) { ProjectNodeRow(app: app, item: $0, quickLook: $quickLook) }
             } label: {
-                Label { Text(item.name).lineLimit(1) } icon: { Image(systemName: "folder.fill").foregroundStyle(Color(nsColor: DiffTheme.folder)) }
+                Label { Text(item.name).lineLimit(1) } icon: { Image(systemName: "folder.fill").foregroundStyle(Design.accentFolders ? Color.accentColor : Color(nsColor: DiffTheme.folder)) }
             }
             .tag(node.path)
             .contextMenu { menu }
@@ -96,12 +96,7 @@ struct ProjectNodeRow: View {
             HStack(spacing: 6) {
                 Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
                 let change = app.workspace.review.changes.first(where: { $0.path == node.path })
-                Text(node.name).lineLimit(1).truncationMode(.middle)
-                    .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : change.map { AnyShapeStyle($0.kind.color) } ?? AnyShapeStyle(.primary))
-                if let change {
-                    Spacer(minLength: 4)
-                    Text(change.kind.letter).font(.caption.weight(.semibold).monospaced()).foregroundStyle(change.kind.color)
-                }
+                ChangeName(name: node.name, kind: change?.kind, selected: app.workspace.files.relativePath == node.path)
             }
             .tag(node.path)
             .contextMenu { menu }

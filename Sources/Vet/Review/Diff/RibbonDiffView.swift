@@ -383,7 +383,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             if let first = layout.segments.first(where: { if case .hunk = $0.kind { true } else { false } }) {
                 var line = first.right.lowerBound
                 if case .hunk(let id) = first.kind, let r = unifiedHunks[id] { line = r.lowerBound }
-                scrollRight(toLine: max(0, line - 4))
+                scrollRight(toLine: max(0, line - 4), animated: false)
             }
         }
         leftScroll.reflectScrolledClipView(leftScroll.contentView)
@@ -956,12 +956,25 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
-    private func scrollRight(toLine line: Int) {
+    private func scrollRight(toLine line: Int, animated: Bool = true) {
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
         let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight
         let maxY = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(y, maxY)))
-        scroll.reflectScrolledClipView(scroll.contentView)
+        let target = NSPoint(x: 0, y: min(max(0, y), maxY))
+        // Jumps glide (the other pane follows), unless motion is reduced or the view is still loading.
+        if animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.28
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                ctx.allowsImplicitAnimation = true
+                scroll.contentView.animator().setBoundsOrigin(target)
+            } completionHandler: { [weak scroll] in
+                MainActor.assumeIsolated { if let scroll { scroll.reflectScrolledClipView(scroll.contentView) } }
+            }
+        } else {
+            scroll.contentView.scroll(to: target)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
     }
 
     /// The unreviewed change you're on: the topmost one still on screen, else the next below,

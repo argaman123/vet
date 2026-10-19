@@ -80,7 +80,10 @@ struct DiffScreen: View {
                 if let f = review.plan?.file(doc.change.path) { PlanSummary(file: f, index: review.plan?.index(of: f.path), total: review.plan?.files.count ?? 0) }
             }
             RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial)
-            ReviewFooter(app: app)
+                .overlay(alignment: .bottomTrailing) {
+                    if Design.direction == .glass { ReviewFooter(app: app, floating: true) }
+                }
+            if Design.direction != .glass { ReviewFooter(app: app) }
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
@@ -96,11 +99,12 @@ struct DiffHeader: View {
         // The file as git sees it now (the diff's copy keeps the state it was loaded with).
         let change = review.changes.first { $0.path == doc.change.path } ?? doc.change
         HeaderBar {
-            TriStateCheckbox(state: review.stage(of: change)) { on in
-                if let node = FileTreeNode.build([change]).first.map(leaf) { review.setStaged(node, on) }
+            let node = FileTreeNode.build([change]).first.map(leaf)
+            TriStateCheckbox(state: review.stage(of: change), fraction: node.flatMap { review.reviewedFraction($0) }) { on in
+                if let node { review.setStaged(node, on) }
             }
             Image(nsImage: FileIcons.icon(for: change.path)).resizable().frame(width: 16, height: 16)
-            Text((change.path as NSString).lastPathComponent).fontWeight(.semibold).foregroundStyle(change.kind.color)
+            ChangeName(name: (change.path as NSString).lastPathComponent, kind: change.kind).fontWeight(.semibold)
             if let orig = change.origPath {
                 Text("renamed from \(orig)").foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             } else {
@@ -114,9 +118,10 @@ struct DiffHeader: View {
             } else if let staging = doc.staging {
                 let total = staging.hunks.count
                 let staged = staging.hunks.filter { staging.state(of: $0) == .staged }.count
-                Text(total == 0 ? "No changes" : "\(staged) of \(total) change\(total == 1 ? "" : "s") reviewed")
+                Text(total == 0 ? "" : "\(staged)/\(total)")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .help("\(staged) of \(total) changes reviewed")
             }
             // The diff's own controls, where WebStorm keeps them: change navigation and layout.
             Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up") }
@@ -209,13 +214,26 @@ struct EditorScreen: View {
 struct HeaderBar<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
-        HStack(spacing: 8) { content }
-            .font(.callout)
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 14)
-            .frame(height: 32)
-            .background(Color(nsColor: DiffTheme.header))
-            .overlay(alignment: .bottom) { Divider() }
+        if Design.direction == .glass {
+            // Glass: the file's controls float in a Liquid Glass bar over the code's edge.
+            HStack(spacing: 8) { content }
+                .font(.callout)
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 14)
+                .frame(height: 34)
+                .glassEffect(.regular, in: .capsule)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color(nsColor: DiffTheme.background))
+        } else {
+            HStack(spacing: 8) { content }
+                .font(.callout)
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 14)
+                .frame(height: Design.direction == .studio ? 38 : 32)
+                .background(Color(nsColor: Design.direction == .monolith || Design.direction == .studio ? DiffTheme.background : DiffTheme.header))
+                .overlay(alignment: .bottom) { Divider().opacity(Design.direction == .studio ? 0.5 : 1) }
+        }
     }
 }
 
@@ -304,26 +322,34 @@ struct BrowserScreen: View {
 /// usually commits, so it sits here rather than in the toolbar).
 struct ReviewFooter: View {
     let app: AppDelegate
+    /// Glass: two buttons in a floating Liquid Glass capsule over the code, instead of a bar.
+    var floating = false
     var body: some View {
         let review = app.workspace.review, ui = app.ui
         let staged = review.changes.filter { review.stage(of: $0) != .unstaged }.count
-        HStack(spacing: 10) {
-            Text(review.changes.isEmpty ? "No changes" : "\(review.reviewedCount) of \(review.changes.count) files reviewed")
-                .foregroundStyle(.secondary).monospacedDigit()
-            Spacer()
+        let buttons = HStack(spacing: 14) {
             Button { review.approveAndNext() } label: { Label("Approve and Next", systemImage: "checkmark") }
-                .help("Approve the outlined change and go to the next (⌘↩)")
-            Button { ui.showCommit = true } label: { Text(staged > 0 ? "Commit \(staged)…" : "Commit…") }
+                .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
+            Button { ui.showCommit = true } label: { Text(staged > 0 ? "Commit \(staged)" : "Commit") }
                 .help("Commit the checked changes (⌘K)")
                 .popover(isPresented: Binding(get: { ui.showCommit && ui.location.map { if case .diff = $0 { true } else { false } } == true },
                                               set: { ui.showCommit = $0 }), arrowEdge: .top) { CommitPopover(app: app) }
         }
         .font(.callout)
         .buttonStyle(.borderless)
-        .padding(.horizontal, 14)
-        .frame(height: 30)
-        .background(Color(nsColor: DiffTheme.header))
-        .overlay(alignment: .top) { Divider() }
+        if floating {
+            buttons
+                .padding(.horizontal, 16)
+                .frame(height: 34)
+                .glassEffect(.regular, in: .capsule)
+                .padding(14)
+        } else {
+            HStack { Spacer(); buttons }
+                .padding(.horizontal, 16)
+                .frame(height: 32)
+                .background(Color(nsColor: DiffTheme.background))
+                .overlay(alignment: .top) { Divider().opacity(0.6) }
+        }
     }
 }
 
@@ -332,14 +358,13 @@ struct PlanSummary: View {
     let file: ReviewPlan.File
     let index: Int?
     let total: Int
-    @AppStorage("planSummaryOpen") private var open = true
+    @AppStorage("planSummaryOpen") private var open = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "sparkle").foregroundStyle(Color(nsColor: DiffTheme.accent))
-                if let index { Text("\(index + 1) of \(total)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary) }
-                Text(file.summary).foregroundStyle(.primary).lineLimit(open ? nil : 1).fixedSize(horizontal: false, vertical: open)
+                Image(systemName: "sparkle").font(.caption).foregroundStyle(.secondary)
+                Text(file.summary).foregroundStyle(.secondary).lineLimit(open ? nil : 1).fixedSize(horizontal: false, vertical: open)
                 Spacer(minLength: 8)
                 if !(file.notes ?? []).isEmpty {
                     Button { open.toggle() } label: { Image(systemName: open ? "chevron.up" : "chevron.down") }
@@ -359,9 +384,9 @@ struct PlanSummary: View {
         }
         .font(.callout)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: DiffTheme.header))
+        .background(Color(nsColor: DiffTheme.background))
         .overlay(alignment: .bottom) { Divider() }
     }
 }

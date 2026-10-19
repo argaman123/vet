@@ -9,11 +9,21 @@ struct RootView: View {
         let ws = app.workspace, ui = app.ui
         NavigationSplitView {
             SidebarView(app: app)
-                .background(DiffTheme.palette.glassSidebar ? Color.clear : Color(nsColor: DiffTheme.sidebar))
+                .background(Self.sidebarFill)
                 .navigationSplitViewColumnWidth(min: 230, ideal: 290, max: 460)
         } detail: {
             MainArea(app: app)
                 .background(Color(nsColor: DiffTheme.background))
+                // Studio: the work sits on an inset panel, floating on the window.
+                .clipShape(RoundedRectangle(cornerRadius: Design.direction == .studio ? 12 : 0, style: .continuous))
+                .overlay {
+                    if Design.direction == .studio {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.07))
+                    }
+                }
+                .shadow(color: .black.opacity(Design.direction == .studio ? 0.45 : 0), radius: 18, y: 6)
+                .padding(Design.direction == .studio ? EdgeInsets(top: 2, leading: 2, bottom: 12, trailing: 12) : EdgeInsets())
+                .background(Design.direction == .studio ? Color(nsColor: DiffTheme.window) : .clear)
                 .navigationTitle(app.projects.current?.lastPathComponent ?? "Vet")
                 .navigationSubtitle(subtitle)
                 .toolbarTitleMenu { ProjectMenu(app: app) }
@@ -53,6 +63,19 @@ struct RootView: View {
         let n = review.changes.count
         let changed = n == 0 ? "no changes" : "\(review.reviewedCount) of \(n) reviewed"
         return branch.isEmpty ? changed : "\(branch) · \(changed)"
+    }
+}
+
+extension RootView {
+    /// The sidebar's surface: the system's Liquid Glass (Glass), near-black (Monolith), the window
+    /// itself (Studio), or the theme's.
+    static var sidebarFill: Color {
+        switch Design.direction {
+        case .glass: .clear
+        case .monolith: Color(nsColor: DiffTheme.hex(0x0A0A0A))
+        case .studio: Color(nsColor: DiffTheme.window)
+        case .current: DiffTheme.palette.glassSidebar ? .clear : Color(nsColor: DiffTheme.sidebar)
+        }
     }
 }
 
@@ -140,9 +163,16 @@ struct MainToolbar: ToolbarContent {
 private struct WindowTint: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let v = NSView()
-        DispatchQueue.main.async { v.window?.backgroundColor = DiffTheme.window }
+        DispatchQueue.main.async { Self.apply(v.window) }
         return v
     }
-    func updateNSView(_ v: NSView, context: Context) { v.window?.backgroundColor = DiffTheme.window }
+    func updateNSView(_ v: NSView, context: Context) { Self.apply(v.window) }
+    /// Glass: the window lets the desktop through, so the Liquid Glass sidebar picks up the wallpaper.
+    private static func apply(_ w: NSWindow?) {
+        guard let w else { return }
+        let glass = Design.direction == .glass
+        w.isOpaque = !glass
+        w.backgroundColor = glass ? .clear : DiffTheme.window
+    }
 }
 

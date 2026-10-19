@@ -18,7 +18,7 @@ struct SidebarView: View {
         }
         .frame(maxHeight: .infinity)
         // IDE trees want dense rows (Xcode's navigators use the small size too).
-        .environment(\.sidebarRowSize, .medium)
+        .environment(\.sidebarRowSize, .large)
     }
 }
 
@@ -34,8 +34,7 @@ struct ChangesTool: View {
         let review = app.workspace.review
         VStack(spacing: 0) {
             ToolHeader {
-                Text(review.changes.isEmpty ? "No changes" : "\(review.reviewedCount) of \(review.changes.count) reviewed")
-                    .foregroundStyle(.secondary)
+                // The count is in the window's subtitle; here only the list's own tools.
                 Spacer()
                 if review.plan != nil {
                     ToolButton(review.followPlan ? "list.number" : "list.bullet.indent", review.followPlan ? "Showing Claude's review order (click for the folder tree)" : "Show Claude's review order") {
@@ -82,12 +81,6 @@ struct ChangesTool: View {
         })) {
             if !planned.isEmpty {
                 Section {
-                    if let overview = review.plan?.overview, !overview.isEmpty {
-                        Text(overview).font(.callout).foregroundStyle(.secondary).lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.vertical, 2)
-                            .selectionDisabled()
-                    }
                     ForEach(Array(planned.enumerated()), id: \.element.path) { i, node in
                         PlanRow(app: app, node: node, index: i + 1, summary: review.plan?.file(node.path)?.summary ?? "")
                             .tag(node.path)
@@ -127,6 +120,11 @@ private struct SectionHeader: View {
     let title: String
     let nodes: [FileTreeNode]
     let app: AppDelegate
+
+    static func fraction(_ nodes: [FileTreeNode], _ review: ReviewModel) -> Double? {
+        let parts = nodes.compactMap { review.reviewedFraction($0) }
+        return parts.isEmpty ? nil : parts.reduce(0, +) / Double(parts.count)
+    }
     var body: some View {
         let review = app.workspace.review
         let files = nodes.flatMap(\.fileChanges)
@@ -135,11 +133,12 @@ private struct SectionHeader: View {
             Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
             Text("\(files.count)").font(.subheadline).foregroundStyle(.tertiary).monospacedDigit()
             Spacer()
-            TriStateCheckbox(state: states == [.staged] ? .staged : states == [.unstaged] ? .unstaged : .partial) { on in
+            TriStateCheckbox(state: states == [.staged] ? .staged : states == [.unstaged] ? .unstaged : .partial,
+                             fraction: Self.fraction(nodes, review)) { on in
                 for n in nodes { review.setStaged(n, on) }
             }
             .alignedToTextBaseline()
-            .padding(.trailing, 8) // the header runs past the rows' inset; line up with the rows
+            .padding(.trailing, 14) // same column as the rows' rings
         }
     }
 }
@@ -180,7 +179,7 @@ struct ChangeNodeRow: View {
                 ForEach(item.children) { ChangeNodeRow(app: app, item: $0, quickLook: $quickLook) }
             } label: {
                 HStack(spacing: 6) {
-                    Label { Text(item.name) } icon: { Image(systemName: "folder.fill").foregroundStyle(Color(nsColor: DiffTheme.folder)) }
+                    Label { Text(item.name) } icon: { Image(systemName: "folder.fill").foregroundStyle(Design.accentFolders ? Color.accentColor : Color(nsColor: DiffTheme.folder)) }
                         .lineLimit(1)
                         .opacity(review.stage(of: node) == .staged ? 0.65 : 1) // reviewed names recede
                     Spacer(minLength: 0)
@@ -242,20 +241,14 @@ private struct PlanRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
-                    Text(node.name).lineLimit(1).truncationMode(.middle)
-                        .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(change.kind.color))
-                }
-                if !summary.isEmpty {
-                    Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                    ChangeName(name: node.name, kind: change.kind, selected: review.selectedPath == node.path)
                 }
             }
             .opacity(reviewed && prominence != .increased ? 0.65 : 1)
             Spacer(minLength: 4)
-            ReviewBar(fraction: review.reviewedFraction(node)).alignedToTextBaseline()
-            TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
+            TriStateCheckbox(state: review.stage(of: node), fraction: review.reviewedFraction(node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
         }
-        .padding(.vertical, 2)
-        .help(node.path)
+        .help(summary.isEmpty ? node.path : summary)
     }
 }
 
@@ -270,18 +263,60 @@ private struct FileChangeLabel: View {
         HStack(spacing: 6) {
             Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 0) {
-                Text(node.name).lineLimit(1).truncationMode(.middle)
-                    .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(change.kind.color))
-                    .opacity(review.stage(of: change) == .staged && prominence != .increased ? 0.65 : 1) // reviewed names recede
+                ChangeName(name: node.name, kind: change.kind, selected: review.selectedPath == node.path)
+                    .opacity(review.stage(of: change) == .staged && review.selectedPath != node.path ? 0.6 : 1) // reviewed names recede
                 if let orig = change.origPath {
                     Text("from \((orig as NSString).lastPathComponent)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
-            ReviewBar(fraction: review.reviewedFraction(node)).alignedToTextBaseline()
-            TriStateCheckbox(state: review.stage(of: node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
+            TriStateCheckbox(state: review.stage(of: node), fraction: review.reviewedFraction(node)) { review.setStaged(node, $0) }.alignedToTextBaseline()
         }
         .help(change.kind.help)
+    }
+}
+
+/// A changed file's name. Its status shows by the design: a colored name, a small colored dot
+/// after a plain name, or a quiet glyph. On a selected row the name is always plain, so colored
+/// text never sits on the selection highlight.
+struct ChangeName: View {
+    let name: String
+    let kind: ChangeKind?
+    var selected = false
+    @Environment(\.backgroundProminence) private var prominence
+
+    var body: some View {
+        let onHighlight = selected || prominence == .increased
+        HStack(spacing: 6) {
+            Text(name).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(Design.names == .colored && !onHighlight ? (kind.map { AnyShapeStyle($0.color) } ?? AnyShapeStyle(.primary)) : AnyShapeStyle(.primary))
+            if let kind {
+                switch Design.names {
+                case .dot:
+                    Circle().fill(onHighlight ? AnyShapeStyle(.primary.opacity(0.8)) : AnyShapeStyle(kind.color)).frame(width: 6, height: 6)
+                        .help(kind.help)
+                case .glyph:
+                    if let g = kind.glyph {
+                        Image(systemName: g).font(.system(size: 9, weight: .bold)).foregroundStyle(onHighlight ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                            .help(kind.help)
+                    }
+                case .colored: EmptyView()
+                }
+            }
+        }
+    }
+}
+
+extension ChangeKind {
+    /// A quiet status glyph (none for an ordinary edit).
+    var glyph: String? {
+        switch self {
+        case .added, .untracked: "plus"
+        case .deleted: "minus"
+        case .renamed: "arrow.right"
+        case .conflicted: "exclamationmark"
+        case .modified: nil
+        }
     }
 }
 
@@ -348,7 +383,7 @@ enum FileIcons {
     static func icon(for name: String) -> NSImage {
         let lower = (name as NSString).lastPathComponent.lowercased()
         let ext = (lower as NSString).pathExtension
-        let key = special[lower] != nil ? lower : ext
+        let key = (special[lower] != nil ? lower : ext) + (Design.monoIcons ? "#mono" : "")
         if let i = cache[key] { return i }
         let style = special[lower] ?? styles[ext] ?? Style(mark: nil, symbol: "doc.text", color: 0x8A93A6)
         let i = draw(style)
@@ -391,7 +426,7 @@ enum FileIcons {
     private static func draw(_ style: Style) -> NSImage {
         let size = NSSize(width: 16, height: 16)
         return NSImage(size: size, flipped: false) { rect in
-            let color = DiffTheme.hex(style.color)
+            let color = Design.monoIcons ? NSColor.secondaryLabelColor : DiffTheme.hex(style.color)
             if let mark = style.mark {
                 // A rounded badge in the language color with its mark in white.
                 let badge = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1.5), xRadius: 3.5, yRadius: 3.5)
