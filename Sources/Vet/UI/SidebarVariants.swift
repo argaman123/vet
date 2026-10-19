@@ -13,7 +13,9 @@ struct ChangesVariant: View {
 
     var body: some View {
         let review = app.workspace.review
-        Group {
+        // The bar sits below the list, not over it: rows never show through the glass.
+        VStack(spacing: 0) {
+            Group {
             if app.projects.current == nil {
                 EmptyToolState(title: "No Project", message: "Open a project folder to review its changes.") {
                     Button("Open Folder…") { app.projects.showOpenPanel() }
@@ -26,7 +28,9 @@ struct ChangesVariant: View {
                 list
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { FilterBar(app: app, filter: $filter, tree: style == .tree) }
+            .frame(maxHeight: .infinity)
+            FilterBar(app: app, filter: $filter, tree: style == .tree)
+        }
         .quickLookPreview($quickLook)
     }
 
@@ -240,6 +244,6 @@ private struct FilterBar: View {
         .frame(height: 28)
         .glassEffect(in: Capsule())
         .padding(.horizontal, 10)
-        .padding(.bottom, 10)
+        .padding(.vertical, 10)
     }
 }

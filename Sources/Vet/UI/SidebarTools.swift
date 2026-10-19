@@ -12,12 +12,6 @@ struct ProjectTool: View {
     var body: some View {
         let files = app.workspace.files
         VStack(spacing: 0) {
-            ToolHeader {
-                Text("All Files").fontWeight(.semibold).foregroundStyle(.secondary).lineLimit(1)
-                Spacer()
-                ToolButton("scope", "Reveal the Open File") { if let p = files.relativePath { files.expandAncestors(of: p) } }
-                ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { files.expanded = [] }
-            }
             if app.projects.current == nil {
                 EmptyToolState(title: "No Project", message: "Open a project folder.") {
                     Button("Open Folder…") { app.projects.showOpenPanel() }
@@ -39,7 +33,23 @@ struct ProjectTool: View {
                     }
                 }
                 .quickLookPreview($quickLook)
+                .frame(maxHeight: .infinity)
             }
+            // The tree's tools along the bottom, below the list (not over it), as in the changes list.
+            HStack(spacing: 4) {
+                Text("All Files").foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                ToolButton("scope", "Reveal the Open File") { if let p = files.relativePath { files.expandAncestors(of: p) } }
+                ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { files.expanded = [] }
+            }
+            .font(.callout)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 12).padding(.trailing, 4)
+            .frame(height: 28)
+            .glassEffect(in: Capsule())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
         }
     }
 }
@@ -89,7 +99,12 @@ struct ProjectNodeRow: View {
                 // Children are built only when the folder is open, so large projects stay fast.
                 ForEach(CompactFile.compact(node.children)) { ProjectNodeRow(app: app, item: $0, quickLook: $quickLook) }
             } label: {
-                Label { Text(item.name).lineLimit(1) } icon: { Image(systemName: "folder.fill").foregroundStyle(Design.accentFolders ? Color.accentColor : Color(nsColor: DiffTheme.folder)) }
+                // Folders recede: a thin outline and a quiet name, so the files carry the color.
+                HStack(spacing: 6) {
+                    Image(systemName: "folder").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: 16)
+                    Text(item.name).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .opacity(app.workspace.review.isMarked(node.path) ? 0.45 : 1)
             }
             .tag(node.path)
             .contextMenu { menu }
@@ -99,6 +114,7 @@ struct ProjectNodeRow: View {
                 let change = app.workspace.review.changes.first(where: { $0.path == node.path })
                 ChangeName(name: node.name, kind: change?.kind, selected: app.workspace.files.relativePath == node.path)
             }
+            .opacity(app.workspace.review.isMarked(node.path) ? 0.45 : 1) // unimportant files recede
             .tag(node.path)
             .contextMenu { menu }
         }
