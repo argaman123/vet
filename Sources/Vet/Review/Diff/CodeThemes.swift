@@ -204,7 +204,7 @@ enum Design {
     static var monoIcons: Bool { direction == .monolith }
     static var accentFolders: Bool { false }
     /// Surfaces let the desktop through, in levels: window clear, bars thin, code a dark veil.
-    static var frosted: Bool { UserDefaults.standard.object(forKey: "design.frosted") as? Bool ?? false }
+    static var frosted: Bool { UserDefaults.standard.object(forKey: "design.frosted") as? Bool ?? true }
     /// What joins the two sides of the diff.
     enum Bridge: String { case ribbon, lines, map }
     static var marker: Marker { Marker(rawValue: UserDefaults.standard.string(forKey: "design.marker") ?? "") ?? .progress }
