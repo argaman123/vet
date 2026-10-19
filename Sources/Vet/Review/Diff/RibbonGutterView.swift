@@ -15,10 +15,14 @@ final class RibbonGutterView: NSView {
     /// Where a change's bridge runs flat for its ring: the side with more lines.
     func ringOnRight(_ s: DiffLayout.Segment) -> Bool { s.right.count >= s.left.count }
 
-    /// The band (one line tall) the ring sits in: the taller side's first line.
+    /// The band (one line tall) the ring sits in: centered between the two sides' first lines
+    /// (each side's middle when it has one line or none), so both curves are mirror images.
     func ringBand(_ s: DiffLayout.Segment) -> (CGFloat, CGFloat) {
-        let top = ringOnRight(s) ? y(s.right.lowerBound, left: false) : y(s.left.lowerBound, left: true)
-        return (top, top + DiffTheme.lineHeight)
+        func anchor(_ r: Range<Int>, left: Bool) -> CGFloat {
+            r.isEmpty ? y(r.lowerBound, left: left) : y(r.lowerBound, left: left) + DiffTheme.lineHeight / 2
+        }
+        let cy = (anchor(s.left, left: true) + anchor(s.right, left: false)) / 2
+        return (cy - DiffTheme.lineHeight / 2, cy + DiffTheme.lineHeight / 2)
     }
     /// Side by side, as WebStorm lays it out: old numbers, the bridge, new numbers, then the
     /// staging checkbox; each change's color runs unbroken through all of them.
@@ -123,8 +127,8 @@ final class RibbonGutterView: NSView {
             guard let s = segment(for: id) else { b.isHidden = true; continue }
             if mode == .split, [.native, .mono, .check, .circle, .progress].contains(b.style) {
                 // In the bridge's flat stretch on the taller side, centered on that side's first line.
-                let (top, _) = ringBand(s)
-                let cy = top + DiffTheme.lineHeight / 2
+                let (top, bottom) = ringBand(s)
+                let cy = (top + bottom) / 2
                 let cx = Self.numbersWidth + Self.ribbonWidth / 2
                 b.frame = NSRect(x: cx - 8, y: cy - 8, width: 16, height: 16)
                 b.isHidden = cy < -20 || cy > bounds.height + 20

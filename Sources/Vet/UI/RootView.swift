@@ -141,8 +141,16 @@ struct MainToolbar: ToolbarContent {
             }
             .pickerStyle(.segmented)
         }
-        ToolbarItem(placement: .primaryAction) {
-            // One button: Run, or Stop while running; its arrow picks the configuration.
+        ToolbarItemGroup(placement: .primaryAction) {
+            // Run, or Stop while running; the chevron beside it picks the configuration.
+            Button {
+                if run.isRunning { run.stop() }
+                else if run.configs.isEmpty { ui.editingRunConfigs = true }
+                else { run.start(); run.outputVisible = true }
+            } label: {
+                Label(run.isRunning ? "Stop" : "Run", systemImage: run.isRunning ? "stop.fill" : "play.fill")
+            }
+            .help(run.isRunning ? "Stop (⌘.)" : run.selected.map { "Run ‘\($0.name)’ (⌘R)" } ?? "Run (⌘R)")
             Menu {
                 ForEach(run.configs) { c in
                     Button { run.selectedID = c.id } label: {
@@ -152,14 +160,10 @@ struct MainToolbar: ToolbarContent {
                 if !run.configs.isEmpty { Divider() }
                 Button("Edit Configurations…") { ui.editingRunConfigs = true }
             } label: {
-                Label(run.isRunning ? "Stop" : "Run", systemImage: run.isRunning ? "stop.fill" : "play.fill")
-                    .foregroundStyle(run.isRunning ? Color.red : Color.primary)
-            } primaryAction: {
-                if run.isRunning { run.stop() }
-                else if run.configs.isEmpty { ui.editingRunConfigs = true }
-                else { run.start(); run.outputVisible = true }
+                Label("Configurations", systemImage: "chevron.down")
             }
-            .help(run.isRunning ? "Stop (⌘.)" : run.selected.map { "Run ‘\($0.name)’ (⌘R) · arrow: configurations" } ?? "Run (⌘R)")
+            .menuIndicator(.hidden)
+            .help("Run Configurations")
         }
     }
 }
