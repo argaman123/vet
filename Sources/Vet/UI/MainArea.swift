@@ -140,9 +140,9 @@ struct DiffHeader: View {
             }
             // The diff's own controls, where WebStorm keeps them: change navigation and layout.
             Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up") }
-                .help("Previous Change (⌥⌘↑)")
+                .help("Previous Change (⌘↑)")
             Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down") }
-                .help("Next Change (⌥⌘↓)")
+                .help("Next Change (⌘↓)")
             // One button that flips the layout (its icon shows the other one).
             Button { withAnimation(.easeInOut(duration: 0.2)) { review.unified.toggle() } } label: {
                 Image(systemName: review.unified ? "rectangle.split.2x1" : "rectangle.grid.1x2")

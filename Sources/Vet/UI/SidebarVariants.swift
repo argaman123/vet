@@ -141,19 +141,21 @@ private struct VariantHeader: View {
     /// come and go with it, so the system's own hover chevron doesn't appear beside this one.
     var open: Binding<Bool>? = nil
     var body: some View {
-        HStack(spacing: 6) {
-            Text(title).lineLimit(1).truncationMode(.head)
-                .font(path ? .caption.weight(.medium) : .subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-            if let count { Text("\(count)").font(.subheadline).foregroundStyle(.tertiary).monospacedDigit() }
-            Spacer(minLength: 4)
+        HStack(spacing: 5) {
+            // Leading, like a folder's disclosure: never under the list's scroller.
             if let open {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(open.wrappedValue ? 90 : 0))
                     .animation(.easeOut(duration: 0.15), value: open.wrappedValue)
+                    .frame(width: 10)
             }
+            Text(title).lineLimit(1).truncationMode(.head)
+                .font(path ? .caption.weight(.medium) : .subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if let count { Text("\(count)").font(.subheadline).foregroundStyle(.tertiary).monospacedDigit() }
+            Spacer(minLength: 4)
         }
         .contentShape(Rectangle())
         .onTapGesture { open?.wrappedValue.toggle() }

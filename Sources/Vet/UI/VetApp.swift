@@ -105,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NavigationAnchor.set(view.pane, view.pane.symbolRect(line: line, character: ch))
             ReferencesPresenter.shared.beginLoading("Finding usages of HttpClient…")
         }
+        SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
+        SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑
         SnapshotHook.on("claudeforward") { _ in ClaudeReference.bringClaudeForward() } // test: the hand-off alone, clipboard untouched
         SnapshotHook.on("stagehunk") { [weak self] args in
             // stagehunk <n>: mark the open diff's nth change reviewed
@@ -406,10 +408,15 @@ struct VetCommands: Commands {
             Button("Find in Files…") { app.showFindInFiles() }.keyboardShortcut("f", modifiers: [.command, .shift])
         }
         CommandMenu("Review") {
+            // ⌘↑ ⌘↓ step through the changes; ⌘↩ approves the one you're on and moves to the next.
+            // (Only in the diff: elsewhere the keys keep their usual meaning in text.)
+            let inDiff = app.ui.location.map { if case .diff = $0 { true } else { false } } ?? false
             Button("Previous Change") { app.workspace.review.jumpToChange(forward: false) }
-                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .keyboardShortcut(.upArrow, modifiers: .command)
+                .disabled(!inDiff)
             Button("Next Change") { app.workspace.review.jumpToChange(forward: true) }
-                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .keyboardShortcut(.downArrow, modifiers: .command)
+                .disabled(!inDiff)
             Button("Connect Claude Code…") { app.connectClaudeCode() }
             Button(app.workspace.review.plan == nil ? "No Review Order from Claude" : "Clear Claude's Review Order") { app.workspace.review.setPlan(nil) }
                 .disabled(app.workspace.review.plan == nil)

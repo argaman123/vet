@@ -107,6 +107,13 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     var onFoldClick: ((Int) -> Void)?
     var lastJump = 0
     var lastApprove = 0
+    /// The change ⌘↩ approves: the one you moved to (⌘↓, ⌘↑, Approve and Next) while it's on
+    /// screen; otherwise the topmost unreviewed one in view.
+    private var focusedID: Int?
+    /// After Approve and Next: the next change (its first working-file line), shown again once the
+    /// reload that staging causes has laid the file out anew; that reload would otherwise put the
+    /// view back where it was.
+    private var revealAfterReload: (line: Int, count: Int, until: Date)?
     /// Every change in the file is reviewed: move on to the next file.
     var onFileDone: (() -> Void)?
     /// Space in a read-only pane.
@@ -413,7 +420,12 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftScroll.contentView.scroll(to: keepLeft)
             rightScroll.contentView.scroll(to: keepRight)
             if let anchor { restore(anchor, staging: staging, layout: layout) }
+            if let r = revealAfterReload, r.until > Date(), let row = workRows[r.line] {
+                reveal(row: row, count: r.count, animated: false)
+            }
         } else {
+            focusedID = nil
+            revealAfterReload = nil
             leftScroll.contentView.scroll(to: NSPoint(x: 0, y: -leftScroll.contentInsets.top))
             rightScroll.contentView.scroll(to: NSPoint(x: 0, y: -rightScroll.contentInsets.top))
             if let first = layout.segments.first(where: { if case .hunk = $0.kind { true } else { false } }) {
@@ -1074,6 +1086,13 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     func currentChangeID() -> Int? {
         guard let layout = diffLayout, let staging = shownStaging else { return nil }
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
+        if let f = focusedID, let s = layout.segments.first(where: { if case .hunk(let n) = $0.kind { n == f } else { false } }) {
+            // Still the one, as long as some of it is in the clear part of the pane.
+            let rows = unifiedHunks[f] ?? (mode == .leftOnly ? s.left : s.right)
+            let lh = DiffTheme.lineHeight, b = scroll.contentView.bounds, i = scroll.contentInsets
+            let top = DiffTheme.inset.height + CGFloat(rows.lowerBound) * lh, bottom = top + CGFloat(max(1, rows.count)) * lh
+            if bottom > b.minY + i.top, top < b.maxY - i.bottom { return f }
+        }
         // The first line in the clear: lines under the floating header don't count as seen.
         let anchor = Int((scroll.contentView.bounds.minY + scroll.contentInsets.top - DiffTheme.inset.height) / DiffTheme.lineHeight)
         var spans: [(id: Int, rows: Range<Int>)] = []
@@ -1104,7 +1123,13 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         }
         var rows = next.right
         if case .hunk(let n) = next.kind, let r = unifiedHunks[n] { rows = r }
-        reveal(row: rows.lowerBound, count: max(rows.count, next.left.count))
+        if case .hunk(let n) = next.kind { focusedID = n }
+        let count = max(rows.count, next.left.count)
+        if let (side, line) = resolve(left: false, displayLine: rows.lowerBound), !side {
+            revealAfterReload = (line, count, Date().addingTimeInterval(3))
+        }
+        reveal(row: rows.lowerBound, count: count)
+        syncGutter()
     }
 
     /// Scrolls to the previous or next section relative to the middle of the view.
@@ -1115,14 +1140,21 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let i = scroll.contentInsets
         let clear = scroll.contentView.bounds.height - i.top - i.bottom
         let current = Int((scroll.contentView.bounds.minY + i.top + clear * 0.3 - DiffTheme.inset.height) / DiffTheme.lineHeight)
-        let spans = layout.segments.compactMap { s -> (Int, Int)? in
+        let spans = layout.segments.compactMap { s -> (Int, Int, Int)? in
             guard case .hunk(let id) = s.kind else { return nil }
-            if let r = unifiedHunks[id] { return (r.lowerBound, r.count) }
+            if let r = unifiedHunks[id] { return (r.lowerBound, r.count, id) }
             let r = mode == .leftOnly ? s.left : s.right
-            return (r.lowerBound, max(r.count, s.left.count))
+            return (r.lowerBound, max(r.count, s.left.count), id)
         }
-        let target = forward ? spans.first { $0.0 > current + 1 } : spans.last { $0.0 < current - 1 }
-        if let target { reveal(row: target.0, count: target.1) }
+        // From the change you're on (if any), else from where the view is.
+        let here = focusedID.flatMap { f in spans.first { $0.2 == f }?.0 }
+        let target = here.map { h in forward ? spans.first { $0.0 > h } : spans.last { $0.0 < h } }
+            ?? (forward ? spans.first { $0.0 > current + 1 } : spans.last { $0.0 < current - 1 })
+        if let target {
+            focusedID = target.2
+            reveal(row: target.0, count: target.1)
+            syncGutter()
+        }
     }
 }
 
