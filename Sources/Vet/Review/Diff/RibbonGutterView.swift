@@ -123,6 +123,13 @@ final class RibbonGutterView: NSView {
     /// A click flips the section between staged and not (a mixed box stages the rest), from the
     /// state on screen, and shows the result at once; the button's own off→mixed→on cycle would
     /// read a quick second click as "stage" again.
+    /// Shows a section's new state at once (the diff reloads with it a moment later).
+    func show(_ id: Int, _ state: StageState) {
+        states[id] = state
+        boxes[id]?.state = state
+        needsDisplay = true
+    }
+
     private func toggled(_ id: Int) {
         let stage = states[id] != .staged
         states[id] = stage ? .staged : .unstaged

@@ -108,10 +108,6 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// The change ⌘↩ approves: the one you moved to (⌘↓, ⌘↑, Approve and Next) while it's on
     /// screen; otherwise the topmost unreviewed one in view.
     private var focusedID: Int?
-    /// After Approve and Next: the next change (its first working-file line), shown again once the
-    /// reload that staging causes has laid the file out anew; that reload would otherwise put the
-    /// view back where it was.
-    private var revealAfterReload: (line: Int, count: Int, until: Date)?
     /// Every change in the file is reviewed: move on to the next file.
     var onFileDone: (() -> Void)?
     /// Space in a read-only pane.
@@ -256,6 +252,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         }
         messageLabel.isHidden = true
         let samePath = shownPath == doc.change.path
+        // Same file, same text: only marks changed. Stay exactly where the view is.
+        let sameText = samePath && shownStaging?.snapshotID == staging.snapshotID
+        Timing.note(String(format: "show same=%d sameText=%d at %.1f", samePath ? 1 : 0, sameText ? 1 : 0, rightScroll.contentView.bounds.minY))
         // Never replace text you're editing; the header offers Reload instead.
         if isDirty && samePath { return }
         isDirty = false
@@ -401,7 +400,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
         // Every line is 18 pt, so the exact document height is known now; setting it up front
         // means restoring the scroll position isn't clamped by a half-laid-out text view.
-        for (scroll, tv, count) in [(leftScroll, leftText, layout.left.count), (rightScroll, rightText, unifiedRows?.count ?? layout.right.count)] {
+        // (A marks-only reload keeps the sizes as they are: resizing then would nudge the view.)
+        for (scroll, tv, count) in [(leftScroll, leftText, layout.left.count), (rightScroll, rightText, unifiedRows?.count ?? layout.right.count)] where !sameText {
             let height = DiffTheme.inset.height * 2 + CGFloat(count) * DiffTheme.lineHeight
             tv.minSize = NSSize(width: 0, height: height)
             tv.setFrameSize(NSSize(width: max(tv.frame.width, scroll.contentSize.width), height: max(height, scroll.contentSize.height)))
@@ -417,13 +417,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         if samePath {
             leftScroll.contentView.scroll(to: keepLeft)
             rightScroll.contentView.scroll(to: keepRight)
-            if let anchor { restore(anchor, staging: staging, layout: layout) }
-            if let r = revealAfterReload, r.until > Date(), let row = workRows[r.line] {
-                reveal(row: row, count: r.count, animated: false)
-            }
+            // (When reviewed changes fold, the rows move, so the anchor puts the view back on the same code.)
+            let folds = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? false
+            if let anchor, !(sameText && !folds) { restore(anchor, staging: staging, layout: layout) }
         } else {
             focusedID = nil
-            revealAfterReload = nil
             leftScroll.contentView.scroll(to: NSPoint(x: 0, y: -leftScroll.contentInsets.top))
             rightScroll.contentView.scroll(to: NSPoint(x: 0, y: -rightScroll.contentInsets.top))
             if let first = layout.segments.first(where: { if case .hunk = $0.kind { true } else { false } }) {
@@ -921,8 +919,12 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     /// Where a pane may scroll to: from its top (above the document, under the header) to its end.
     private func clampY(_ y: CGFloat, _ scroll: NSScrollView) -> CGFloat {
+        // The document's exact height (what a reload sizes it to; TextKit can leave the view a
+        // little taller meanwhile), so a glide never ends past the end and settles back.
         let i = scroll.contentInsets
-        let maxY = max(-i.top, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height + i.bottom)
+        let rows = diffLayout.map { scroll === leftScroll ? $0.left.count : (unifiedRows?.count ?? $0.right.count) }
+        let height = rows.map { DiffTheme.inset.height * 2 + CGFloat($0) * DiffTheme.lineHeight } ?? (scroll.documentView?.frame.height ?? 0)
+        let maxY = max(-i.top, max(height, scroll.contentSize.height) - scroll.contentView.bounds.height + i.bottom)
         return min(max(-i.top, y), maxY)
     }
 
@@ -997,7 +999,17 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             syncGutter()
             return
         }
+        // The left pane leads only while you scroll it yourself: its own settling (say, at its end
+        // after a reload) must not drag the right pane along.
+        if clip === leftScroll.contentView, !userScrolling(leftScroll) { syncGutter(); return }
         align(from: clip === leftScroll.contentView ? leftScroll : rightScroll)
+    }
+
+    /// A scroll gesture over this pane is what's moving it right now.
+    private func userScrolling(_ scroll: NSScrollView) -> Bool {
+        guard let e = NSApp.currentEvent, e.type == .scrollWheel || e.type == .swipe || e.type == .beginGesture || e.type == .endGesture,
+              e.window === window else { return false }
+        return scroll.bounds.contains(scroll.convert(e.locationInWindow, from: nil))
     }
 
     /// Scrolls the other pane so the same place in the file sits in the middle of both.
@@ -1060,18 +1072,52 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         scrollRight(toY: top, animated: animated)
     }
 
+    /// Test aid: the right pane's scroll position 60 times a second for `seconds`, then `done`.
+    func debugTrace(seconds: Double, done: @escaping @MainActor ([CGFloat]) -> Void) {
+        Task { @MainActor [weak self] in
+            var ys: [CGFloat] = []
+            let start = Date()
+            while Date().timeIntervalSince(start) < seconds, let self {
+                ys.append(self.rightScroll.contentView.bounds.minY)
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            done(ys)
+        }
+    }
+
+    /// Glides running right now; marks made meanwhile wait for the last one to land.
+    private var gliding = 0
+    /// Approved sections not yet handed to the model: handing one over reloads the diff, and a
+    /// reload in the middle of a glide makes it jump. They go once the view is still.
+    private var heldMarks: [(id: Int, snapshot: String)] = []
+
+    private func flushHeldMarks() {
+        guard gliding == 0, !heldMarks.isEmpty else { return }
+        let marks = heldMarks
+        heldMarks = []
+        for m in marks { onToggle?(m.id, true, m.snapshot) }
+    }
+
     private func scrollRight(toY y: CGFloat, animated: Bool = true) {
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
         let target = NSPoint(x: 0, y: clampY(y, scroll))
+        Timing.note(String(format: "glide %@ from %.1f to %.1f (gliding %d)", animated ? "animated" : "instant", scroll.contentView.bounds.minY, target.y, gliding))
         // Jumps glide (the other pane follows), unless motion is reduced or the view is still loading.
         if animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            gliding += 1
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.28
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 ctx.allowsImplicitAnimation = true
                 scroll.contentView.animator().setBoundsOrigin(target)
-            } completionHandler: { [weak scroll] in
-                MainActor.assumeIsolated { if let scroll { scroll.reflectScrolledClipView(scroll.contentView) } }
+            } completionHandler: { [weak self, weak scroll] in
+                MainActor.assumeIsolated {
+                    if let scroll { scroll.reflectScrolledClipView(scroll.contentView) }
+                    guard let self else { return }
+                    Timing.note(String(format: "glide landed R %.1f", self.rightScroll.contentView.bounds.minY))
+                    self.gliding -= 1
+                    self.flushHeldMarks()
+                }
             }
         } else {
             scroll.contentView.scroll(to: target)
@@ -1110,12 +1156,16 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         guard let staging = shownStaging, let layout = diffLayout else { return }
         guard let id = currentChangeID() else { onFileDone?(); return }
         let remaining = staging.hunks.filter { $0.id != id && (pendingHunks[$0.id] ?? .unstaged) != .staged }
-        onToggle?(id, true, staging.snapshotID)
+        // The ring flips now; the mark itself goes to the model once the glide below has landed.
+        gutter.show(id, .staged)
+        pendingHunks[id] = .staged
+        heldMarks.append((id, staging.snapshotID))
         // The next unreviewed change below this one, else the first one above.
         func row(_ s: DiffLayout.Segment) -> Int { if case .hunk(let n) = s.kind, let r = unifiedHunks[n] { r.lowerBound } else { s.right.lowerBound } }
         let pending = layout.segments.filter { s in if case .hunk(let n) = s.kind { remaining.contains { $0.id == n } } else { false } }
         let here = layout.segments.first { if case .hunk(let n) = $0.kind { n == id } else { false } }.map(row) ?? 0
         guard let next = pending.first(where: { row($0) > here }) ?? pending.first else {
+            flushHeldMarks() // nothing to glide to
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.onFileDone?() }
             return
         }
@@ -1123,11 +1173,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         if case .hunk(let n) = next.kind, let r = unifiedHunks[n] { rows = r }
         if case .hunk(let n) = next.kind { focusedID = n }
         let count = max(rows.count, next.left.count)
-        if let (side, line) = resolve(left: false, displayLine: rows.lowerBound), !side {
-            revealAfterReload = (line, count, Date().addingTimeInterval(3))
-        }
         reveal(row: rows.lowerBound, count: count)
         syncGutter()
+        flushHeldMarks() // at once when the jump didn't glide (reduced motion)
     }
 
     /// Scrolls to the previous or next section relative to the middle of the view.

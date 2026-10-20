@@ -105,6 +105,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NavigationAnchor.set(view.pane, view.pane.symbolRect(line: line, character: ch))
             ReferencesPresenter.shared.beginLoading("Finding usages of HttpClient…")
         }
+        SnapshotHook.on("trace") { [weak self] _ in
+            // trace: the diff's scroll position for 1.2 s, to VET_SNAPSHOT_DIR/trace.txt (for smoothness)
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
+            self?.workspace.review.diffView.debugTrace(seconds: 1.2) { ys in
+                try? ys.map { String(format: "%.1f", $0) }.joined(separator: " ").write(toFile: dir + "/trace.txt", atomically: true, encoding: .utf8)
+            }
+        }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑
         SnapshotHook.on("claudeforward") { _ in ClaudeReference.bringClaudeForward() } // test: the hand-off alone, clipboard untouched
