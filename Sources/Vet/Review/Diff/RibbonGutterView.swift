@@ -412,10 +412,12 @@ final class RibbonGutterView: NSView {
         // The sticky rows' band runs across the bridge too, so no ribbon or ring shows through it.
         if mode == .split, let solid = pinnedBand {
             let bg = DiffTheme.background.withAlphaComponent(1)
-            let x0 = Self.numbersWidth, w = Self.ribbonWidth
-            bg.setFill()
-            NSRect(x: x0, y: solid.lowerBound, width: w, height: solid.upperBound - solid.lowerBound).fill()
-            NSGradient(starting: bg, ending: bg.withAlphaComponent(0))?.draw(in: NSRect(x: x0, y: solid.upperBound, width: w, height: StickyLinesView.tail), angle: 90)
+            // The bridge, and the jump-icon column after the new side's numbers.
+            for (x0, w) in [(Self.numbersWidth, Self.ribbonWidth), (bounds.width - Self.marksWidth, Self.marksWidth)] {
+                bg.setFill()
+                NSRect(x: x0, y: solid.lowerBound, width: w, height: solid.upperBound - solid.lowerBound).fill()
+                NSGradient(starting: bg, ending: bg.withAlphaComponent(0))?.draw(in: NSRect(x: x0, y: solid.upperBound, width: w, height: StickyLinesView.tail), angle: 90)
+            }
         }
         _ = diffLayout
     }
