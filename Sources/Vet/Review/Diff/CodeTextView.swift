@@ -26,9 +26,12 @@ final class CodeTextView: NSTextView {
     private var hoverWork: DispatchWorkItem?
     /// Inline hints and end-of-line lenses (see CodeDecorations.swift).
     var inlayHints: [InlayHintMark] = [] { didSet { if oldValue != inlayHints { applyHintGaps() } } }
-    var lenses: [LineLensMark] = [] { didSet { if oldValue != lenses { needsDisplay = true } } }
+    var lenses: [LineLensMark] = [] { didSet { if oldValue != lenses { lensRectsByLine = [:]; needsDisplay = true } } }
     var onLensClick: ((LineLensMark, CodeTextView.Navigation) -> Void)?
-    var lensRects: [(NSRect, LineLensMark, Int)] = []
+    /// Where each line's lens parts were drawn. Kept per line: a draw often covers only a strip
+    /// (scrolling draws what comes into view), and the rest must stay clickable.
+    var lensRectsByLine: [Int: [(NSRect, LineLensMark, Int)]] = [:]
+    var lensRects: [(NSRect, LineLensMark, Int)] { lensRectsByLine.values.flatMap { $0 } }
     /// The lens part under the pointer (drawn lit).
     var hoveredLens: LensHit? { didSet { if oldValue != hoveredLens { needsDisplay = true } } }
     /// Pinch accumulated toward the next text-size step.

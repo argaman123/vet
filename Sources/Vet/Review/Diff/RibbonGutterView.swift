@@ -77,6 +77,53 @@ final class RibbonGutterView: NSView {
         }
     }
 
+    /// Drawn every frame while scrolling: built once per theme, not per draw.
+    private static var markImages: [String: NSImage] = [:]
+    private static var numberCache: [Int: (text: NSAttributedString, size: NSSize)] = [:]
+    private static var cacheTheme = ""
+    private static func checkCaches() {
+        let key = "\(DiffTheme.palette.id)|\(DiffTheme.fontSize)"
+        if key != cacheTheme { cacheTheme = key; markImages = [:]; numberCache = [:] }
+    }
+    static func markImage(_ mark: LineNumberGutter.JumpMark) -> NSImage? {
+        if let i = markImages[mark.symbol] { return i }
+        let up = mark == .overrides
+        let i: NSImage?
+        switch Design.jumpIcon {
+        case .arrows:
+            let config = NSImage.SymbolConfiguration(pointSize: 10.5, weight: .medium).applying(.init(paletteColors: [DiffTheme.accent]))
+            i = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: mark.help)?.withSymbolConfiguration(config)
+        case .badge:
+            // A soft tinted disc with the letter JetBrains uses: I (implemented below), O (overrides above).
+            i = NSImage(size: NSSize(width: 13, height: 13), flipped: false) { r in
+                let tint = up ? DiffTheme.accent : DiffTheme.hex(0x5FBF8A)
+                tint.withAlphaComponent(0.22).setFill()
+                NSBezierPath(ovalIn: r.insetBy(dx: 0.5, dy: 0.5)).fill()
+                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 8, weight: .bold), .foregroundColor: tint]
+                let t = (up ? "O" : "I") as NSString, ts = t.size(withAttributes: attrs)
+                t.draw(at: NSPoint(x: r.midX - ts.width / 2, y: r.midY - ts.height / 2 + 0.3), withAttributes: attrs)
+                return true
+            }
+        case .triangle, .chevron:
+            let name = Design.jumpIcon == .triangle ? (up ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill") : (up ? "chevron.up" : "chevron.down")
+            let config = NSImage.SymbolConfiguration(pointSize: Design.jumpIcon == .triangle ? 7 : 9, weight: .semibold)
+                .applying(.init(paletteColors: [DiffTheme.accent.withAlphaComponent(0.8)]))
+            i = NSImage(systemSymbolName: name, accessibilityDescription: mark.help)?.withSymbolConfiguration(config)
+        }
+        markImages[mark.symbol] = i
+        return i
+    }
+    /// A line number as text, laid out once (style 0 plain, 1 on a change, 2 the current change).
+    static func numberText(_ n: Int, style: Int, attrs: [NSAttributedString.Key: Any]) -> (text: NSAttributedString, size: NSSize) {
+        let key = n * 4 + style
+        if let hit = numberCache[key] { return hit }
+        let s = NSAttributedString(string: "\(n + 1)", attributes: attrs)
+        let entry = (s, s.size())
+        if numberCache.count > 20_000 { numberCache = [:] }
+        numberCache[key] = entry
+        return entry
+    }
+
     /// Jump icons by working-file display row; a click on one asks for its targets.
     var rightMarks: [Int: LineNumberGutter.JumpMark] = [:] { didSet { if oldValue != rightMarks { needsDisplay = true; window?.invalidateCursorRects(for: self) } } }
     var onMarkClick: ((Int, NSRect) -> Void)?
@@ -88,11 +135,9 @@ final class RibbonGutterView: NSView {
 
     private func drawMarks() {
         guard mode != .leftOnly, !rightMarks.isEmpty else { return }
-        let config = NSImage.SymbolConfiguration(pointSize: 10.5, weight: .medium).applying(.init(paletteColors: [DiffTheme.accent]))
         for (row, mark) in rightMarks {
             let r = markRect(row)
-            guard r.maxY > covered.top, r.minY < bounds.height - covered.bottom,
-                  let image = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: mark.help)?.withSymbolConfiguration(config) else { continue }
+            guard r.maxY > covered.top, r.minY < bounds.height - covered.bottom, let image = Self.markImage(mark) else { continue }
             let size = image.size
             image.draw(in: NSRect(x: r.midX - size.width / 2, y: r.midY - size.height / 2, width: size.width, height: size.height))
         }
@@ -206,6 +251,7 @@ final class RibbonGutterView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        Self.checkCaches()
         DiffTheme.gutter.setFill()
         bounds.fill()
         guard let diffLayout else { return }
@@ -369,8 +415,7 @@ final class RibbonGutterView: NSView {
             else if let s = segments[currentID] { currentLeft.insert(integersIn: s.left); currentRight.insert(integersIn: s.right) }
         }
         func number(_ n: Int, x: CGFloat, y: CGFloat, changed: Bool = false, current: Bool = false) {
-            let s = NSAttributedString(string: "\(n + 1)", attributes: current ? lit : changed ? bright : attrs)
-            let size = s.size()
+            let (s, size) = Self.numberText(n, style: current ? 2 : changed ? 1 : 0, attrs: current ? lit : changed ? bright : attrs)
             s.draw(at: NSPoint(x: x + Self.numbersWidth - 4 - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2))
         }
         func numbers(_ list: [Int?], left: Bool, x: CGFloat) {

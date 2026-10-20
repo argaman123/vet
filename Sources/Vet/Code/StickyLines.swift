@@ -73,18 +73,51 @@ final class StickyLinesView: NSView {
 
     /// The pinned rows for a pane whose first visible display line is `first`: up to `max`
     /// enclosing declarations whose own line is already scrolled past.
-    static func rows(in storage: NSTextStorage, first: Int, max limit: Int = 3) -> [(line: Int, text: NSAttributedString)] {
+    /// Asked on every scrolled frame, but the answer only changes when the first visible line
+    /// (or the text) does: the last answer per pane is kept, and each text's line starts too.
+    private static var memo: [ObjectIdentifier: (first: Int, length: Int, edits: Int, rows: [(line: Int, text: NSAttributedString)])] = [:]
+    private static var lineStarts: [ObjectIdentifier: (length: Int, edits: Int, starts: [Int])] = [:]
+    private static var edits: [ObjectIdentifier: Int] = [:]
+    private static var watching: Set<ObjectIdentifier> = []
+
+    private static func editCount(_ storage: NSTextStorage) -> Int {
+        let id = ObjectIdentifier(storage)
+        if !watching.contains(id) {
+            watching.insert(id)
+            NotificationCenter.default.addObserver(forName: NSTextStorage.didProcessEditingNotification, object: storage, queue: nil) { _ in
+                MainActor.assumeIsolated { edits[id, default: 0] += 1 }
+            }
+        }
+        return edits[id, default: 0]
+    }
+
+    private static func starts(of storage: NSTextStorage, edits n: Int) -> [Int] {
+        let id = ObjectIdentifier(storage)
+        if let c = lineStarts[id], c.length == storage.length, c.edits == n { return c.starts }
         let ns = storage.string as NSString
-        guard first > 0 else { return [] }
-        // Line starts up to `first + limit` (pinned rows cover that many lines of the view).
         var starts: [Int] = [0]
         var loc = 0
-        while starts.count <= first + limit {
+        while true {
             let r = ns.range(of: "\n", options: .literal, range: NSRange(location: loc, length: ns.length - loc))
             if r.location == NSNotFound { break }
             loc = NSMaxRange(r)
             starts.append(loc)
         }
+        lineStarts[id] = (storage.length, n, starts)
+        return starts
+    }
+
+    static func rows(in storage: NSTextStorage, first: Int, max limit: Int = 3) -> [(line: Int, text: NSAttributedString)] {
+        guard first > 0 else { return [] }
+        let id = ObjectIdentifier(storage), n = editCount(storage)
+        if let m = memo[id], m.first == first, m.length == storage.length, m.edits == n { return m.rows }
+        let result = computeRows(in: storage, first: first, max: limit, starts: starts(of: storage, edits: n))
+        memo[id] = (first, storage.length, n, result)
+        return result
+    }
+
+    private static func computeRows(in storage: NSTextStorage, first: Int, max limit: Int, starts: [Int]) -> [(line: Int, text: NSAttributedString)] {
+        let ns = storage.string as NSString
         func lineText(_ i: Int) -> String {
             guard i < starts.count else { return "" }
             let end = i + 1 < starts.count ? starts[i + 1] - 1 : ns.length

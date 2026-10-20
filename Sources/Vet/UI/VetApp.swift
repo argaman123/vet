@@ -112,6 +112,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? ys.map { String(format: "%.1f", $0) }.joined(separator: " ").write(toFile: dir + "/trace.txt", atomically: true, encoding: .utf8)
             }
         }
+        SnapshotHook.on("scrolltest") { [weak self] args in
+            // scrolltest <points>: scroll the diff down step by step; per-step cost to VET_SNAPSHOT_DIR/scroll.txt
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
+            self?.workspace.review.diffView.debugScrollTest(distance: CGFloat(Double(args.first ?? "") ?? 1500)) { costs in
+                let sorted = costs.sorted()
+                let line = String(format: "steps %d  median %.1f ms  p90 %.1f ms  max %.1f ms", costs.count, sorted[sorted.count / 2], sorted[sorted.count * 9 / 10], sorted.last ?? 0)
+                try? (line + "\n" + costs.map { String(format: "%.1f", $0) }.joined(separator: " ")).write(toFile: dir + "/scroll.txt", atomically: true, encoding: .utf8)
+            }
+        }
+        SnapshotHook.on("lensclick") { [weak self] args in
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"], let self else { return }
+            let r = self.workspace.review.diffView.debugClickLens(Int(args.first ?? "0") ?? 0)
+            try? r.write(toFile: dir + "/lens.txt", atomically: true, encoding: .utf8)
+        }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑
         SnapshotHook.on("claudeforward") { _ in ClaudeReference.bringClaudeForward() } // test: the hand-off alone, clipboard untouched

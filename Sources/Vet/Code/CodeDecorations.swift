@@ -99,7 +99,7 @@ extension CodeTextView {
 
     /// Draws the hint pills and the end-of-line lenses in the visible part of the text.
     func drawDecorations(in rect: NSRect) {
-        guard let storage = textStorage, storage.length > 0 else { lensRects = []; return }
+        guard let storage = textStorage, storage.length > 0 else { lensRectsByLine = [:]; return }
         let ns = storage.string as NSString
         // The view can scroll above its first line (under the floating header, or bouncing at the
         // top), so a dirty rect can lie entirely before line 0: clamp both ends.
@@ -156,7 +156,9 @@ extension CodeTextView {
                 x += ceil(size.width)
             }
         }
-        lensRects = rects
+        // Only the lines this draw covered are replaced.
+        for line in lensRectsByLine.keys where line >= firstLine && line <= lastLine { lensRectsByLine[line] = nil }
+        for r in rects { lensRectsByLine[r.1.line, default: []].append(r) }
     }
 
     /// The lens under a point, if any.

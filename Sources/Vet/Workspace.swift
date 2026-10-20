@@ -78,11 +78,11 @@ final class Workspace {
             if found.isEmpty || (found.count == 1 && kind != .references) { ReferencesPresenter.shared.endLoading() }
             if found.isEmpty {
                 link.flash(kind == .references ? "No usages of \(symbol) found." : kind == .implementation ? "No implementations found." : "No declaration found.")
-            } else if found.count == 1 && kind != .references {
+            } else if found.count == 1 && kind == .definition {
                 open(found[0])
             } else {
                 let editing = files.openURL
-                ReferencesPresenter.shared.show(symbol: symbol, locations: found, root: root, textOf: { [weak self] u in
+                ReferencesPresenter.shared.show(symbol: symbol, locations: found, root: root, noun: kind == .implementation ? "implementation" : "usage", textOf: { [weak self] u in
                     guard let self, u == editing, let view = self.files.editorText?() else { return nil }
                     return view
                 }, open: { [weak self] loc in self?.open(loc) })

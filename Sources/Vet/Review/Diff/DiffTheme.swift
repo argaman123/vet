@@ -7,13 +7,17 @@ enum DiffTheme {
     nonisolated static func hex(_ v: UInt32, _ a: CGFloat = 1) -> NSColor {
         NSColor(srgbRed: CGFloat((v >> 16) & 0xff) / 255, green: CGFloat((v >> 8) & 0xff) / 255, blue: CGFloat(v & 0xff) / 255, alpha: a)
     }
-    /// A color with a light and a dark variant.
+    /// A color with a light and a dark variant. Vet is always dark (VetApp sets it), so the dark one
+    /// is used as is: a provider would be asked again on every draw, which scrolling feels.
     nonisolated static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
-        NSColor(name: nil) { appearance in
+        if alwaysDark { return dark }
+        return NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua])
                 .map { $0 == .darkAqua || $0 == .accessibilityHighContrastDarkAqua } ?? false ? dark : light
         }
     }
+
+    nonisolated(unsafe) static var alwaysDark = true
 
     // MARK: Theme (Settings ▸ Theme; see CodeThemes.swift)
 
@@ -116,7 +120,8 @@ enum DiffTheme {
         NotificationCenter.default.post(name: .vetCodeFontChanged, object: nil)
     }
     private static var metrics: (size: CGFloat, font: NSFont, number: NSFont, line: CGFloat) {
-        if let c = cached, c.size == fontSize { return c }
+        // Read on every line drawn: the size is looked up again only when it was changed here.
+        if let c = cached { return c }
         let s = fontSize
         let m = (s, codeFont.font(size: s),
                  NSFont.monospacedDigitSystemFont(ofSize: max(9, s - 1.5), weight: .regular), (s * 1.5).rounded())

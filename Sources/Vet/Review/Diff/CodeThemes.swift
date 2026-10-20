@@ -125,7 +125,7 @@ extension Palette {
             window: 0x0B0B0B, sidebar: 0x0E0E0E, header: 0x111111, accent: 0x4F8BFF, folder: 0x7D8796,
             background: 0x141414, text: 0xD9D9D9, lineNumber: 0x404040, lineNumberCurrent: 0xB0B0B0, selection: 0x37393D,
             foldPill: 0x1B1B1B, foldPillHover: 0x262626, foldPillBorder: 0x2C2C2C, foldLabel: 0x8C8C8C, foldWave: 0x2A2A2A,
-            inlayBackground: 0x1F1F1F, inlayText: 0x8F8F8F, lensText: 0x6E6E6E, searchMatch: 0x5A4416,
+            inlayBackground: 0x1B1C1F, inlayText: 0x626875, lensText: 0x6E6E6E, searchMatch: 0x5A4416,
             inserted: 0x1A3022, modified: 0x1C2A40, deleted: 0x371B20,
             insertedWord: 0x2A5538, modifiedWord: 0x2A4675, deletedWord: 0x632430,
             addedMark: 0x3FB950, modifiedMark: 0x58A6FF, removedMark: 0xF85149,
@@ -239,6 +239,10 @@ enum Design {
     static var monoIcons: Bool { direction == .monolith }
     static var accentFolders: Bool { false }
     /// Surfaces let the desktop through, in levels: window clear, bars thin, code a dark veil.
+    /// The jump icons beside declarations (study): arrows in circles (now), letter badges as in
+    /// JetBrains IDEs (badge), small triangles (triangle), thin chevrons (chevron).
+    enum JumpIcon: String { case arrows, badge, triangle, chevron }
+    static var jumpIcon: JumpIcon { JumpIcon(rawValue: UserDefaults.standard.string(forKey: "design.jumpIcon") ?? "") ?? .arrows }
     /// The pinned declarations (study): a band under the header (band), a breadcrumb in the header
     /// (crumbs), a second row inside the header's glass (pill), or one quiet line (quiet).
     enum Sticky: String { case band, crumbs, pill, quiet }

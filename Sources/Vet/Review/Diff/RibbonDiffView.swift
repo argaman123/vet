@@ -110,6 +110,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// The change ⌘↩ approves: the one you moved to (⌘↓, ⌘↑, Approve and Next) while it's on
     /// screen; otherwise the topmost unreviewed one in view.
     private var focusedID: Int?
+    /// The first change of a file just opened, until you scroll or jump: if the floating header
+    /// grows meanwhile (its declarations row appears), the change is placed again, clear of it.
+    private var openedChange: (row: Int, count: Int)?
     /// Every change in the file is reviewed: move on to the next file.
     var onFileDone: (() -> Void)?
     /// Space in a read-only pane.
@@ -429,7 +432,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             if let first = layout.segments.first(where: { if case .hunk = $0.kind { true } else { false } }) {
                 var rows = first.right
                 if case .hunk(let id) = first.kind, let r = unifiedHunks[id] { rows = r }
-                reveal(row: rows.lowerBound, count: rows.count, animated: false)
+                let count = max(rows.count, first.left.count)
+                openedChange = (rows.lowerBound, count)
+                reveal(row: rows.lowerBound, count: count, animated: false)
             }
         }
         leftScroll.reflectScrolledClipView(leftScroll.contentView)
@@ -891,6 +896,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// resting top and bottom leave the first and last lines clear of the glass.
     func setOverlay(top: CGFloat, bottom: CGFloat) {
         guard leftScroll.contentInsets.top != top || leftScroll.contentInsets.bottom != bottom else { return }
+        defer { if let o = openedChange { reveal(row: o.row, count: o.count, animated: false) } }
         for scroll in [leftScroll, rightScroll] {
             let atTop = scroll.contentView.bounds.minY <= -scroll.contentInsets.top + 0.5
             scroll.automaticallyAdjustsContentInsets = false
@@ -905,6 +911,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// Test aid: puts both panes at `y` (even past the top, as a bounce does) and redraws just
     /// the newly exposed strip at the top, as scrolling does.
     func debugScroll(to y: CGFloat) {
+        openedChange = nil
         for scroll in [leftScroll, rightScroll] {
             scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: y))
             // Responsive scrolling draws ahead of the visible area, even above the first line:
@@ -1004,6 +1011,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         // The left pane leads only while you scroll it yourself: its own settling (say, at its end
         // after a reload) must not drag the right pane along.
         if clip === leftScroll.contentView, !userScrolling(leftScroll) { syncGutter(); return }
+        if userScrolling(clip === leftScroll.contentView ? leftScroll : rightScroll) { openedChange = nil }
         align(from: clip === leftScroll.contentView ? leftScroll : rightScroll)
     }
 
@@ -1075,6 +1083,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     private func scrollPane(left: Bool, toLine line: Int) {
+        openedChange = nil
         let scroll = left ? leftScroll : rightScroll
         let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - scroll.contentView.bounds.height / 3
         scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: clampY(y, scroll)))
@@ -1104,6 +1113,40 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             }
             done(ys)
         }
+    }
+
+    /// Test aid: scrolls the right pane down `distance` points, a step per display frame, as a
+    /// trackpad does, and reports how long each step's work took on the main thread (ms).
+    func debugScrollTest(distance: CGFloat, done: @escaping @MainActor ([Double]) -> Void) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var costs: [Double] = []
+            let clip = self.rightScroll.contentView
+            let steps = 90
+            for k in 1...steps {
+                let t0 = CACurrentMediaTime()
+                clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY + distance / CGFloat(steps)))
+                self.rightScroll.reflectScrolledClipView(clip)
+                self.window?.displayIfNeeded()
+                costs.append((CACurrentMediaTime() - t0) * 1000)
+                _ = k
+                try? await Task.sleep(for: .milliseconds(8))
+            }
+            done(costs)
+        }
+    }
+
+    /// Test aid: clicks the n-th lens part drawn in the new side (as a real click would).
+    func debugClickLens(_ n: Int) -> String {
+        let parts = rightText.lensRects
+        guard n < parts.count else { return "only \(parts.count) lens parts drawn" }
+        let (rect, _, _) = parts[n]
+        let p = rightText.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+        guard let e = NSEvent.mouseEvent(with: .leftMouseDown, location: p, modifierFlags: [], timestamp: 0, windowNumber: window?.windowNumber ?? 0,
+                                         context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return "no event" }
+        let hit = window?.contentView?.hitTest(window?.contentView?.superview?.convert(p, from: nil) ?? p)
+        rightText.mouseDown(with: e)
+        return "clicked \(parts[n].1.parts[parts[n].2].text); hit view: \(hit.map { String(describing: type(of: $0)) } ?? "none")"
     }
 
     /// Glides running right now; marks made meanwhile wait for the last one to land.
@@ -1174,6 +1217,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// Approves the change you're on and scrolls to the next unreviewed one; with none left in
     /// this file, moves on to the next file.
     func approveAndNext() {
+        openedChange = nil
         guard let staging = shownStaging, let layout = diffLayout else { return }
         guard let id = currentChangeID() else { onFileDone?(); return }
         let remaining = staging.hunks.filter { $0.id != id && (pendingHunks[$0.id] ?? .unstaged) != .staged }
@@ -1201,6 +1245,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     /// Scrolls to the previous or next section relative to the middle of the view.
     func jump(forward: Bool) {
+        openedChange = nil
         guard let layout = diffLayout else { return }
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
         // Where a change lands: a third of the way down the part the glass doesn't cover.
