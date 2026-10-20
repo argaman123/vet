@@ -15,18 +15,14 @@ struct ReviewNote: Codable, Identifiable, Hashable {
     var created = Date()
 }
 
-/// Notes for one project, kept in Application Support (never in the repository).
+/// Notes for one project, kept in its .vet folder (which git ignores).
 @MainActor
 final class NoteStore {
     private(set) var notes: [ReviewNote] = []
     private let file: URL
 
     init(root: URL) {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Vet/notes", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let key = SHA256.hash(data: Data(root.standardizedFileURL.path.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
-        file = dir.appendingPathComponent("\(key).json")
+        file = ProjectFolder.url(root, "notes.json")
         if let data = try? Data(contentsOf: file), let decoded = try? JSONDecoder().decode([ReviewNote].self, from: data) { notes = decoded }
     }
 

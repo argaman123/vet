@@ -249,12 +249,8 @@ final class RunModel {
         var selected: String?
     }
 
-    private func storeURL(_ folder: URL) -> URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Vet/run", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let key = SHA256.hash(data: Data(folder.standardizedFileURL.path.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
-        return dir.appendingPathComponent("\(key).json")
-    }
+    /// In the project's .vet folder (which git ignores).
+    private func storeURL(_ folder: URL) -> URL { ProjectFolder.url(folder, "run.json") }
 
     private func save() {
         guard let root, let data = try? JSONEncoder().encode(Stored(configs: configs, selected: selectedID)) else { return }

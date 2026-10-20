@@ -4,7 +4,7 @@ import VetCore
 
 /// "Unimportant" marks for one repository: exact file/folder marks, glob rules, and holds.
 /// A hold remembers that you unchecked a marked file, so it isn't re-staged until it changes again.
-/// Saved in ~/Library/Application Support/Vet/marks/, never in the repository.
+/// Saved in the project's .vet folder (which git ignores).
 @MainActor
 final class MarkStore {
     struct Data: Codable {
@@ -19,11 +19,7 @@ final class MarkStore {
     private let file: URL
 
     init(root: URL) {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Vet/marks", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let key = SHA256.hash(data: Foundation.Data(root.standardizedFileURL.path.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
-        file = dir.appendingPathComponent("\(key).json")
+        file = ProjectFolder.url(root, "unimportant.json")
         if let raw = try? Foundation.Data(contentsOf: file), let decoded = try? JSONDecoder().decode(Data.self, from: raw) {
             data = decoded
         }

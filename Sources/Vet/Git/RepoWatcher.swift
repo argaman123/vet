@@ -22,6 +22,8 @@ final class RepoWatcher {
     /// count: git also clones the index (Vet's own rename pairing does) and refreshes object
     /// times, and neither is a change.
     private var burstStart: Date?
+    /// The project's own .vet folder (Vet's review marks and notes): writes there aren't changes.
+    private var vetDir = ""
 
     init(root: URL, gitDir: URL, onChange: @escaping @MainActor () -> Void) {
         self.onChange = onChange
@@ -37,6 +39,7 @@ final class RepoWatcher {
         }
         let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
         let rootPath = Self.realPath(root)
+        vetDir = rootPath + "/.vet"
         var paths = [rootPath]
         if !self.gitDir.hasPrefix(rootPath + "/") { paths.append(self.gitDir) }
         stream = FSEventStreamCreate(nil, callback, &context, paths as CFArray,
@@ -62,7 +65,8 @@ final class RepoWatcher {
 
     private func received(_ events: [(path: String, flags: FSEventStreamEventFlags)]) {
         let relevant = events.contains { p, flags in
-            guard p.hasPrefix(gitDir + "/") else { return !p.contains("/node_modules/") } // .gitignore, .github/ are ordinary files
+            // .gitignore, .github/ are ordinary files; Vet's own .vet folder isn't a change to review.
+            guard p.hasPrefix(gitDir + "/") else { return !p.contains("/node_modules/") && !p.hasPrefix(vetDir + "/") && p != vetDir }
             // A rescan request names no item: count it. A file event must change contents.
             if flags & Self.itemFlags != 0 && flags & Self.contentFlags == 0 { return false }
             let rest = p.dropFirst(gitDir.count)

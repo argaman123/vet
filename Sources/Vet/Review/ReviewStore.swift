@@ -4,7 +4,7 @@ import Foundation
 /// What you've reviewed, kept by Vet itself (git's index is never touched): per file, the
 /// fingerprints of the sections you marked. A section's fingerprint is its content, so a mark
 /// stays through edits elsewhere and lapses when that section changes.
-/// Saved in ~/Library/Application Support/Vet/reviews/, never in the repository.
+/// Saved in the project's .vet folder (which git ignores).
 @MainActor
 final class ReviewStore {
     private struct Data: Codable {
@@ -19,11 +19,7 @@ final class ReviewStore {
     private var pendingSave: DispatchWorkItem?
 
     init(root: URL) {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Vet/reviews", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let key = SHA256.hash(data: Foundation.Data(root.standardizedFileURL.path.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
-        file = dir.appendingPathComponent("\(key).json")
+        file = ProjectFolder.url(root, "reviews.json")
         if let raw = try? Foundation.Data(contentsOf: file), let decoded = try? JSONDecoder().decode(Data.self, from: raw) {
             data = decoded
             isNew = false

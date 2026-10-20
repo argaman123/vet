@@ -90,8 +90,7 @@ final class ReviewModel {
     func setPlan(_ p: ReviewPlan?) {
         plan = p
         guard let root else { return }
-        let dir = GitRepo.gitDir(of: root)
-        if let p { p.save(gitDir: dir) } else { try? FileManager.default.removeItem(at: ReviewPlan.url(gitDir: dir)) }
+        if let p { p.save(root: root) } else { try? FileManager.default.removeItem(at: ReviewPlan.url(root: root)) }
         followPlan = p != nil
         version += 1
     }
@@ -217,7 +216,7 @@ final class ReviewModel {
         expanded = []
         guard let folder else { repo = nil; return }
         isGitRepo = GitRepo.root(containing: folder) != nil
-        plan = isGitRepo ? ReviewPlan.load(gitDir: GitRepo.gitDir(of: folder)) : nil
+        plan = isGitRepo ? ReviewPlan.load(root: folder) : nil
         repo = isGitRepo ? GitRepo(root: folder) : nil
         marks = isGitRepo ? MarkStore(root: folder) : nil
         store?.save()
@@ -431,6 +430,7 @@ final class ReviewModel {
         if isMarked(path) {
             if staged { marks?.releaseHold(path) } else { marks?.hold(path, hash: MarkStore.contentHash(root: root, path: path)) }
         }
+        Timing.selectionStarted = Date() // logTiming: how long until the diff shows the mark
         let fps = staging.fingerprints()
         store.set(path, [fps[i]], reviewed: staged)
         if units[path] == nil { units[path] = fps }
