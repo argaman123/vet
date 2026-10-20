@@ -242,7 +242,7 @@ enum Design {
     /// The jump icons beside declarations (study): arrows in circles (now), letter badges as in
     /// JetBrains IDEs (badge), small triangles (triangle), thin chevrons (chevron).
     enum JumpIcon: String { case arrows, badge, triangle, chevron }
-    static var jumpIcon: JumpIcon { JumpIcon(rawValue: UserDefaults.standard.string(forKey: "design.jumpIcon") ?? "") ?? .arrows }
+    static var jumpIcon: JumpIcon { JumpIcon(rawValue: UserDefaults.standard.string(forKey: "design.jumpIcon") ?? "") ?? .badge }
     /// The pinned declarations (study): a band under the header (band), a breadcrumb in the header
     /// (crumbs), a second row inside the header's glass (pill), or one quiet line (quiet).
     enum Sticky: String { case band, crumbs, pill, quiet }
