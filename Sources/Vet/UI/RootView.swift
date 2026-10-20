@@ -52,7 +52,6 @@ struct RootView: View {
             if let path, ui.location != .diff(path: path), case .diff = ui.location ?? .diff(path: "") { ui.replace(.diff(path: path)) }
         }
         // ⌘K away from the diff: the commit form as a sheet.
-        .sheet(isPresented: Bindable(ui).showCommit) { CommitPopover(app: app) }
         .sheet(isPresented: Bindable(ui).editingRules) { RulesDialog(model: ws.review, isPresented: Bindable(ui).editingRules) }
         .sheet(isPresented: Bindable(ui).editingRunConfigs) { RunConfigEditor(run: ws.run, isPresented: Bindable(ui).editingRunConfigs) }
         .sheet(isPresented: Binding(get: { ws.navResults != nil }, set: { if !$0 { ws.navResults = nil } })) {
@@ -90,8 +89,8 @@ struct ProjectMenu: View {
     let app: AppDelegate
     var body: some View {
         if app.workspace.review.isGitRepo {
-            let staged = app.workspace.review.changes.filter { app.workspace.review.stage(of: $0) != .unstaged }.count
-            Button(staged > 0 ? "Commit \(staged) Reviewed…" : "Commit…") { app.ui.showCommit = true } // ⌘K lives in the menu bar
+            let staged = app.workspace.review.changes.filter { app.workspace.review.stage(of: $0) == .staged }.count
+            Button(staged > 0 ? "Ask Claude to Commit \(staged) Reviewed" : "Ask Claude to Commit") { app.workspace.review.askClaudeToCommit() } // ⌘K in the menu bar
             Divider()
         }
         Section("Projects") {

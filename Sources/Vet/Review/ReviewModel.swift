@@ -74,17 +74,12 @@ final class ReviewModel {
     private(set) var notesVersion = 0
     /// Where drafts go (set by the workspace).
     var link: ClaudeLink?
-    private var autoStaging = false
-    /// Paths staged/unstaged optimistically while git runs.
-    private var pending: [String: StageState] = [:]
-    /// Git commands still running per path; a path's pending state stays until its last one ends
-    /// (a refresh in between must not flip the checkbox back).
-    private var inFlight: [String: Int] = [:]
-    /// Sections clicked but not yet staged/unstaged in git, by section id (the diff shows these).
-    private(set) var pendingHunks: [Int: StageState] = [:]
-    private var hunkInFlight: [Int: Int] = [:]
-    /// Section clicks run one after another, each against the file's state after the previous one.
-    private var hunkQueue: Task<Void, Never>?
+    /// Your review marks, kept by Vet (git's index is never touched for them).
+    private(set) var store: ReviewStore?
+    /// Per changed file, what marks attach to: its sections' fingerprints (or one for the whole
+    /// file), in order. Worked out in the background after each refresh.
+    private(set) var units: [String: [String]] = [:]
+    private var scanSerial = 0
 
     /// Claude's suggested review order (via Vet's MCP tool), and whether the list follows it.
     private(set) var plan: ReviewPlan?
@@ -101,22 +96,15 @@ final class ReviewModel {
         version += 1
     }
 
-    /// Per file: changed lines and how many are reviewed (for the sidebar's progress bars).
-    private(set) var progress: [String: (total: Int, staged: Int)] = [:]
-
-    /// The reviewed fraction of a file or folder (nil when unknown).
+    /// The reviewed fraction of a file or folder, by sections (nil when unknown).
     func reviewedFraction(_ node: FileTreeNode) -> Double? {
-        var total = 0, staged = 0
+        var total = 0, done = 0
         for c in node.fileChanges {
-            switch stage(of: c) {
-            case .staged: let t = progress[c.path]?.total ?? 1; total += t; staged += t
-            case .unstaged: total += progress[c.path]?.total ?? 1
-            case .partial:
-                guard let p = progress[c.path] else { return nil }
-                total += p.total; staged += p.staged
-            }
+            guard let u = units[c.path] else { continue }
+            total += u.count
+            done += store?.reviewedCount(c.path, of: u) ?? 0
         }
-        return total == 0 ? nil : Double(staged) / Double(total)
+        return total == 0 ? nil : Double(done) / Double(total)
     }
 
     var reviewedCount: Int { changes.filter { stage(of: $0) == .staged }.count }
@@ -232,6 +220,9 @@ final class ReviewModel {
         plan = isGitRepo ? ReviewPlan.load(gitDir: GitRepo.gitDir(of: folder)) : nil
         repo = isGitRepo ? GitRepo(root: folder) : nil
         marks = isGitRepo ? MarkStore(root: folder) : nil
+        store?.save()
+        store = isGitRepo ? ReviewStore(root: folder) : nil
+        units = [:]
         notes = NoteStore(root: folder)
         // A note left without text (Vet quit while it was being written) isn't a note.
         if let notes { for n in notes.notes where n.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { notes.delete(n.id) } }
@@ -244,7 +235,6 @@ final class ReviewModel {
             let fresh = try await repo.status()
             let known = Set(changes.map(\.path))
             changes = fresh
-            pending = pending.filter { (inFlight[$0.key] ?? 0) > 0 }
             tree = FileTreeNode.build(fresh)
             // New files open their folders, even if they appeared while Vet was closed;
             // unimportant ones don't.
@@ -252,10 +242,9 @@ final class ReviewModel {
             // A file that left the list (say Claude committed it) closes, unless you're editing it.
             if let sel = selectedPath, !fresh.contains(where: { $0.path == sel }), !diffDirty { selectedPath = nil }
             version += 1
-            progress = (try? await repo.reviewProgress()) ?? progress
-            await refreshBranches()
             await loadDiff()
-            await autoStageUnimportant()
+            await scanUnits()
+            await refreshBranches()
         } catch {
             show("Couldn't read git status: \(error)")
         }
@@ -274,7 +263,52 @@ final class ReviewModel {
 
     func dismissError() { error = nil }
 
-    func stage(of change: FileChange) -> StageState { pending[change.path] ?? change.stage }
+    /// Reviewed, partly reviewed or not, from Vet's own marks.
+    func stage(of change: FileChange) -> StageState {
+        guard let u = units[change.path], let store, !u.isEmpty else { return .unstaged }
+        let n = store.reviewedCount(change.path, of: u)
+        return n == 0 ? .unstaged : n == u.count ? .staged : .partial
+    }
+
+    /// The open file's sections: which are reviewed (the diff draws these).
+    var hunkStates: [Int: StageState] {
+        guard let doc = diff, let staging = doc.staging, let store else { return [:] }
+        var out: [Int: StageState] = [:]
+        for (h, fp) in zip(staging.hunks, staging.fingerprints()) { out[h.id] = store.isReviewed(doc.change.path, fp) ? .staged : .unstaged }
+        return out
+    }
+
+    /// Works out every changed file's sections (in the background, file by file) and, the first
+    /// time Vet opens a project, takes what git already has staged as reviewed.
+    private func scanUnits() async {
+        guard let repo, let store else { return }
+        scanSerial += 1
+        let serial = scanSerial
+        let seed = store.isNew && units.isEmpty
+        var fresh: [String: [String]] = [:]
+        for c in changes {
+            let (u, staged) = await repo.reviewUnits(c)
+            guard serial == scanSerial else { return } // a newer refresh took over
+            fresh[c.path] = u
+            if seed, !staged.isEmpty { store.set(c.path, Array(staged), reviewed: true) }
+            store.prune(c.path, keeping: u)
+        }
+        units = fresh
+        version += 1
+        if seed { store.save() }
+        autoReviewUnimportant()
+    }
+
+    /// Marks (or unmarks) whole files: every section in them.
+    private func mark(_ files: [FileChange], reviewed: Bool) async {
+        guard let repo, let store else { return }
+        for c in files {
+            if units[c.path] == nil { units[c.path] = await repo.reviewUnits(c).units }
+            store.set(c.path, units[c.path] ?? [], reviewed: reviewed)
+        }
+        version += 1
+        if files.contains(where: { $0.path == diff?.change.path }) { diffVersion += 1 }
+    }
 
     func stage(of node: FileTreeNode) -> StageState {
         let states = Set(node.fileChanges.map { stage(of: $0) })
@@ -283,35 +317,16 @@ final class ReviewModel {
         return .partial
     }
 
-    /// Stages (or unstages) every file at or under `node`. The checkbox flips at once; git runs in order.
+    /// Marks every file at or under `node` reviewed (or not). Instant: only Vet's own marks change.
     func setStaged(_ node: FileTreeNode, _ staged: Bool) {
         error = nil
-        let targets = node.fileChanges.filter {
-            $0.kind != .conflicted && (staged ? stage(of: $0) != .staged : stage(of: $0) != .unstaged)
-        }
-        guard let repo, let root, !targets.isEmpty else { return }
-        // Unchecking an unimportant file holds it unstaged until it changes again.
+        let targets = node.fileChanges.filter { $0.kind != .conflicted && (staged ? stage(of: $0) != .staged : stage(of: $0) != .unstaged) }
+        guard let root, !targets.isEmpty else { return }
+        // Unchecking an unimportant file holds it unreviewed until it changes again.
         for c in targets where marks?.isMarked(c.path) ?? false {
             if staged { marks?.releaseHold(c.path) } else { marks?.hold(c.path, hash: MarkStore.contentHash(root: root, path: c.path)) }
         }
-        for c in targets {
-            pending[c.path] = staged ? .staged : .unstaged
-            inFlight[c.path, default: 0] += 1
-        }
-        version += 1
-        Task {
-            do {
-                // One git command for the whole folder: it either applies or it doesn't.
-                if staged { try await repo.stageFiles(targets) } else { try await repo.unstageFiles(targets) }
-            } catch {
-                show("Couldn't mark \(staged ? "reviewed" : "not reviewed"): \(error)")
-            }
-            for c in targets {
-                inFlight[c.path, default: 1] -= 1
-                if inFlight[c.path] == 0 { inFlight[c.path] = nil }
-            }
-            await refresh() // shows git's real state, success or not
-        }
+        Task { await mark(targets, reviewed: staged) }
     }
 
     func loadDiff() async {
@@ -406,34 +421,33 @@ final class ReviewModel {
         approveSerial += 1
     }
 
-    /// Stages or unstages one section of the open file. `snapshot` is the snapshot the clicked
-    /// checkbox was drawn from; if HEAD, the index or the file changed since, the click is refused.
+    /// Marks one section of the open file reviewed (or not). Instant: only Vet's own marks change.
     func setHunk(_ id: Int, staged: Bool, snapshot: String) {
-        guard let repo, let root, let change = diff?.change else { return }
+        guard let root, let store, let doc = diff, let staging = doc.staging, staging.snapshotID == snapshot,
+              let i = staging.hunks.firstIndex(where: { $0.id == id }) else { return }
+        let path = doc.change.path
         error = nil
         // Unchecking part of an unimportant file holds it, just like unchecking the whole file.
-        if isMarked(change.path) {
-            if staged { marks?.releaseHold(change.path) } else { marks?.hold(change.path, hash: MarkStore.contentHash(root: root, path: change.path)) }
+        if isMarked(path) {
+            if staged { marks?.releaseHold(path) } else { marks?.hold(path, hash: MarkStore.contentHash(root: root, path: path)) }
         }
-        pendingHunks[id] = staged ? .staged : .unstaged
-        hunkInFlight[id, default: 0] += 1
-        let previous = hunkQueue
-        hunkQueue = Task {
-            await previous?.value
-            // After an earlier click, use the file's state as that one left it.
-            var expected = snapshot
-            if previous != nil, case .document(let doc) = await repo.loadDiff(change, previousSnapshot: nil),
-               let fresh = doc.staging?.snapshotID { expected = fresh }
-            do {
-                let outcome = try await repo.setSection(change, hunkID: id, staged: staged, expectedSnapshot: expected)
-                if outcome == .stale { show("The file changed, so the diff was refreshed. Check it and click again.") }
-            } catch {
-                show("Couldn't mark the change \(staged ? "reviewed" : "not reviewed"): \(error)")
-            }
-            hunkInFlight[id, default: 1] -= 1
-            if hunkInFlight[id] == 0 { hunkInFlight[id] = nil; pendingHunks[id] = nil }
-            await refresh()
-        }
+        let fps = staging.fingerprints()
+        store.set(path, [fps[i]], reviewed: staged)
+        if units[path] == nil { units[path] = fps }
+        version += 1
+        diffVersion += 1
+    }
+
+    /// Asks Claude to commit the files you've fully reviewed: the request, with the list, goes on
+    /// the clipboard and Claude comes forward to paste it into.
+    func askClaudeToCommit() {
+        let reviewed = changes.filter { stage(of: $0) == .staged }.map(\.path)
+        guard !reviewed.isEmpty else { show("Nothing is fully reviewed yet."); return }
+        let list = reviewed.map { "- \($0)" }.joined(separator: "\n")
+        let text = "Commit the files I've reviewed in Vet (only these; leave everything else as it is), with a message that says what changed:\n\(list)\n"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        ClaudeReference.bringClaudeForward()
     }
 
     // MARK: Review notes
@@ -554,20 +568,6 @@ final class ReviewModel {
 
     // MARK: Stage selected lines
 
-    func stageLines(_ lines: Range<Int>, snapshot: String) {
-        guard let repo, let change = diff?.change else { return }
-        error = nil
-        Task {
-            do {
-                let outcome = try await repo.stageLines(change, lines: lines, expectedSnapshot: snapshot)
-                if outcome == .stale { show("The file changed, so the diff was refreshed. Check it and try again.") }
-            } catch {
-                show("Couldn't stage the lines: \(error)")
-            }
-            await refresh()
-        }
-    }
-
     // MARK: Unimportant
 
     func isMarked(_ path: String) -> Bool { marks?.isMarked(path) ?? false }
@@ -579,7 +579,7 @@ final class ReviewModel {
     func setMarkRules(marks: [String], rules: [String]) {
         self.marks?.setRules(marks: marks, rules: rules)
         version += 1
-        Task { await autoStageUnimportant() }
+        autoReviewUnimportant()
     }
 
     func toggleMark(_ node: FileTreeNode) {
@@ -591,31 +591,24 @@ final class ReviewModel {
             if node.isFolder { expanded = expanded.filter { $0 != node.path && !$0.hasPrefix(node.path + "/") } } // marked folders fold away
         }
         version += 1
-        Task { await autoStageUnimportant() }
+        autoReviewUnimportant()
     }
 
-    /// Stages saved changes to unimportant files, except ones you unchecked that haven't changed since.
-    private func autoStageUnimportant() async {
-        guard !autoStaging, let repo, let root, let marks else { return }
+    /// Marks unimportant files reviewed, except ones you unchecked that haven't changed since.
+    private func autoReviewUnimportant() {
+        guard let root, let marks else { return }
         let due = changes.filter { c in
-            guard c.kind != .conflicted, marks.isMarked(c.path), c.stage != .staged else { return false }
+            guard c.kind != .conflicted, marks.isMarked(c.path), units[c.path] != nil, stage(of: c) != .staged else { return false }
             if let held = marks.heldHash(c.path) {
                 if held == MarkStore.contentHash(root: root, path: c.path) { return false }
                 marks.releaseHold(c.path) // it changed since you unchecked it
             }
             return true
         }
-        guard !due.isEmpty else { return }
-        autoStaging = true
-        defer { autoStaging = false }
-        // Check the holds once more right before staging: you may have unchecked one meanwhile.
-        let stillDue = due.filter { c in marks.heldHash(c.path).map { $0 != MarkStore.contentHash(root: root, path: c.path) } ?? true }
-        do {
-            try await repo.stageFiles(stillDue)
-        } catch {
-            show("Couldn't auto-stage an unimportant file: \(error)")
-        }
-        await refresh()
+        guard let store, !due.isEmpty else { return }
+        for c in due { store.set(c.path, units[c.path] ?? [], reviewed: true) }
+        version += 1
+        if due.contains(where: { $0.path == diff?.change.path }) { diffVersion += 1 }
     }
 
     func nextUnreviewed() {

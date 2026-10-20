@@ -132,7 +132,7 @@ struct DiffHeader: View {
                 Button("Save") { review.diffSave?() }.keyboardShortcut("s", modifiers: .command)
             } else if let staging = doc.staging {
                 let total = staging.hunks.count
-                let staged = staging.hunks.filter { staging.state(of: $0) == .staged }.count
+                let staged = review.hunkStates.values.filter { $0 == .staged }.count
                 Text(total == 0 ? "" : "\(staged)/\(total)")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()

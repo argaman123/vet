@@ -87,6 +87,23 @@ public struct SectionStaging: Sendable {
         }
     }
 
+    /// What a review mark on each section attaches to, in section order: a hash of the section's
+    /// old and new lines (so the mark survives edits elsewhere in the file, and lapses when the
+    /// section itself changes). Identical sections in one file are told apart by their order.
+    public func fingerprints() -> [String] {
+        var seen: [String: Int] = [:]
+        return hunks.map { h in
+            var hasher = SHA256()
+            for line in head.lines[h.head] { hasher.update(data: Data(line.text.utf8)); hasher.update(data: Data([10])) }
+            hasher.update(data: Data([0]))
+            for line in work.lines[h.work] { hasher.update(data: Data(line.text.utf8)); hasher.update(data: Data([10])) }
+            let base = hasher.finalize().prefix(12).map { String(format: "%02x", $0) }.joined()
+            let n = seen[base, default: 0]
+            seen[base] = n + 1
+            return n == 0 ? "h:" + base : "h:\(base)#\(n)"
+        }
+    }
+
     /// Identifies one combination of HEAD, index and working-file bytes.
     public static func snapshot(head: Data, index: Data, work: Data) -> String {
         var hasher = SHA256()

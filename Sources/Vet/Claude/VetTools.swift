@@ -8,7 +8,7 @@ enum VetTools {
         let str: [String: Any] = ["type": "string"]
         let int: [String: Any] = ["type": "integer"]
         return [
-            .init("vet_status", "What Vet is showing: the project, branch, every changed file with its review state (reviewed = staged in git), the open file, and the current review plan.",
+            .init("vet_status", "What Vet is showing: the project, branch, every changed file with its review state (reviewed = marked in Vet, section by section; git's staging isn't used), the open file, and the current review plan.",
                   schema: ["type": "object", "properties": [:] as [String: Any]]) { _ in
                 (status(app), false)
             },

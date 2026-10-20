@@ -276,7 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var list: [(String, String)] = [
             ("openFolder", "Open Folder…"), ("save", "Save"), ("back", "Back"), ("forward", "Forward"),
             ("findInFiles", "Find in Files…"), ("previousChange", "Previous Change"), ("nextChange", "Next Change"),
-            ("nextUnreviewed", "Next Unreviewed File"), ("commit", "Commit…"),
+            ("nextUnreviewed", "Next Unreviewed File"), ("commit", "Ask Claude to Commit Reviewed Files"),
             ("rules", "Unimportant Files…"), ("refresh", "Refresh"), ("runConfigs", "Edit Run Configurations…"),
             // Both directions of each switch, so either name finds it.
             ("output.show", "Show Run Output"), ("output.hide", "Hide Run Output"),
@@ -302,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "previousChange": review.jumpToChange(forward: false)
         case "nextChange": review.jumpToChange(forward: true)
         case "nextUnreviewed": review.nextUnreviewed(); if let p = review.selectedPath { ui.show(.diff(path: p)) }
-        case "commit": ui.showCommit = true
+        case "commit": workspace.review.askClaudeToCommit()
         case "rules": ui.editingRules = true
         case "refresh": Task { await review.refresh() }
         case "runConfigs": ui.editingRunConfigs = true
@@ -426,7 +426,7 @@ struct VetCommands: Commands {
             Button("Next Unreviewed File") { app.workspace.review.nextUnreviewed(); if let p = app.workspace.review.selectedPath { app.ui.show(.diff(path: p)) } }
                 .keyboardShortcut("u", modifiers: [.command, .option])
             Divider()
-            Button("Commit…") { app.ui.showCommit = true }.keyboardShortcut("k")
+            Button("Ask Claude to Commit Reviewed Files") { app.workspace.review.askClaudeToCommit() }.keyboardShortcut("k")
             Divider()
             Button("Unimportant Files…") { app.ui.editingRules = true }
             Button("Refresh") { Task { await app.workspace.review.refresh() } }.keyboardShortcut("r", modifiers: [.command, .option])

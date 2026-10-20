@@ -24,7 +24,6 @@ struct RibbonDiffView: NSViewRepresentable {
                               cancel: { [weak model] id in model?.cancelNote(id) },
                               edit: { [weak model] id in model?.editNote(id) },
                               delete: { [weak model] id in model?.deleteNote(id) })
-        v.onStageLines = { [weak model] lines, snapshot in model?.stageLines(lines, snapshot: snapshot) }
         v.onNavigate = { [weak model] kind, left, line, character in model?.navigate(kind, left: left, line: line, character: character) }
         v.onHover = { [weak model] line, character in model?.hover(line: line, character: character) }
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
@@ -43,7 +42,7 @@ struct RibbonDiffView: NSViewRepresentable {
         if view.shownVersion != version {
             view.shownVersion = version
             view.unified = model.unified
-            view.pendingHunks = model.pendingHunks
+            view.pendingHunks = model.hunkStates
             view.notes = []
             view.editingNoteID = model.editingNoteID
             view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
@@ -78,7 +77,6 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     var noteActions: NoteActions?
     var onAddNote: ((Bool, Int, String) -> Void)?
     var onAsk: ((Bool, ClosedRange<Int>, String) -> Void)?
-    var onStageLines: ((Range<Int>, String) -> Void)?
     var onNavigate: ((CodeTextView.Navigation, Bool, Int, Int) -> Void)?
     /// A jump icon was clicked: (working-file line, the icon's rect in the gutter).
     var onJumpMark: ((Int, NSRect) -> Void)?
@@ -283,7 +281,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         default: staging.head.count == 0 ? .rightOnly : unified ? .unified : .split
         }
         var states: [Int: StageState] = [:]
-        for h in staging.hunks { states[h.id] = pendingHunks[h.id] ?? staging.state(of: h) }
+        for h in staging.hunks { states[h.id] = pendingHunks[h.id] ?? .unstaged } // Vet's own marks
         // Reviewed sections fold away when you ask for it (View ▸ Fold Reviewed Changes).
         let reviewed = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? false
             ? Set(staging.hunks.filter { states[$0.id] == .staged }.map(\.id)) : []
@@ -715,10 +713,10 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             item("Go to implementation") { [weak self] in self?.onNavigate?(.implementation, left, line, character) },
             item("Find references") { [weak self] in self?.onNavigate?(.references, left, line, character) },
             .separator(),
-            item("Mark Selected Lines Reviewed", enabled: !left && !isDirty) { [weak self] in
-                self?.onStageLines?(span.lowerBound..<(span.upperBound + 1), staging.snapshotID)
+            item("Mark Change Reviewed", enabled: hunk.map { (pendingHunks[$0.id] ?? .unstaged) != .staged } ?? false) { [weak self] in
+                if let hunk { self?.onToggle?(hunk.id, true, staging.snapshotID) }
             },
-            item("Mark Change Not Reviewed", enabled: hunk.map { staging.state(of: $0) != .unstaged } ?? false) { [weak self] in
+            item("Mark Change Not Reviewed", enabled: hunk.map { (pendingHunks[$0.id] ?? .unstaged) != .unstaged } ?? false) { [weak self] in
                 if let hunk { self?.onToggle?(hunk.id, false, staging.snapshotID) }
             },
             .separator(),
@@ -1098,7 +1096,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         var spans: [(id: Int, rows: Range<Int>)] = []
         for s in layout.segments {
             guard case .hunk(let id) = s.kind, let h = staging.hunks.first(where: { $0.id == id }),
-                  (pendingHunks[id] ?? staging.state(of: h)) != .staged else { continue }
+                  (pendingHunks[id] ?? .unstaged) != .staged else { continue }
             let rows = unifiedHunks[id] ?? (mode == .leftOnly ? s.left : s.right)
             spans.append((id, rows.isEmpty ? rows.lowerBound..<(rows.lowerBound + 1) : rows))
         }
@@ -1111,7 +1109,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     func approveAndNext() {
         guard let staging = shownStaging, let layout = diffLayout else { return }
         guard let id = currentChangeID() else { onFileDone?(); return }
-        let remaining = staging.hunks.filter { $0.id != id && (pendingHunks[$0.id] ?? staging.state(of: $0)) != .staged }
+        let remaining = staging.hunks.filter { $0.id != id && (pendingHunks[$0.id] ?? .unstaged) != .staged }
         onToggle?(id, true, staging.snapshotID)
         // The next unreviewed change below this one, else the first one above.
         func row(_ s: DiffLayout.Segment) -> Int { if case .hunk(let n) = s.kind, let r = unifiedHunks[n] { r.lowerBound } else { s.right.lowerBound } }

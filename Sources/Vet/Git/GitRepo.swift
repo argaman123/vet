@@ -232,6 +232,23 @@ actor GitRepo {
         return .document(DiffDocument(change: change, staging: staging, message: nil, language: CodeLanguage(path: change.path)))
     }
 
+    /// What review marks attach to in a file: each section by its content, or the whole file
+    /// (by its bytes) when there are no sections to show (binary, a symlink, a file that only
+    /// changed mode…). `staged`: the ones git's index already has, for seeding Vet's own marks.
+    func reviewUnits(_ change: FileChange) -> (units: [String], staged: Set<String>) {
+        if case .document(let doc) = loadDiff(change), let staging = doc.staging, !staging.hunks.isEmpty {
+            let fps = staging.fingerprints()
+            var staged: Set<String> = []
+            for (h, fp) in zip(staging.hunks, fps) where staging.state(of: h) == .staged { staged.insert(fp) }
+            return (fps, staged)
+        }
+        var hasher = SHA256()
+        hasher.update(data: Data("\(change.kind)\0\(change.modeWork)\0".utf8))
+        if let work = try? Data(contentsOf: root.appendingPathComponent(change.path)) { hasher.update(data: work) }
+        let unit = "f:" + hasher.finalize().prefix(12).map { String(format: "%02x", $0) }.joined()
+        return ([unit], change.stage == .staged ? [unit] : [])
+    }
+
     enum SectionOutcome: Sendable { case done, stale }
 
     /// Stages just some working-file lines (re-reads and refuses if anything changed since drawing).
