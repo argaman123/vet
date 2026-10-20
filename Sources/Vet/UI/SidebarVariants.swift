@@ -10,6 +10,16 @@ struct ChangesVariant: View {
     @State private var quickLook: URL?
     @State private var row: String?
     @State private var filter = ""
+    /// Sections you folded (folder paths, or "#order", "#unimportant"…), kept across launches.
+    @AppStorage("foldedGroups") private var foldedRaw = ""
+
+    private func open(_ key: String) -> Binding<Bool> {
+        Binding(get: { !foldedRaw.split(separator: "\n").contains(Substring(key)) }, set: { isOpen in
+            var keys = Set(foldedRaw.split(separator: "\n").map(String.init))
+            if isOpen { keys.remove(key) } else { keys.insert(key) }
+            foldedRaw = keys.sorted().joined(separator: "\n")
+        })
+    }
 
     var body: some View {
         let review = app.workspace.review
@@ -46,51 +56,52 @@ struct ChangesVariant: View {
             if let path, review.changes.contains(where: { $0.path == path }) { app.showDiff(path) }
         })) {
             if !planPaths.isEmpty {
-                Section {
+                Section { if open("#order").wrappedValue {
                     ForEach(Array(planPaths.enumerated()), id: \.element) { i, path in
                         if let node = FileTreeNode.find(path, in: review.tree) {
                             VariantFileRow(app: app, node: node, index: i + 1, detail: nil).tag(path).quietRow(path)
                         }
                     }
-                } header: { VariantHeader(title: "Review Order", count: planPaths.count) }
+                } } header: { VariantHeader(title: "Review Order", count: planPaths.count, open: open("#order")) }
             }
             switch style {
             case .tree, .current:
                 if !important.isEmpty {
-                    Section {
+                    Section { if open("#changes").wrappedValue {
                         ForEach(CompactChange.compact(FileTreeNode.build(important))) { VariantTreeRow(app: app, item: $0) }
-                    } header: { VariantHeader(title: planPaths.isEmpty ? "Changes" : "Other Changes", count: important.count) }
+                    } } header: { VariantHeader(title: planPaths.isEmpty ? "Changes" : "Other Changes", count: important.count, open: open("#changes")) }
                 }
             case .list:
                 let toReview = important.filter { review.stage(of: $0) != .staged }
                 let reviewed = important.filter { review.stage(of: $0) == .staged }
                 if !toReview.isEmpty {
-                    Section { flat(toReview) } header: { VariantHeader(title: "To Review", count: toReview.count) }
+                    Section { if open("#toreview").wrappedValue { flat(toReview) } } header: { VariantHeader(title: "To Review", count: toReview.count, open: open("#toreview")) }
                 }
                 if !reviewed.isEmpty {
-                    Section { flat(reviewed) } header: { VariantHeader(title: "Reviewed", count: reviewed.count) }
+                    Section { if open("#reviewed").wrappedValue { flat(reviewed) } } header: { VariantHeader(title: "Reviewed", count: reviewed.count, open: open("#reviewed")) }
                 }
             case .groups:
                 let byFolder = Dictionary(grouping: important) { ($0.path as NSString).deletingLastPathComponent }
                 ForEach(byFolder.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }, id: \.self) { folder in
-                    Section {
+                    Section { if open(folder).wrappedValue {
                         ForEach(byFolder[folder]!.sorted { $0.path < $1.path }, id: \.path) { c in
                             if let node = FileTreeNode.find(c.path, in: review.tree) {
                                 VariantFileRow(app: app, node: node, index: nil, detail: nil).tag(c.path).quietRow(c.path)
                             }
                         }
-                    } header: { VariantHeader(title: folder.isEmpty ? "Project" : folder, count: nil, path: true) }
+                    } } header: { VariantHeader(title: folder.isEmpty ? "Project" : folder, count: nil, path: true, open: open(folder)) }
                 }
             }
             if !unimportant.isEmpty {
-                Section {
+                Section { if open("#unimportant").wrappedValue {
                     if style == .tree {
                         ForEach(CompactChange.compact(FileTreeNode.build(unimportant))) { VariantTreeRow(app: app, item: $0) }
                     } else {
                         flat(unimportant)
                     }
-                } header: { VariantHeader(title: "Unimportant", count: unimportant.count) }
+                } } header: { VariantHeader(title: "Unimportant", count: unimportant.count, open: open("#unimportant")) }
             }
+            ListEndSpace()
         }
         .contextMenu(forSelectionType: String.self) { ids in
             if let id = ids.first, let node = FileTreeNode.find(id, in: review.tree) {
@@ -107,7 +118,6 @@ struct ChangesVariant: View {
         .onKeyPress(.space) { review.approveAndNext(); return .handled }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .contentMargins(.bottom, 52, for: .scrollContent) // the last rows can scroll clear of the bar
         .quietSelection(row ?? review.selectedPath)
     }
 
@@ -127,13 +137,27 @@ private struct VariantHeader: View {
     let title: String
     let count: Int?
     var path = false
+    /// Clicking the header folds or unfolds its section (a folder you've finished, say). The rows
+    /// come and go with it, so the system's own hover chevron doesn't appear beside this one.
+    var open: Binding<Bool>? = nil
     var body: some View {
         HStack(spacing: 6) {
             Text(title).lineLimit(1).truncationMode(.head)
                 .font(path ? .caption.weight(.medium) : .subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             if let count { Text("\(count)").font(.subheadline).foregroundStyle(.tertiary).monospacedDigit() }
+            Spacer(minLength: 4)
+            if let open {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(open.wrappedValue ? 90 : 0))
+                    .animation(.easeOut(duration: 0.15), value: open.wrappedValue)
+            }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { open?.wrappedValue.toggle() }
+        .help(open.map { $0.wrappedValue ? "Fold \(title)" : "Unfold \(title)" } ?? "")
     }
 }
 
@@ -246,5 +270,17 @@ private struct FilterBar: View {
         .glassEffect(in: Capsule())
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
+    }
+}
+
+/// Room after a list's last row, so it can scroll clear of the glass bar floating over the bottom.
+/// (A plain row: the AppKit-backed list ignores content margins.)
+struct ListEndSpace: View {
+    var body: some View {
+        Color.clear
+            .frame(height: 56)
+            .listRowBackground(Color.clear)
+            .selectionDisabled()
+            .accessibilityHidden(true)
     }
 }

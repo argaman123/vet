@@ -45,13 +45,13 @@ final class RibbonGutterView: NSView {
     var rightNumbers: [Int?] = []
     /// Display lines pinned at the top of each pane (sticky lines); their numbers cover the
     /// numbers of the lines scrolled under them.
-    var leftPinned: [Int] = [] { didSet { if oldValue != leftPinned { needsDisplay = true } } }
-    var rightPinned: [Int] = [] { didSet { if oldValue != rightPinned { needsDisplay = true } } }
+    var leftPinned: [Int] = [] { didSet { if oldValue != leftPinned { needsDisplay = true; placeCheckboxes() } } }
+    var rightPinned: [Int] = [] { didSet { if oldValue != rightPinned { needsDisplay = true; placeCheckboxes() } } }
     /// Unified mode: each section's rows in the one pane, and its colored change bars.
     var unifiedRanges: [Int: Range<Int>] = [:]
     var unifiedBars: [(rows: Range<Int>, color: NSColor)] = []
     var leftOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes() } }
-    var rightOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes() } }
+    var rightOffset: CGFloat = 0 { didSet { needsDisplay = true; placeCheckboxes(); if !rightMarks.isEmpty { window?.invalidateCursorRects(for: self) } } }
     var onToggle: ((Int, Bool, String) -> Void)?
     /// The snapshot these checkboxes were drawn from; sent with every click.
     var snapshotID = ""
@@ -64,11 +64,37 @@ final class RibbonGutterView: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// The column after the working file's numbers for jump icons (implemented, overrides), as in
+    /// JetBrains IDEs.
+    static let marksWidth: CGFloat = 16
+
     static func width(for mode: Mode) -> CGFloat {
         switch mode {
-        case .split: numbersWidth * 2 + ribbonWidth + checkWidth
-        case .unified: numbersWidth * 2 + ribbonWidth
-        case .rightOnly, .leftOnly: numbersWidth + ribbonWidth
+        case .split: numbersWidth * 2 + ribbonWidth + checkWidth + marksWidth
+        case .unified: numbersWidth * 2 + ribbonWidth + marksWidth
+        case .rightOnly: numbersWidth + ribbonWidth + marksWidth
+        case .leftOnly: numbersWidth + ribbonWidth
+        }
+    }
+
+    /// Jump icons by working-file display row; a click on one asks for its targets.
+    var rightMarks: [Int: LineNumberGutter.JumpMark] = [:] { didSet { if oldValue != rightMarks { needsDisplay = true; window?.invalidateCursorRects(for: self) } } }
+    var onMarkClick: ((Int, NSRect) -> Void)?
+
+    private func markRect(_ row: Int) -> NSRect {
+        let s: CGFloat = 13
+        return NSRect(x: bounds.width - Self.marksWidth + (Self.marksWidth - s) / 2 - 1, y: y(row, left: false) + (DiffTheme.lineHeight - s) / 2, width: s, height: s)
+    }
+
+    private func drawMarks() {
+        guard mode != .leftOnly, !rightMarks.isEmpty else { return }
+        let config = NSImage.SymbolConfiguration(pointSize: 10.5, weight: .medium).applying(.init(paletteColors: [DiffTheme.accent]))
+        for (row, mark) in rightMarks {
+            let r = markRect(row)
+            guard r.maxY > covered.top, r.minY < bounds.height - covered.bottom,
+                  let image = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: mark.help)?.withSymbolConfiguration(config) else { continue }
+            let size = image.size
+            image.draw(in: NSRect(x: r.midX - size.width / 2, y: r.midY - size.height / 2, width: size.width, height: size.height))
         }
     }
 
@@ -137,7 +163,9 @@ final class RibbonGutterView: NSView {
                 let cy = ringCenterY(s)
                 let cx = Self.numbersWidth + Self.ribbonWidth / 2
                 b.frame = NSRect(x: cx - 8, y: cy - 8, width: 16, height: 16)
-                b.isHidden = cy < -20 || cy > bounds.height + 20
+                // Under the sticky rows' band (or the header's glass) the ring hides, as its code does.
+                let under = pinnedBand.map { cy - 8 < $0.upperBound + 4 } ?? (cy < covered.top)
+                b.isHidden = cy < -20 || cy > bounds.height + 20 || under
                 continue
             }
             if mode == .split {
@@ -355,13 +383,15 @@ final class RibbonGutterView: NSView {
             }
             NSGraphicsContext.restoreGraphicsState()
             guard band > 0 else { return }
-            DiffTheme.background.setFill()
-            NSRect(x: x, y: top, width: Self.numbersWidth, height: band).fill()
+            // Like the panes' sticky rows: solid up to the glass, fading out below.
+            let lead = top > 0 ? StickyLinesView.glassGap : 0, solid = band - 2
+            let bg = DiffTheme.background.withAlphaComponent(1)
+            bg.setFill()
+            NSRect(x: x, y: top - lead, width: Self.numbersWidth, height: lead + solid).fill()
+            NSGradient(starting: bg, ending: bg.withAlphaComponent(0))?.draw(in: NSRect(x: x, y: top + solid, width: Self.numbersWidth, height: StickyLinesView.tail), angle: 90)
             for (row, line) in pinned.enumerated() where line < list.count {
                 if let n = list[line] { number(n, x: x, y: top + CGFloat(row) * DiffTheme.lineHeight) }
             }
-            NSColor.separatorColor.setFill()
-            NSRect(x: x, y: top + band - 1, width: Self.numbersWidth, height: 1).fill()
         }
         switch mode {
         case .split:
@@ -378,11 +408,34 @@ final class RibbonGutterView: NSView {
             numbers(leftNumbers, left: true, x: 0)
             numbers(rightNumbers, left: false, x: Self.numbersWidth)
         }
+        drawMarks()
+        // The sticky rows' band runs across the bridge too, so no ribbon or ring shows through it.
+        if mode == .split, let solid = pinnedBand {
+            let bg = DiffTheme.background.withAlphaComponent(1)
+            let x0 = Self.numbersWidth, w = Self.ribbonWidth
+            bg.setFill()
+            NSRect(x: x0, y: solid.lowerBound, width: w, height: solid.upperBound - solid.lowerBound).fill()
+            NSGradient(starting: bg, ending: bg.withAlphaComponent(0))?.draw(in: NSRect(x: x0, y: solid.upperBound, width: w, height: StickyLinesView.tail), angle: 90)
+        }
         _ = diffLayout
+    }
+
+    /// The solid stretch of the sticky rows' band (from the glass down to the last pinned row),
+    /// the taller of the two sides; nil when nothing is pinned.
+    private var pinnedBand: Range<CGFloat>? {
+        let rows = max(leftPinned.count, rightPinned.count)
+        guard rows > 0 else { return nil }
+        let top = covered.top, lead = top > 0 ? StickyLinesView.glassGap : 0
+        return (top - lead)..<(top + CGFloat(rows) * DiffTheme.lineHeight)
     }
 
     // Drag to resize the panes; double-click to reset.
     override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        if let (row, _) = rightMarks.first(where: { markRect($0.key).insetBy(dx: -3, dy: -3).contains(p) }) {
+            onMarkClick?(row, markRect(row))
+            return
+        }
         if event.clickCount == 2 { onResetSplit?(); return }
         dragStart = event.locationInWindow.x
     }
@@ -399,6 +452,10 @@ final class RibbonGutterView: NSView {
     var covered: (top: CGFloat, bottom: CGFloat) = (0, 0) { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
 
     override func resetCursorRects() {
+        for row in rightMarks.keys {
+            let r = markRect(row)
+            if r.maxY > covered.top, r.minY < bounds.height - covered.bottom { addCursorRect(r.insetBy(dx: -3, dy: -3), cursor: .pointingHand) }
+        }
         guard mode == .split else { return }
         addCursorRect(NSRect(x: 0, y: covered.top, width: bounds.width, height: max(0, bounds.height - covered.top - covered.bottom)), cursor: .resizeLeftRight)
     }

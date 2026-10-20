@@ -22,6 +22,7 @@ struct ProjectTool: View {
                     if let path, Self.isFile(path, files.tree), let url = files.url(for: path) { app.showFile(url) }
                 })) {
                     ForEach(CompactFile.compact(files.tree)) { ProjectNodeRow(app: app, item: $0, quickLook: $quickLook) }
+                    ListEndSpace()
                 }
                 .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
@@ -33,7 +34,6 @@ struct ProjectTool: View {
                     }
                 }
                 .quickLookPreview($quickLook)
-                .contentMargins(.bottom, 52, for: .scrollContent) // the last rows can scroll clear of the bar
                 .quietSelection(row ?? files.relativePath)
             }
         }

@@ -253,7 +253,7 @@ struct EdgeFade: View {
         // so a solid stretch stacked on the code read as a grey slab.
         LinearGradient(stops: [.init(color: bg, location: 0), .init(color: bg.opacity(0), location: 1)],
                        startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
-            .frame(height: height + 26 + (edge == .top ? 60 : 0)) // a little past the bar, and up under the window's top bar
+            .frame(height: height + (edge == .top ? 60 : 26)) // up under the window's top bar; gone by the bar's bottom, where sticky lines start
             .padding(.top, edge == .top ? -60 : 0)
             .allowsHitTesting(false)
     }

@@ -36,7 +36,7 @@ final class LineNumberGutter: NSView {
             let y = DiffTheme.inset.height + CGFloat(i) * DiffTheme.lineHeight - offset
             s.draw(at: NSPoint(x: Self.numbersRight - size.width, y: y + (DiffTheme.lineHeight - size.height) / 2))
         }
-        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular).applying(.init(paletteColors: [.systemBlue]))
+        let config = NSImage.SymbolConfiguration(pointSize: 10.5, weight: .medium).applying(.init(paletteColors: [DiffTheme.accent]))
         for (line, mark) in marks where line >= first && line < first + count {
             guard let image = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: mark.help)?.withSymbolConfiguration(config) else { continue }
             image.draw(in: iconRect(line, image.size))

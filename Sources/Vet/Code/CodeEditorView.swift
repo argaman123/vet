@@ -93,7 +93,8 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         sticky.scrollX = clip.minX
         let scrollerWidth = scroll.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
         sticky.gutterWidth = LineNumberGutter.width
-        sticky.frame = NSRect(x: 0, y: top, width: bounds.width - scrollerWidth, height: sticky.height)
+        sticky.lead = top > 0 ? StickyLinesView.glassGap : 0 // up to the header's glass
+        sticky.frame = NSRect(x: 0, y: top - sticky.lead, width: bounds.width - scrollerWidth, height: sticky.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -253,7 +254,7 @@ extension CodeEditorView {
     func debugDecorate() {
         textView.inlayHints = [InlayHintMark(line: 1, character: 9, label: "name:", padLeft: false, padRight: true),
                                InlayHintMark(line: 2, character: 12, label: ": string", padLeft: false, padRight: false)]
-        textView.lenses = [LineLensMark(line: 3, character: 0, text: "3 usages · Dana")]
+        textView.lenses = [LineLensMark(line: 3, character: 0, parts: [.init(text: "3 usages", kind: .references)])]
         gutter.marks = [3: .implemented, 5: .overrides]
     }
 

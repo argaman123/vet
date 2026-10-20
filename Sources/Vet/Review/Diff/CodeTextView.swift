@@ -27,8 +27,10 @@ final class CodeTextView: NSTextView {
     /// Inline hints and end-of-line lenses (see CodeDecorations.swift).
     var inlayHints: [InlayHintMark] = [] { didSet { if oldValue != inlayHints { applyHintGaps() } } }
     var lenses: [LineLensMark] = [] { didSet { if oldValue != lenses { needsDisplay = true } } }
-    var onLensClick: ((LineLensMark) -> Void)?
-    var lensRects: [(NSRect, LineLensMark)] = []
+    var onLensClick: ((LineLensMark, CodeTextView.Navigation) -> Void)?
+    var lensRects: [(NSRect, LineLensMark, Int)] = []
+    /// The lens part under the pointer (drawn lit).
+    var hoveredLens: LensHit? { didSet { if oldValue != hoveredLens { needsDisplay = true } } }
     /// Pinch accumulated toward the next text-size step.
     var pinch: CGFloat = 0
     private var lastPressureStage = 0
@@ -131,9 +133,9 @@ final class CodeTextView: NSTextView {
             onFoldClick?(id)
             return
         }
-        if let hit = lensRects.first(where: { $0.0.insetBy(dx: -2, dy: -2).contains(p) }), let onLensClick {
+        if let hit = lensRects.first(where: { $0.0.insetBy(dx: -2, dy: -2).contains(p) }), let onLensClick, hit.2 < hit.1.parts.count {
             NavigationAnchor.set(self, hit.0)
-            onLensClick(hit.1)
+            onLensClick(hit.1, hit.1.parts[hit.2].kind)
             return
         }
         if event.modifierFlags.contains(.command), let onNavigate, let pos = position(at: p) {
@@ -212,7 +214,9 @@ final class CodeTextView: NSTextView {
         let at = convert(event.locationInWindow, from: nil)
         let row = line(at: at)
         hoveredFoldLine = foldLines[row] != nil ? row : nil
-        if hoveredFoldLine != nil || lens(at: at) != nil { NSCursor.pointingHand.set() }
+        let lensHit = lens(at: at)
+        hoveredLens = lensHit.map { LensHit(line: $0.mark.line, part: $0.part) }
+        if hoveredFoldLine != nil || lensHit != nil { NSCursor.pointingHand.set() }
         hoverWork?.cancel()
         guard onHover != nil, NSEvent.pressedMouseButtons == 0 else { return }
         let p = convert(event.locationInWindow, from: nil)
@@ -224,6 +228,7 @@ final class CodeTextView: NSTextView {
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         hoveredFoldLine = nil
+        hoveredLens = nil
         hoverWork?.cancel()
         HoverPresenter.shared.cancelPending()
     }
@@ -418,3 +423,9 @@ final class CenteredLineFragment: NSTextLayoutFragment {
     }
 }
 
+
+/// A lens part on a line (for drawing the one under the pointer).
+struct LensHit: Equatable {
+    let line: Int
+    let part: Int
+}

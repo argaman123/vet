@@ -80,6 +80,15 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     var onAsk: ((Bool, ClosedRange<Int>, String) -> Void)?
     var onStageLines: ((Range<Int>, String) -> Void)?
     var onNavigate: ((CodeTextView.Navigation, Bool, Int, Int) -> Void)?
+    /// A jump icon was clicked: (working-file line, the icon's rect in the gutter).
+    var onJumpMark: ((Int, NSRect) -> Void)?
+
+    /// Jump icons (implemented, overrides) by working-file line.
+    func setJumpMarks(_ marks: [Int: LineNumberGutter.JumpMark]) {
+        var rows: [Int: LineNumberGutter.JumpMark] = [:]
+        for (line, mark) in marks { if let r = workRow(ofFileLine: line) { rows[r] = mark } }
+        gutter.rightMarks = rows
+    }
     /// Hover on a working-file line (HEAD lines aren't what the language server has open).
     var onHover: ((Int, Int) -> Void)?
     private var cards: [NoteCardView] = []
@@ -207,9 +216,14 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         rightText.contextItems = { [weak self] line, character in self?.menuItems(left: false, displayLine: line, character: character) ?? [] }
         leftText.onNavigate = { [weak self] kind, line, character in self?.navigate(kind, left: true, displayLine: line, character: character) }
         rightText.onNavigate = { [weak self] kind, line, character in self?.navigate(kind, left: false, displayLine: line, character: character) }
-        rightText.onLensClick = { [weak self] lens in
+        gutter.onMarkClick = { [weak self] row, rect in
+            guard let self, let (side, fileLine) = self.resolve(left: false, displayLine: row), !side else { return }
+            NavigationAnchor.set(self.gutter, rect)
+            self.onJumpMark?(fileLine, rect)
+        }
+        rightText.onLensClick = { [weak self] lens, kind in
             guard let self, let (side, fileLine) = self.resolve(left: false, displayLine: lens.line), !side else { return }
-            self.onNavigate?(.references, false, fileLine, lens.character)
+            self.onNavigate?(kind, false, fileLine, lens.character)
         }
         rightText.onHover = { [weak self] line, character in
             guard let self, let (side, fileLine) = self.resolve(left: false, displayLine: line), !side else { return }
@@ -253,6 +267,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         // Remember what you were reading (a line's text and number), not just a pixel offset,
         // so lines Claude inserts above it don't shift your place.
         let anchor = samePath ? readingAnchor() : nil
+        if !samePath { gutter.rightMarks = [:] } // the new file's icons come with its reading aids
         shownPath = doc.change.path
 
         mode = switch doc.change.kind {
@@ -262,8 +277,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         }
         var states: [Int: StageState] = [:]
         for h in staging.hunks { states[h.id] = pendingHunks[h.id] ?? staging.state(of: h) }
-        // Reviewed sections fold away (click one to see it again).
-        let reviewed = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? true
+        // Reviewed sections fold away when you ask for it (View ▸ Fold Reviewed Changes).
+        let reviewed = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? false
             ? Set(staging.hunks.filter { states[$0.id] == .staged }.map(\.id)) : []
         let layout = DiffLayout(headCount: staging.head.count, workCount: staging.work.count,
                                 hunks: staging.hunks, folding: folding, expanded: expanded,
@@ -402,9 +417,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftScroll.contentView.scroll(to: NSPoint(x: 0, y: -leftScroll.contentInsets.top))
             rightScroll.contentView.scroll(to: NSPoint(x: 0, y: -rightScroll.contentInsets.top))
             if let first = layout.segments.first(where: { if case .hunk = $0.kind { true } else { false } }) {
-                var line = first.right.lowerBound
-                if case .hunk(let id) = first.kind, let r = unifiedHunks[id] { line = r.lowerBound }
-                scrollRight(toLine: max(0, line - 4), animated: false)
+                var rows = first.right
+                if case .hunk(let id) = first.kind, let r = unifiedHunks[id] { rows = r }
+                reveal(row: rows.lowerBound, count: rows.count, animated: false)
             }
         }
         leftScroll.reflectScrolledClipView(leftScroll.contentView)
@@ -519,7 +534,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         changeMap.marks = marks
         changeMap.total = total
         changeMap.isHidden = Design.bridge != .map
-        changeMap.onJump = { [weak self] row in self?.scrollRight(toLine: max(0, row - 4)) }
+        changeMap.onJump = { [weak self] row in self?.reveal(row: row, count: 1) }
         if changeMap.superview == nil { addSubview(changeMap) }
         positionCards()
     }
@@ -1011,7 +1026,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             sticky.show(StickyLinesView.rows(in: storage, first: max(0, first)))
             sticky.scrollX = clip.minX
             let scrollerWidth = scroll.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
-            sticky.frame = NSRect(x: scroll.frame.minX, y: scroll.frame.minY + top, width: scroll.frame.width - scrollerWidth, height: sticky.height)
+            sticky.lead = top > 0 ? StickyLinesView.glassGap : 0 // up to the header's glass
+            sticky.frame = NSRect(x: scroll.frame.minX, y: scroll.frame.minY + top - sticky.lead, width: scroll.frame.width - scrollerWidth, height: sticky.height)
         }
     }
 
@@ -1022,9 +1038,20 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
-    private func scrollRight(toLine line: Int, animated: Bool = true) {
+    /// Brings a change into the part of the pane the glass doesn't cover: a third of the way down
+    /// that clear area, or, when the change is tall, its first lines just under the header.
+    private func reveal(row start: Int, count: Int, animated: Bool = true) {
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
-        let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight
+        let i = scroll.contentInsets, lh = DiffTheme.lineHeight
+        let clear = scroll.contentView.bounds.height - i.top - i.bottom
+        let tall = CGFloat(max(1, count)) * lh
+        let below = min(clear * 0.3, max(2 * lh, clear - tall - 2 * lh)) // room left above the change
+        let top = DiffTheme.inset.height + CGFloat(start) * lh - i.top - below
+        scrollRight(toY: top, animated: animated)
+    }
+
+    private func scrollRight(toY y: CGFloat, animated: Bool = true) {
+        let scroll = mode == .leftOnly ? leftScroll : rightScroll
         let target = NSPoint(x: 0, y: clampY(y, scroll))
         // Jumps glide (the other pane follows), unless motion is reduced or the view is still loading.
         if animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -1047,7 +1074,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     func currentChangeID() -> Int? {
         guard let layout = diffLayout, let staging = shownStaging else { return nil }
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
-        let anchor = Int((scroll.contentView.bounds.minY - DiffTheme.inset.height) / DiffTheme.lineHeight)
+        // The first line in the clear: lines under the floating header don't count as seen.
+        let anchor = Int((scroll.contentView.bounds.minY + scroll.contentInsets.top - DiffTheme.inset.height) / DiffTheme.lineHeight)
         var spans: [(id: Int, rows: Range<Int>)] = []
         for s in layout.segments {
             guard case .hunk(let id) = s.kind, let h = staging.hunks.first(where: { $0.id == id }),
@@ -1074,24 +1102,27 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.onFileDone?() }
             return
         }
-        var line = next.right.lowerBound
-        if case .hunk(let n) = next.kind, let r = unifiedHunks[n] { line = r.lowerBound }
-        let scroll = mode == .leftOnly ? leftScroll : rightScroll
-        scrollRight(toLine: max(0, line - Int(scroll.contentView.bounds.height / DiffTheme.lineHeight / 3)))
+        var rows = next.right
+        if case .hunk(let n) = next.kind, let r = unifiedHunks[n] { rows = r }
+        reveal(row: rows.lowerBound, count: max(rows.count, next.left.count))
     }
 
     /// Scrolls to the previous or next section relative to the middle of the view.
     func jump(forward: Bool) {
         guard let layout = diffLayout else { return }
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
-        let current = Int((scroll.contentView.bounds.minY + scroll.contentView.bounds.height / 3 - DiffTheme.inset.height) / DiffTheme.lineHeight)
-        let starts = layout.segments.compactMap { s -> Int? in
+        // Where a change lands: a third of the way down the part the glass doesn't cover.
+        let i = scroll.contentInsets
+        let clear = scroll.contentView.bounds.height - i.top - i.bottom
+        let current = Int((scroll.contentView.bounds.minY + i.top + clear * 0.3 - DiffTheme.inset.height) / DiffTheme.lineHeight)
+        let spans = layout.segments.compactMap { s -> (Int, Int)? in
             guard case .hunk(let id) = s.kind else { return nil }
-            if let r = unifiedHunks[id] { return r.lowerBound }
-            return mode == .leftOnly ? s.left.lowerBound : s.right.lowerBound
+            if let r = unifiedHunks[id] { return (r.lowerBound, r.count) }
+            let r = mode == .leftOnly ? s.left : s.right
+            return (r.lowerBound, max(r.count, s.left.count))
         }
-        let target = forward ? starts.first { $0 > current + 1 } : starts.last { $0 < current - 1 }
-        if let target { scrollRight(toLine: max(0, target - Int(scroll.contentView.bounds.height / DiffTheme.lineHeight / 3))) }
+        let target = forward ? spans.first { $0.0 > current + 1 } : spans.last { $0.0 < current - 1 }
+        if let target { reveal(row: target.0, count: target.1) }
     }
 }
 

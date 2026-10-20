@@ -13,6 +13,13 @@ final class StickyLinesView: NSView {
     /// Display line → the number to show (nil hides it), for panes whose rows aren't file lines.
     var number: (Int) -> Int? = { $0 + 1 }
     private(set) var rows: [(line: Int, text: NSAttributedString)] = []
+    /// Solid space above the rows, reaching up to the floating header's glass so no sliver of
+    /// code shows between them.
+    var lead: CGFloat = 0 { didSet { if oldValue != lead { needsDisplay = true } } }
+    /// Below the rows the code fades in over this much, instead of a hard edge.
+    static let tail: CGFloat = 12
+    /// The gap the floating header leaves under its glass.
+    static let glassGap: CGFloat = 6
 
     override var isFlipped: Bool { true }
 
@@ -23,16 +30,20 @@ final class StickyLinesView: NSView {
         if changed { needsDisplay = true }
     }
 
-    var height: CGFloat { rows.isEmpty ? 0 : CGFloat(rows.count) * DiffTheme.lineHeight + 2 }
+    var height: CGFloat { rows.isEmpty ? 0 : lead + CGFloat(rows.count) * DiffTheme.lineHeight + Self.tail }
 
     override func draw(_ dirtyRect: NSRect) {
-        // Opaque even when the code is a translucent veil, so the lines scrolled under don't show through.
-        DiffTheme.background.withAlphaComponent(1).setFill()
-        bounds.fill()
+        // Opaque even when the code is a translucent veil, so the lines scrolled under don't show
+        // through; the code then fades in below instead of meeting a line.
+        let bg = DiffTheme.background.withAlphaComponent(1)
+        let solid = lead + CGFloat(rows.count) * DiffTheme.lineHeight
+        bg.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: solid).fill()
+        NSGradient(starting: bg, ending: bg.withAlphaComponent(0))?.draw(in: NSRect(x: 0, y: solid, width: bounds.width, height: Self.tail), angle: 90)
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: NSRect(x: gutterWidth, y: 0, width: bounds.width - gutterWidth, height: bounds.height)).addClip()
         for (i, row) in rows.enumerated() {
-            row.text.draw(at: NSPoint(x: gutterWidth + DiffTheme.inset.width - scrollX, y: CGFloat(i) * DiffTheme.lineHeight))
+            row.text.draw(at: NSPoint(x: gutterWidth + DiffTheme.inset.width - scrollX, y: lead + CGFloat(i) * DiffTheme.lineHeight))
         }
         NSGraphicsContext.restoreGraphicsState()
         if gutterWidth > 0 {
@@ -41,20 +52,18 @@ final class StickyLinesView: NSView {
                 guard let n = number(row.line) else { continue }
                 let s = NSAttributedString(string: "\(n)", attributes: attrs)
                 let size = s.size()
-                s.draw(at: NSPoint(x: (gutterWidth == LineNumberGutter.width ? LineNumberGutter.numbersRight : gutterWidth - 8) - size.width, y: CGFloat(i) * DiffTheme.lineHeight + (DiffTheme.lineHeight - size.height) / 2))
+                s.draw(at: NSPoint(x: (gutterWidth == LineNumberGutter.width ? LineNumberGutter.numbersRight : gutterWidth - 8) - size.width, y: lead + CGFloat(i) * DiffTheme.lineHeight + (DiffTheme.lineHeight - size.height) / 2))
             }
         }
-        NSColor.separatorColor.setFill()
-        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
     }
 
     override func mouseDown(with event: NSEvent) {
-        let y = convert(event.locationInWindow, from: nil).y
-        let i = Int(y / DiffTheme.lineHeight)
+        let y = convert(event.locationInWindow, from: nil).y - lead
+        let i = y < 0 ? -1 : Int(y / DiffTheme.lineHeight)
         if i >= 0, i < rows.count { onClick?(rows[i].line) }
     }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func resetCursorRects() { addCursorRect(NSRect(x: 0, y: lead, width: bounds.width, height: CGFloat(rows.count) * DiffTheme.lineHeight), cursor: .pointingHand) }
 
     /// The pinned rows for a pane whose first visible display line is `first`: up to `max`
     /// enclosing declarations whose own line is already scrolled past.

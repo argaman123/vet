@@ -215,9 +215,9 @@ extension Workspace {
             NavigationAnchor.set(view.lineGutter, rect)
             self.openJumpTargets(line: line, url: url, text: view.currentText)
         }
-        view.pane.onLensClick = { [weak self, weak view] lens in
+        view.pane.onLensClick = { [weak self, weak view] lens, kind in
             guard let self, let view else { return }
-            self.navigate(.references, url: url, text: view.currentText, line: lens.line, character: lens.character)
+            self.navigate(kind, url: url, text: view.currentText, line: lens.line, character: lens.character)
         }
         loadReadingAids(pane: view.pane, gutter: view.lineGutter, url: url, text: text, row: { $0 }, current: current)
     }
@@ -228,6 +228,16 @@ extension Workspace {
         let url = root.appendingPathComponent(doc.change.path)
         let current = { [weak view] in view?.shownWorkText == text && !(view?.isDirty ?? true) }
         loadReadingAids(pane: view.workPane, gutter: nil, url: url, text: text, row: { [weak view] in view?.workRow(ofFileLine: $0) }, current: current)
+        // The jump icons, as in the editor's gutter (and JetBrains IDEs).
+        view.onJumpMark = { [weak self] line, _ in self?.openJumpTargets(line: line, url: url, text: text) }
+        if let navigator, navigator.isSupported(url) {
+            Task { [weak view] in
+                let marks = await navigator.gutterMarks(of: url, text: text)
+                guard let view, current() else { return }
+                view.setJumpMarks(Dictionary(marks.map { ($0.line, $0.kind == .overrides ? LineNumberGutter.JumpMark.overrides : .implemented) }, uniquingKeysWith: { a, _ in a }))
+                self.jumpTargets[url] = Dictionary(marks.map { ($0.line, $0) }, uniquingKeysWith: { a, _ in a })
+            }
+        }
         // HEAD gets the same name colors (the server is asked about that text too).
         if let navigator, navigator.isSupported(url), let head = view.shownHeadText {
             Task { [weak view] in
@@ -270,9 +280,11 @@ extension Workspace {
             pane.lenses = lines.compactMap { line in
                 guard let r = row(line) else { return nil }
                 let infos = byLine[line] ?? []
-                let parts = infos.compactMap(Self.lensText)
+                let parts = infos.compactMap { info in
+                    Self.lensText(info).map { LineLensMark.Part(text: $0, kind: info.kind == .implementations ? .implementation : .references) }
+                }
                 guard !parts.isEmpty else { return nil }
-                return LineLensMark(line: r, character: infos.first?.character ?? 0, text: parts.joined(separator: " · "))
+                return LineLensMark(line: r, character: infos.first?.character ?? 0, parts: parts)
             }
         }
         if let gutter {

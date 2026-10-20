@@ -13,9 +13,15 @@ struct InlayHintMark: Equatable {
 
 /// Grey text after a declaration's line: "3 usages · Dana". Clicking it shows the usages.
 struct LineLensMark: Equatable {
+    /// One clickable part: "2 usages" finds usages, "1 implementation" finds implementations.
+    struct Part: Equatable {
+        let text: String
+        let kind: CodeTextView.Navigation
+    }
     let line: Int       // display line
     let character: Int  // where the declared name starts (for Find Usages)
-    let text: String
+    let parts: [Part]
+    var text: String { parts.map(\.text).joined(separator: " · ") }
 }
 
 /// The hint carried by the character before its gap, so the pill moves with the text you type.
@@ -124,24 +130,38 @@ extension CodeTextView {
                                                               .paragraphStyle: HintBox.paragraph])
             }
         }
-        var rects: [(NSRect, LineLensMark)] = []
+        var rects: [(NSRect, LineLensMark, Int)] = []
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: DiffTheme.lensText]
         for lens in lenses where lens.line >= firstLine && lens.line <= lastLine && lens.line < starts.count {
             let start = starts[lens.line]
             let end = lens.line + 1 < starts.count ? starts[lens.line + 1] - 1 : ns.length
             let lineEndX = end > start ? (segmentFrame(NSRange(location: start, length: end - start))?.maxX ?? 0) : textContainerOrigin.x
-            let size = (lens.text as NSString).size(withAttributes: attrs)
-            let r = NSRect(x: lineEndX + 18, y: y(ofLine: lens.line) + (DiffTheme.lineHeight - size.height) / 2 + 0.5,
-                           width: ceil(size.width), height: size.height)
-            (lens.text as NSString).draw(at: r.origin, withAttributes: attrs)
-            rects.append((r, lens))
+            // Each part is its own target, drawn lit while the pointer is on it.
+            var x = lineEndX + 18
+            let dot = (" · " as NSString), dotWidth = dot.size(withAttributes: attrs).width
+            for (i, part) in lens.parts.enumerated() {
+                if i > 0 {
+                    dot.draw(at: NSPoint(x: x, y: y(ofLine: lens.line) + (DiffTheme.lineHeight - dot.size(withAttributes: attrs).height) / 2 + 0.5), withAttributes: attrs)
+                    x += dotWidth
+                }
+                let size = (part.text as NSString).size(withAttributes: attrs)
+                let r = NSRect(x: x, y: y(ofLine: lens.line) + (DiffTheme.lineHeight - size.height) / 2 + 0.5, width: ceil(size.width), height: size.height)
+                var a = attrs
+                if hoveredLens == LensHit(line: lens.line, part: i) {
+                    a[.foregroundColor] = DiffTheme.accent
+                    a[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                }
+                (part.text as NSString).draw(at: r.origin, withAttributes: a)
+                rects.append((r, lens, i))
+                x += ceil(size.width)
+            }
         }
         lensRects = rects
     }
 
     /// The lens under a point, if any.
-    func lens(at point: NSPoint) -> LineLensMark? {
-        lensRects.first { $0.0.insetBy(dx: -2, dy: -2).contains(point) }?.1
+    func lens(at point: NSPoint) -> (mark: LineLensMark, part: Int)? {
+        lensRects.first { $0.0.insetBy(dx: -2, dy: -2).contains(point) }.map { ($0.1, $0.2) }
     }
 
     /// Colors names by what they are (functions, properties, parameters…), from the language

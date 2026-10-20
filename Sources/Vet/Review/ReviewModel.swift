@@ -44,6 +44,10 @@ final class ReviewModel {
     private(set) var diff: DiffDocument?
     private(set) var diffVersion = 0
     /// Fold unchanged regions (remembered across files and launches).
+    /// Reviewed changes fold to one line (off by default: they stay, in a quieter color).
+    var foldReviewed = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? false {
+        didSet { UserDefaults.standard.set(foldReviewed, forKey: "foldReviewed"); diffVersion += 1 }
+    }
     var folding = UserDefaults.standard.object(forKey: "foldUnchanged") as? Bool ?? true {
         didSet { UserDefaults.standard.set(folding, forKey: "foldUnchanged"); expandedFolds = []; diffVersion += 1 }
     }

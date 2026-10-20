@@ -392,6 +392,7 @@ struct VetCommands: Commands {
             Button(app.workspace.run.outputVisible ? "Hide Run Output" : "Show Run Output") { app.workspace.run.outputVisible.toggle() }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
             Button(app.workspace.review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { app.workspace.review.folding.toggle() }
+            Toggle("Fold Reviewed Changes", isOn: Bindable(app.workspace.review).foldReviewed)
             Picker("Diff Layout", selection: Bindable(app.workspace.review).unified) {
                 Text("Side by Side").tag(false)
                 Text("Unified").tag(true)
