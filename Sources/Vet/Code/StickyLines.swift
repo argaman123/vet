@@ -16,6 +16,8 @@ final class StickyLinesView: NSView {
     /// Solid space above the rows, reaching up to the floating header's glass so no sliver of
     /// code shows between them.
     var lead: CGFloat = 0 { didSet { if oldValue != lead { needsDisplay = true } } }
+    /// One dim line on a soft fade, without numbers or a solid band.
+    var quiet = false { didSet { if oldValue != quiet { needsDisplay = true } } }
     /// Below the rows the code fades in over this much, instead of a hard edge.
     static let tail: CGFloat = 12
     /// The gap the floating header leaves under its glass.
@@ -46,7 +48,11 @@ final class StickyLinesView: NSView {
             row.text.draw(at: NSPoint(x: gutterWidth + DiffTheme.inset.width - scrollX, y: lead + CGFloat(i) * DiffTheme.lineHeight))
         }
         NSGraphicsContext.restoreGraphicsState()
-        if gutterWidth > 0 {
+        if quiet { // the line recedes: a veil of the background over it
+            bg.withAlphaComponent(0.45).setFill()
+            NSRect(x: 0, y: lead, width: bounds.width, height: CGFloat(rows.count) * DiffTheme.lineHeight).fill()
+        }
+        if gutterWidth > 0, !quiet {
             let attrs: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumber]
             for (i, row) in rows.enumerated() {
                 guard let n = number(row.line) else { continue }

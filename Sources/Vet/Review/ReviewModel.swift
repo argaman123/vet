@@ -40,6 +40,10 @@ final class ReviewModel {
             Task { await loadDiff() }
         }
     }
+    /// The declarations around the top of the diff's new side (for a header that shows them),
+    /// and how to scroll to one.
+    var scope: [(line: Int, text: NSAttributedString)] = []
+    @ObservationIgnored var scopeJump: ((Int) -> Void)?
     /// The open file's diff.
     private(set) var diff: DiffDocument?
     private(set) var diffVersion = 0

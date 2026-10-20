@@ -359,7 +359,7 @@ extension CodeNavigator {
     /// symbols of the file that holds it (read from disk, opened beside the shown document).
     /// Nil when a request failed; empty when the base isn't found or its file is too big.
     private func baseMembers(named name: HeritageClause.Name, in url: URL, text: String, symbols: [DocumentSymbol],
-                             server: LanguageServer) async throws -> [String: [LSPLocation]]? {
+                             server: LanguageServer, depth: Int = 0) async throws -> [String: [LSPLocation]]? {
         let definitions: [LSPLocation]
         do {
             definitions = try await server.locations("textDocument/definition", url: url, text: text,
@@ -373,14 +373,16 @@ extension CodeNavigator {
         guard let definition = definitions.first, let baseURL = LSPURI.url(for: definition.uri),
               LSPLanguage(fileExtension: baseURL.pathExtension) == LSPLanguage(fileExtension: url.pathExtension)
         else { return [:] }
-        let baseSymbols: [DocumentSymbol]
+        let baseSymbols: [DocumentSymbol], baseText: String
         if baseURL == url.standardizedFileURL {
             baseSymbols = symbols
+            baseText = text
         } else {
             let size = (try? baseURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            guard size <= Self.maxBaseFileSize, let baseText = try? String(contentsOf: baseURL, encoding: .utf8) else { return [:] }
-            guard let found = await self.symbols(of: baseURL, text: baseText, side: true) else { return nil }
+            guard size <= Self.maxBaseFileSize, let read = try? String(contentsOf: baseURL, encoding: .utf8) else { return [:] }
+            guard let found = await self.symbols(of: baseURL, text: read, side: true) else { return nil }
             baseSymbols = found
+            baseText = read
         }
         // The type whose name the definition points at (or, failing that, the innermost type around it).
         let types = baseSymbols.flatMap(\.flattened).filter { Self.typeKinds.contains($0.kind) }
@@ -389,6 +391,15 @@ extension CodeNavigator {
         var members: [String: [LSPLocation]] = [:]
         for member in base.children where member.kind != Self.constructorKind {
             members[member.name, default: []].append(LSPLocation(uri: definition.uri, range: member.selectionRange))
+        }
+        // Up the chain, as JetBrains IDEs do: a member declared by the base's own bases is
+        // overridden too (the nearest declaration is the one a click goes to).
+        if depth < 4, let language = LSPLanguage(fileExtension: baseURL.pathExtension) {
+            for next in HeritageClause.names(in: baseText, declaration: base, language: language).prefix(4) {
+                guard let inherited = try await baseMembers(named: next, in: baseURL, text: baseText, symbols: baseSymbols,
+                                                            server: server, depth: depth + 1) else { continue }
+                for (name, targets) in inherited where members[name] == nil { members[name] = targets }
+            }
         }
         return members
     }

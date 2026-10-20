@@ -29,6 +29,8 @@ struct RibbonDiffView: NSViewRepresentable {
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
         v.onFileDone = { [weak model] in model?.nextUnreviewed() }
         v.onApproveKey = { [weak model] in model?.approveAndNext() }
+        v.onScope = { [weak model] rows in model?.scope = rows.map { ($0.line, $0.text) } }
+        model.scopeJump = { [weak v] line in v?.showScope(line: line) }
         return v
     }
 
@@ -1037,15 +1039,34 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     /// Each pane pins the enclosing declarations of its first visible line.
+    /// The declarations around the top of the new side, for a header that shows them.
+    var onScope: (([(line: Int, text: NSAttributedString)]) -> Void)?
+    private var shownScope: [(line: Int, text: NSAttributedString)] = []
+    /// A header crumb was clicked: show that declaration.
+    func showScope(line: Int) { scrollPane(left: false, toLine: line) }
+
     private func updateSticky() {
         defer { if mode == .unified { gutter.leftPinned = rightSticky.rows.map(\.line) } }
         for (sticky, scroll, tv, visible) in [(leftSticky, leftScroll, leftText, mode == .split || mode == .leftOnly), (rightSticky, rightScroll, rightText, mode != .leftOnly)] {
-            defer { if sticky === leftSticky { gutter.leftPinned = sticky.rows.map(\.line) } else { gutter.rightPinned = sticky.rows.map(\.line) } }
+            defer {
+                let pinned = Design.sticky == .quiet ? [] : sticky.rows.map(\.line) // the quiet line has no number band
+                if sticky === leftSticky { gutter.leftPinned = pinned } else { gutter.rightPinned = pinned }
+            }
             guard visible, let storage = tv.textStorage, storage.length > 0 else { sticky.show([]); continue }
             let clip = scroll.contentView.bounds
             let top = scroll.contentInsets.top
             let first = Int((clip.minY + top - DiffTheme.inset.height) / DiffTheme.lineHeight)
-            sticky.show(StickyLinesView.rows(in: storage, first: max(0, first)))
+            var rows = StickyLinesView.rows(in: storage, first: max(0, first))
+            switch Design.sticky {
+            case .crumbs, .pill:
+                // Shown by the header instead (from the new side).
+                if sticky === rightSticky, rows.map(\.line) != shownScope.map(\.line) { shownScope = rows; onScope?(rows) }
+                rows = []
+            case .quiet: rows = Array(rows.suffix(1))
+            case .band: break
+            }
+            sticky.quiet = Design.sticky == .quiet
+            sticky.show(rows)
             sticky.scrollX = clip.minX
             let scrollerWidth = scroll.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
             sticky.lead = top > 0 ? StickyLinesView.glassGap : 0 // up to the header's glass

@@ -111,7 +111,8 @@ struct DiffHeader: View {
         let review = app.workspace.review
         // The file as git sees it now (the diff's copy keeps the state it was loaded with).
         let change = review.changes.first { $0.path == doc.change.path } ?? doc.change
-        HeaderBar {
+        let scope = review.scope
+        HeaderBar(extra: Design.sticky == .pill && !scope.isEmpty ? AnyView(ScopeRows(rows: scope) { review.scopeJump?($0) }) : nil) {
             let node = FileTreeNode.build([change]).first.map(leaf)
             TriStateCheckbox(state: review.stage(of: change)) { on in
                 if let node { review.setStaged(node, on) }
@@ -124,6 +125,15 @@ struct DiffHeader: View {
                 Text((change.path as NSString).deletingLastPathComponent).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             }
             // Claude's note on this file, one click away instead of a second bar.
+            if Design.sticky == .crumbs {
+                // Where the top of the view is: the enclosing declarations, each a jump.
+                ForEach(Array(scope.enumerated()), id: \.offset) { _, row in
+                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                    Button(ScopeRows.name(row.text.string)) { review.scopeJump?(row.line) }
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+            }
             if let f = review.plan?.file(change.path) { ClaudeNoteButton(file: f) }
             Spacer(minLength: 12)
             if review.diffDirty {
@@ -261,18 +271,23 @@ struct EdgeFade: View {
 
 /// A file header in standard material across the top of the content.
 struct HeaderBar<Content: View>: View {
+    /// Rows under the controls, inside the same glass (the pinned declarations, say).
+    var extra: AnyView? = nil
     @ViewBuilder let content: Content
     var body: some View {
         if Design.direction == .glass {
             // Glass: the file's controls float in a Liquid Glass bar over the code's edge.
-            HStack(spacing: 8) { content }
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) { content }
+                    .frame(height: 34)
+                if let extra { extra.padding(.bottom, 7) }
+            }
                 .font(.callout)
                 .buttonStyle(.borderless)
                 .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the code's I-beam
                 .padding(.horizontal, 14)
-                .frame(height: 34)
                 // A light tint of the code's own color keeps the header readable over passing code.
-                .glassEffect(.regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)), in: .capsule)
+                .glassEffect(.regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
         } else {
@@ -438,3 +453,40 @@ struct ClaudeNoteButton: View {
     }
 }
 
+
+/// The pinned declarations as code, inside the header's glass: each one a jump to it.
+struct ScopeRows: View {
+    let rows: [(line: Int, text: NSAttributedString)]
+    let jump: (Int) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                CodeLabel(text: row.text)
+                    .frame(height: DiffTheme.lineHeight, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { jump(row.line) }
+                    .pointerStyle(.link)
+            }
+        }
+    }
+
+    /// A declaration's name from its line: "LightningLayer" for a class, "hover()" for a function.
+    static func name(_ line: String) -> String {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        if let m = t.firstMatch(of: /(?:class|interface|enum|struct|function|def|fun|object|namespace|type|extension)\s+([A-Za-z_$][\w$]*)/) { return String(m.1) }
+        if let m = t.firstMatch(of: /([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/) { return String(m.1) + "()" }
+        return String(t.prefix(28))
+    }
+}
+
+/// A line of colored code (AppKit draws the attributed text exactly as the panes do).
+private struct CodeLabel: NSViewRepresentable {
+    let text: NSAttributedString
+    func makeNSView(context: Context) -> NSTextField {
+        let f = NSTextField(labelWithAttributedString: text)
+        f.lineBreakMode = .byTruncatingTail
+        f.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return f
+    }
+    func updateNSView(_ f: NSTextField, context: Context) { f.attributedStringValue = text }
+}
