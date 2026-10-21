@@ -47,7 +47,9 @@ final class CodeTextView: NSTextView {
     /// "editor", "diff" (the diff's work pane) or "diffOld": what mods see as the pane's kind.
     var paneKind = "editor"
     /// Ranges a mod marked (search matches), drawn like Find's.
-    var modMarks: [NSRange] = [] { didSet { if oldValue != modMarks { needsDisplay = true } } }
+    var modMarks: [NSRange] = [] { didSet { if oldValue != modMarks { modMarkLines = lineNumbers(of: modMarks); needsDisplay = true } } }
+    /// Each mark's line, so a draw skips the ones off screen without laying them out.
+    var modMarkLines: [Int] = []
 
     static func make() -> (NSScrollView, CodeTextView) {
         let scroll = NSScrollView()

@@ -61,12 +61,29 @@ extension CodeTextView {
 }
 
 extension CodeTextView {
+    /// The line of each range's start, in one pass over the text (ranges in any order).
+    func lineNumbers(of ranges: [NSRange]) -> [Int] {
+        let ns = string as NSString
+        let order = ranges.indices.sorted { ranges[$0].location < ranges[$1].location }
+        var out = [Int](repeating: 0, count: ranges.count)
+        var line = 0, at = 0
+        for i in order {
+            let target = min(ranges[i].location, ns.length)
+            while at < target {
+                let r = ns.range(of: "\n", range: NSRange(location: at, length: target - at))
+                if r.location == NSNotFound { at = target } else { line += 1; at = r.location + 1 }
+            }
+            out[i] = line
+        }
+        return out
+    }
+
     /// A mod's marked ranges (see `modMarks`), in Find's match color.
     func drawModMarks(in rect: NSRect) {
         DiffTheme.searchMatch.setFill()
-        for r in modMarks {
+        let first = line(at: NSPoint(x: 0, y: rect.minY)), last = line(at: NSPoint(x: 0, y: rect.maxY))
+        for (r, line) in zip(modMarks, modMarkLines) where line >= first && line <= last {
             guard let f = segmentFrame(r), f.intersects(rect) else { continue }
-            let line = self.line(at: NSPoint(x: f.minX, y: f.midY))
             NSBezierPath(roundedRect: NSRect(x: f.minX, y: y(ofLine: line), width: max(2, f.width), height: DiffTheme.lineHeight), xRadius: 2, yRadius: 2).fill()
         }
     }

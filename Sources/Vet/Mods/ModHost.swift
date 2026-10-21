@@ -91,7 +91,10 @@ final class ModHost {
     @ObservationIgnored private weak var lastOffered: NSEvent?
 
     var userFolder: URL {
-        if let dir = ProcessInfo.processInfo.environment["VET_MODS_DIR"] { return URL(fileURLWithPath: dir, isDirectory: true) }
+        let env = ProcessInfo.processInfo.environment
+        if let dir = env["VET_MODS_DIR"] { return URL(fileURLWithPath: dir, isDirectory: true) }
+        // A test run never touches your mods.
+        if let snap = env["VET_SNAPSHOT_DIR"] { return URL(fileURLWithPath: snap, isDirectory: true).appendingPathComponent("mods", isDirectory: true) }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Vet/mods", isDirectory: true)
     }

@@ -41,9 +41,14 @@ final class CommandRegistry {
         return true
     }
 
+    /// The kinds of NSTextView command a mod may run. Others (`setString:`, `setDelegate:`) would be
+    /// called with the text view as their argument and could take Vet down.
+    private static let textCommands = ["move", "delete", "insert", "select", "scroll", "center", "transpose", "yank",
+                                       "page", "indent", "uppercase", "lowercase", "capitalize", "cancel", "complete"]
+
     /// An NSTextView command (`moveWordForward:`) in the focused code pane.
     static func performText(_ name: String) -> Bool {
-        guard let pane = ModHost.shared.pane else { return false }
+        guard let pane = ModHost.shared.pane, textCommands.contains(where: { name.hasPrefix($0) }) else { return false }
         let sel = NSSelectorFromString(name.hasSuffix(":") ? name : name + ":")
         guard pane.responds(to: sel) else { return false }
         pane.doCommand(by: sel)
