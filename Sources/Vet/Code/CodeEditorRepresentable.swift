@@ -18,6 +18,7 @@ struct CodeEditorRepresentable: NSViewRepresentable {
         let v = model.editorView // kept by the model across tab switches
         v.onSave = { [weak model] text in model?.save(text) }
         v.onDirtyChange = { [weak model] dirty in model?.isDirty = dirty }
+        v.onScope = { [weak model] rows in model?.scope = rows }
         model.editorText = { [weak v] in v?.fileText() }
         return v
     }

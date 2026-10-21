@@ -21,6 +21,8 @@ final class Workspace {
     var onOpenFile: ((URL, Int) -> Void)?
     /// Asked to open another project (Review follows the Claude chat you're working in).
     var onOpenProject: ((URL) -> Void)?
+    /// Opens a changed file's diff (set by the app).
+    var onShowDiff: ((String) -> Void)?
     /// Set when Claude finishes a reply in this project: unreviewed files for the Review badge.
     var onClaudeFinished: ((Int) -> Void)?
     private(set) var root: URL?
@@ -220,6 +222,35 @@ extension Workspace {
             self.navigate(kind, url: url, text: view.currentText, line: lens.line, character: lens.character)
         }
         loadReadingAids(pane: view.pane, gutter: view.lineGutter, url: url, text: text, row: { $0 }, current: current)
+        loadChangeBars(editor: view, url: url, text: text, current: current)
+    }
+
+    /// The gutter's change bars: this text against the last commit, when the file has changes.
+    private func loadChangeBars(editor view: CodeEditorView, url: URL, text: String, current: @escaping () -> Bool) {
+        let gutter = view.lineGutter
+        guard let root = review.root, let repo = review.repo,
+              url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/") else { gutter.changeBars = []; return }
+        let path = String(url.standardizedFileURL.path.dropFirst(root.standardizedFileURL.path.count + 1))
+        guard let change = review.changes.first(where: { $0.path == path }) else { gutter.changeBars = []; return }
+        gutter.onChangeBarClick = { [weak self, weak gutter] bar, rect in
+            guard let gutter else { return }
+            ChangeBarPopover.show(bar, at: rect, in: gutter) { self?.onShowDiff?(path) }
+        }
+        Task { [weak gutter] in
+            let head = (try? await repo.headText(change)) ?? nil
+            let bars = await Task.detached { Self.changeBars(head: head, text: text) }.value
+            guard let gutter, current() else { return }
+            gutter.changeBars = bars
+        }
+    }
+
+    nonisolated private static func changeBars(head: Data?, text: String) -> [LineNumberGutter.ChangeBar] {
+        let work = TextLines(Data(text.utf8))
+        guard let head else { return work.lines.isEmpty ? [] : [.init(lines: 0..<work.lines.count, old: [], oldStart: 0)] }
+        let old = TextLines(head)
+        return LineDiff.hunks(head: old, work: work, wordChanges: false).map { h in
+            .init(lines: h.work, old: old.lines[h.head].map { String($0.text) }, oldStart: h.head.lowerBound)
+        }
     }
 
     /// For the diff's working-file pane.

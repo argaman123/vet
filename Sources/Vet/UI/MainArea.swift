@@ -125,15 +125,7 @@ struct DiffHeader: View {
                 Text((change.path as NSString).deletingLastPathComponent).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             }
             // Claude's note on this file, one click away instead of a second bar.
-            if Design.sticky == .crumbs {
-                // Where the top of the view is: the enclosing declarations, each a jump.
-                ForEach(Array(scope.enumerated()), id: \.offset) { _, row in
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
-                    Button(ScopeRows.name(row.text.string)) { review.scopeJump?(row.line) }
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-            }
+            if Design.sticky == .crumbs { ScopeCrumbs(rows: scope) { review.scopeJump?($0) } }
             if let f = review.plan?.file(change.path) { ClaudeNoteButton(file: f) }
             Spacer(minLength: 12)
             if review.diffDirty {
@@ -206,6 +198,7 @@ struct EditorScreen: View {
                         .foregroundStyle(app.workspace.review.changes.first { $0.path == files.relativePath }.map { AnyShapeStyle($0.kind.color) } ?? AnyShapeStyle(.primary))
                     Text(((files.relativePath ?? "") as NSString).deletingLastPathComponent)
                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                    if Design.sticky == .crumbs { ScopeCrumbs(rows: files.scope) { files.editorView.scrollTo(line: $0) } }
                 }
                 Spacer(minLength: 12)
                 if files.changedOnDisk {
@@ -363,21 +356,26 @@ struct OutputPane: View {
 struct BrowserScreen: View {
     let app: AppDelegate
     @FocusState private var editing: Bool
+    @State private var top: CGFloat = 0
 
     var body: some View {
         let browser = app.workspace.browser
-        VStack(spacing: 0) {
-            HeaderBar {
-                Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
-                Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
-                Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help(browser.isLoading ? "Stop Loading" : "Reload")
-                TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($editing)
-                    .onSubmit { browser.go(browser.address); editing = false }
+        // The address bar floats on the page in glass; the page scrolls under it (and is told how
+        // much it covers, so the top of a page still shows below it).
+        WebViewHost(webView: browser.webView, topInset: top)
+            .overlay(alignment: .top) {
+                HeaderBar {
+                    Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
+                    Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
+                    Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help(browser.isLoading ? "Stop Loading" : "Reload")
+                    // Typed straight onto the glass: no box of its own.
+                    TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
+                        .textFieldStyle(.plain)
+                        .focused($editing)
+                        .onSubmit { browser.go(browser.address); editing = false }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { top = $0 }
             }
-            WebViewHost(webView: browser.webView)
-        }
     }
 }
 
@@ -451,6 +449,21 @@ struct ClaudeNoteButton: View {
     }
 }
 
+
+/// Where the top of the view is, in the header: the enclosing declarations, each a jump to it.
+/// The same in the diff and the editor.
+struct ScopeCrumbs: View {
+    let rows: [(line: Int, text: NSAttributedString)]
+    let jump: (Int) -> Void
+    var body: some View {
+        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+            Button(ScopeRows.name(row.text.string)) { jump(row.line) }
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+    }
+}
 
 /// The pinned declarations as code, inside the header's glass: each one a jump to it.
 struct ScopeRows: View {

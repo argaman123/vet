@@ -25,7 +25,7 @@ struct ProjectTool: View {
                     ListEndSpace()
                 }
                 .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
+                .scrollContentBackground(.hidden)
                 .transaction { $0.disablesAnimations = true; $0.animation = nil }
                 // Double-click (or Return) opens or closes a folder.
                 .contextMenu(forSelectionType: String.self) { _ in EmptyView() } primaryAction: { ids in
@@ -35,6 +35,8 @@ struct ProjectTool: View {
                 }
                 .quickLookPreview($quickLook)
                 .quietSelection(row ?? files.relativePath)
+                // A file opened elsewhere (Open in Editor, a jump) becomes the one selection here.
+                .onChange(of: files.relativePath) { _, _ in row = nil }
             }
         }
         .frame(maxHeight: .infinity)

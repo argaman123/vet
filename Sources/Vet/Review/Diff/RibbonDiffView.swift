@@ -206,6 +206,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         // The panes scroll together: one scroller (the right's), none pressed against the numbers.
         leftScroll.hasVerticalScroller = false
         for scroll in [leftScroll, rightScroll] {
+            NotificationCenter.default.addObserver(self, selector: #selector(liveScrollStarted(_:)), name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+            NotificationCenter.default.addObserver(self, selector: #selector(liveScrollEnded(_:)), name: NSScrollView.didEndLiveScrollNotification, object: scroll)
             scroll.contentView.postsBoundsChangedNotifications = true
             NotificationCenter.default.addObserver(self, selector: #selector(scrolled(_:)),
                                                    name: NSView.boundsDidChangeNotification, object: scroll.contentView)
@@ -1016,11 +1018,14 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     /// A scroll gesture over this pane is what's moving it right now.
-    private func userScrolling(_ scroll: NSScrollView) -> Bool {
-        guard let e = NSApp.currentEvent, e.type == .scrollWheel || e.type == .swipe || e.type == .beginGesture || e.type == .endGesture,
-              e.window === window else { return false }
-        return scroll.bounds.contains(scroll.convert(e.locationInWindow, from: nil))
-    }
+    private func userScrolling(_ scroll: NSScrollView) -> Bool { liveScroll === scroll }
+
+    /// The pane you're scrolling yourself, from the first touch to the end of its momentum.
+    /// (Smooth scrolling moves the pane outside the event that started it, so the current event
+    /// can't tell; the scroll view's live-scroll notifications can.)
+    private weak var liveScroll: NSScrollView?
+    @objc private func liveScrollStarted(_ note: Notification) { liveScroll = note.object as? NSScrollView; openedChange = nil }
+    @objc private func liveScrollEnded(_ note: Notification) { if liveScroll === note.object as? NSScrollView { liveScroll = nil } }
 
     /// Scrolls the other pane so the same place in the file sits in the middle of both.
     private func align(from src: NSScrollView) {

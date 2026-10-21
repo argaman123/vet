@@ -48,6 +48,8 @@ final class FilesModel {
     struct Location: Equatable { let url: URL; let line: Int }
 
     private(set) var root: URL?
+    /// The declarations around the top of the editor (for its header).
+    var scope: [(line: Int, text: NSAttributedString)] = []
     private(set) var tree: [FileListNode] = []
     /// Every file in the tree (repo-relative), for Search Everywhere.
     @ObservationIgnored private(set) var paths: [String] = []

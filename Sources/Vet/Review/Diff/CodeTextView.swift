@@ -202,8 +202,16 @@ final class CodeTextView: NSTextView {
         return hit !== self && !hit.isDescendant(of: self)
     }
 
+    /// Over a lens part or a folded row the hand stays put: the text's own I-beam must not be set in
+    /// between (that was the flicker).
+    private func wantsHand(_ event: NSEvent) -> Bool {
+        let p = convert(event.locationInWindow, from: nil)
+        return foldLines[line(at: p)] != nil || lens(at: p) != nil
+    }
+
     override func cursorUpdate(with event: NSEvent) {
         if isCovered(event) { return }
+        if wantsHand(event) { NSCursor.pointingHand.set(); return }
         super.cursorUpdate(with: event)
     }
 
@@ -213,13 +221,16 @@ final class CodeTextView: NSTextView {
             hoverWork?.cancel()
             return
         }
-        super.mouseMoved(with: event)
         let at = convert(event.locationInWindow, from: nil)
         let row = line(at: at)
         hoveredFoldLine = foldLines[row] != nil ? row : nil
         let lensHit = lens(at: at)
         hoveredLens = lensHit.map { LensHit(line: $0.mark.line, part: $0.part) }
-        if hoveredFoldLine != nil || lensHit != nil { NSCursor.pointingHand.set() }
+        if hoveredFoldLine != nil || lensHit != nil {
+            NSCursor.pointingHand.set() // and not the text's I-beam first
+        } else {
+            super.mouseMoved(with: event)
+        }
         hoverWork?.cancel()
         guard onHover != nil, NSEvent.pressedMouseButtons == 0 else { return }
         let p = convert(event.locationInWindow, from: nil)

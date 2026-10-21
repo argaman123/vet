@@ -123,7 +123,9 @@ extension CodeTextView {
                 let size = box.labelSize
                 let pill = NSRect(x: frame.maxX - box.gap / 2 + (box.padLeft ? 4 : 0) + 1, y: frame.minY + (DiffTheme.lineHeight - 15) / 2,
                                   width: ceil(size.width) + 8, height: 15)
-                DiffTheme.inlayBackground.setFill()
+                // See-through, so the pill takes the line's own color (green, blue or plain) instead
+                // of sitting on it as a grey block.
+                NSColor.white.withAlphaComponent(0.055).setFill()
                 NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
                 (box.label as NSString).draw(at: NSPoint(x: pill.minX + 4, y: pill.minY + (15 - size.height) / 2),
                                              withAttributes: [.font: HintBox.font, .foregroundColor: DiffTheme.inlayText,

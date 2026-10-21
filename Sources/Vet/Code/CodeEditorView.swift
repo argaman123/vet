@@ -22,6 +22,9 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     /// Typing paused (or a file was loaded): time to ask for the reading aids again.
     var onTextSettled: (() -> Void)?
     private var settle: DispatchWorkItem?
+    /// The declarations around the top of the view, for a header that shows them.
+    var onScope: (([(line: Int, text: NSAttributedString)]) -> Void)?
+    private var shownScope: [(line: Int, text: NSAttributedString)] = []
     var pane: CodeTextView { textView }
     /// A read-only viewer (the usages preview).
     var readOnly = false { didSet { textView.isEditable = !readOnly } }
@@ -89,7 +92,14 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         let clip = scroll.contentView.bounds
         let top = scroll.contentInsets.top
         let first = Int((clip.minY + top - DiffTheme.inset.height) / DiffTheme.lineHeight)
-        sticky.show(StickyLinesView.rows(in: storage, first: max(0, first)))
+        let rows = StickyLinesView.rows(in: storage, first: max(0, first))
+        if Design.sticky == .crumbs {
+            // Shown by the header instead, as in the diff.
+            if rows.map(\.line) != shownScope.map(\.line) { shownScope = rows; onScope?(rows) }
+            sticky.show([])
+            return
+        }
+        sticky.show(rows)
         sticky.scrollX = clip.minX
         let scrollerWidth = scroll.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
         sticky.gutterWidth = LineNumberGutter.width

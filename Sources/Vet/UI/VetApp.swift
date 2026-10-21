@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         searchEverywhere.app = self
         find.app = self
         workspace.onOpenProject = { [weak self] url in self?.projects.open(url) }
+        workspace.onShowDiff = { [weak self] path in self?.showDiff(path) }
         projects.mayLeave = { [weak self] in self?.workspace.confirmLeave() ?? true }
         workspace.onOpenFile = { [weak self] url, line in self?.ui.show(.file(url: url, line: line)) }
         Task { _ = await ShellEnvironment.load() } // warm up: Run and the language servers need it
@@ -131,6 +132,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let r = self.workspace.review.diffView.debugClickLens(Int(args.first ?? "0") ?? 0)
             try? r.write(toFile: dir + "/lens.txt", atomically: true, encoding: .utf8)
         }
+        SnapshotHook.on("changebar") { [weak self] args in
+            // changebar <n>: the editor's change bars to VET_SNAPSHOT_DIR/bars.txt, and the nth one's popover
+            guard let self, let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
+            let gutter = self.workspace.files.editorView.lineGutter
+            try? gutter.changeBars.map { "\($0.kind) \($0.lines) old \($0.oldStart)+\($0.old.count)" }.joined(separator: "\n")
+                .write(toFile: dir + "/bars.txt", atomically: true, encoding: .utf8)
+            if let n = Int(args.first ?? ""), n < gutter.changeBars.count { gutter.debugClickBar(n) }
+        }
+        SnapshotHook.on("browser") { [weak self] _ in self?.showBrowser() }
+        SnapshotHook.on("tool") { [weak self] args in if let t = UIState.Tool(rawValue: args.first ?? "") { self?.ui.tool = t } }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑
         SnapshotHook.on("claudeforward") { _ in ClaudeReference.bringClaudeForward() } // test: the hand-off alone, clipboard untouched
