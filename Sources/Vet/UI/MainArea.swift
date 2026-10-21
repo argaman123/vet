@@ -140,8 +140,11 @@ struct DiffHeader: View {
                     .monospacedDigit()
                     .help("\(staged) of \(total) changes reviewed")
             }
-            // The way back to the file, as the editor's header offers Show Changes.
-            Button("Open in Editor") { if let url = review.url(for: change.path) { app.showFile(url) } }
+            // The way back to the file, as the editor's header offers Show Changes (JetBrains' pencil
+            // for Jump to Source).
+            Button { if let url = review.url(for: change.path) { app.showFile(url) } } label: { Image(systemName: "pencil") }
+                .help("Open in Editor")
+                .accessibilityLabel("Open in Editor")
             // The diff's own controls, where WebStorm keeps them: change navigation and layout.
             Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up") }
                 .help("Previous Change (⌘↑)")
