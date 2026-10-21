@@ -178,46 +178,4 @@ extension CodeText {
         }
         return out
     }
-
-    /// Several lines in the editor's syntax colors, highlighted as one block (so a comment or a
-    /// string that spans lines keeps its color), one AttributedString per line. `semantic` adds
-    /// the language server's name colors (tokens of the whole file, whose line `firstLine` is the
-    /// block's first), as the editor shows them.
-    static func lines(_ lines: [String], language: CodeLanguage, semantic: [SemanticToken] = [], firstLine: Int = 0) -> [AttributedString] {
-        let block = lines.joined(separator: "\n")
-        let tokens = Highlighter.tokens(block, language: language)
-        var out: [AttributedString] = []
-        var start = 0, k = 0
-        for line in lines {
-            let length = line.utf16.count
-            let ns = line as NSString
-            var colors = [NSColor?](repeating: nil, count: length)
-            while k < tokens.count, NSMaxRange(tokens[k].range) <= start { k += 1 }
-            var j = k
-            while j < tokens.count, tokens[j].range.location < start + length {
-                let t = tokens[j]
-                for i in max(t.range.location, start)..<min(NSMaxRange(t.range), start + length) { colors[i - start] = DiffTheme.token(t.kind) }
-                j += 1
-            }
-            let fileLine = firstLine + out.count
-            for t in semantic where t.line == fileLine && t.character + t.length <= length {
-                guard let color = DiffTheme.semantic(t.type, modifiers: t.modifiers) else { continue }
-                for i in t.character..<(t.character + t.length) { colors[i] = color }
-            }
-            var row = AttributedString()
-            var i = 0
-            while i < length {
-                var e = i + 1
-                while e < length, colors[e] == colors[i] { e += 1 }
-                if e < length, UTF16.isTrailSurrogate(ns.character(at: e)) { e += 1 }
-                var piece = AttributedString(ns.substring(with: NSRange(location: i, length: e - i)))
-                piece.foregroundColor = Color(nsColor: colors[i] ?? DiffTheme.text)
-                row += piece
-                i = e
-            }
-            out.append(row)
-            start += length + 1
-        }
-        return out
-    }
 }

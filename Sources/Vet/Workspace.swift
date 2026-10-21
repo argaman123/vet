@@ -237,14 +237,13 @@ extension Workspace {
             let bars = await Task.detached { Self.changeBars(head: head, text: text) }.value
             guard let gutter, current() else { return }
             gutter.changeBars = bars
-            let headText = head.map { String(decoding: $0, as: UTF8.self) }
+            let headLines = head.map { TextLines($0) }
             gutter.onChangeBarClick = { [weak self, weak gutter] bar, rect in
                 guard let gutter else { return }
-                let navigator = self?.navigator
-                let semantic: (() async -> [SemanticToken])? = headText.flatMap { headText in
-                    navigator.flatMap { n in n.isSupported(url) ? { await n.semanticTokens(of: url, text: headText) } : nil }
+                let tokens: ((URL, String) async -> [SemanticToken])? = self?.navigator.flatMap { n in
+                    n.isSupported(url) ? { await n.semanticTokens(of: $0, text: $1) } : nil
                 }
-                ChangeBarPopover.show(bar, language: CodeLanguage(path: url.path), semantic: semantic, at: rect, in: gutter) { self?.onShowDiff?(path) }
+                ChangeBarPopover.show(bar, head: headLines, url: url, tokens: tokens, at: rect, in: gutter) { self?.onShowDiff?(path) }
             }
         }
     }

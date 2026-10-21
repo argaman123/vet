@@ -140,6 +140,8 @@ struct DiffHeader: View {
                     .monospacedDigit()
                     .help("\(staged) of \(total) changes reviewed")
             }
+            // The way back to the file, as the editor's header offers Show Changes.
+            Button("Open in Editor") { if let url = review.url(for: change.path) { app.showFile(url) } }
             // The diff's own controls, where WebStorm keeps them: change navigation and layout.
             Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up") }
                 .help("Previous Change (⌘↑)")
@@ -158,7 +160,6 @@ struct DiffHeader: View {
             .help(review.unified ? "Side by Side" : "Unified")
             .accessibilityLabel(review.unified ? "Side by Side" : "Unified")
             Menu {
-                Button("Open in Editor") { if let url = review.url(for: change.path) { app.showFile(url) } }
                 Button(review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { review.folding.toggle() }
                 Divider()
                 Button("Show in Finder") { if let url = review.url(for: change.path) { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
