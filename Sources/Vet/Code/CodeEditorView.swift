@@ -117,6 +117,12 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     /// Shows a file. Unsaved edits are only replaced when `force` is set.
     func load(_ text: TextLines, language: CodeLanguage, force: Bool = false) {
         guard force || !isDirty else { return }
+        // Our own autosave coming back: the buffer already shows it, so the caret and undo stay.
+        if language == self.language, text.lines.map({ String($0.text) }).joined(separator: "\n") == textView.string {
+            lines = text
+            isDirty = false
+            return
+        }
         let keep = scroll.contentView.bounds.origin
         lines = text
         self.language = language

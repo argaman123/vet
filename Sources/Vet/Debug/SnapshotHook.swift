@@ -14,8 +14,10 @@ enum SnapshotHook {
         DistributedNotificationCenter.default().addObserver(forName: .init("dev.vet.snapshot"), object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { snapshot(to: URL(fileURLWithPath: dir).appendingPathComponent("window.png")) }
         }
-        // "dev.vet.test" with object "name arg…" runs a registered test command.
-        DistributedNotificationCenter.default().addObserver(forName: .init("dev.vet.test"), object: nil, queue: .main) { note in
+        // "dev.vet.test" with object "name arg…" runs a registered test command (VET_TEST_CHANNEL
+        // appended to the name keeps two test runs apart).
+        let channel = ProcessInfo.processInfo.environment["VET_TEST_CHANNEL"] ?? ""
+        DistributedNotificationCenter.default().addObserver(forName: .init("dev.vet.test" + channel), object: nil, queue: .main) { note in
             let words = (note.object as? String ?? "").split(separator: " ").map(String.init)
             MainActor.assumeIsolated { if let name = words.first { commands[name]?(Array(words.dropFirst())) } }
         }

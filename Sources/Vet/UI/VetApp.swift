@@ -17,7 +17,10 @@ struct VetApp: App {
         }
         .defaultSize(width: 1440, height: 900)
         .windowToolbarStyle(.unified)
-        .commands { VetCommands(app: app) }
+        .commands {
+            VetCommands(app: app)
+            ModsMenu(host: ModHost.shared)
+        }
     }
 }
 
@@ -39,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CodeFont.registerBundled()
         installDoubleShift()
         hideFocusRings()
+        registerCommands()
+        ModHost.shared.start(app: self)
         mcp = MCPServer(tools: VetTools.make(self))
         mcp?.start()
         searchEverywhere.app = self
@@ -171,6 +176,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, args.count >= 2 else { return }
             self.workspace.review.diffView.debugType(args.dropFirst().joined(separator: " "), after: args[0])
         }
+        SnapshotHook.on("caret") { [weak self] args in
+            // caret <bar|block|underline>: the editor's caret shape (the diff's work pane too)
+            guard let self, let style = CaretStyle(rawValue: args.first ?? "") else { return }
+            self.workspace.files.editorView.pane.caretStyle = style
+        }
+        SnapshotHook.on("keys") { [weak self] args in
+            // keys <vim notation…>: keys typed into the focused code pane (see ModHost.debugKeys)
+            guard let self else { return }
+            let pane = ModHost.shared.pane ?? self.workspace.files.editorView.pane
+            ModHost.shared.debugKeys(args.joined(separator: "<space>"), pane: pane)
+        }
+        SnapshotHook.on("focuspane") { [weak self] args in
+            // focuspane editor|diff: focus a code pane (the window stays in the background)
+            guard let self else { return }
+            let pane = args.first == "diff" ? self.workspace.review.diffView.workPane : self.workspace.files.editorView.pane
+            pane.window?.makeFirstResponder(pane)
+        }
+        SnapshotHook.on("state") { [weak self] _ in
+            // state: the focused pane's caret, selection and current line to VET_SNAPSHOT_DIR/state.txt
+            guard let self, let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"], let p = ModHost.shared.pane else { return }
+            let r = p.selectedRange(), ns = p.string as NSString
+            let line = p.displayLines(of: NSRange(location: r.location, length: 0)).lowerBound
+            let lr = ns.lineRange(for: NSRange(location: min(r.location, ns.length), length: 0))
+            var out = "pane=\(p.paneKind) caret=\(p.caretStyle.rawValue) sel=\(r.location)+\(r.length) line=\(line) col=\(r.location - lr.location)\n"
+            out += "text: " + ns.substring(with: lr).trimmingCharacters(in: .newlines) + "\n"
+            out += "prompt: \(ModHost.shared.ui.prompt.map { $0.prefix + $0.text } ?? "-")  marks: \(p.modMarks.count)  dirty-editor: \(self.workspace.files.editorView.isDirty)\n"
+            try? out.write(toFile: dir + "/state.txt", atomically: true, encoding: .utf8)
+        }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
             guard args.count == 2, let line = Int(args[0]), let character = Int(args[1]) else { return }
@@ -210,12 +243,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showDiff(_ path: String) {
         guard workspace.review.select(path) else { return }
         ui.show(.diff(path: path))
+        ModHost.shared.emit("fileOpened", ["path": path, "pane": "diff"])
     }
 
     /// Opens a file in the editor at a line.
     func showFile(_ url: URL, line: Int = 0, character: Int = 0) {
         workspace.files.show(url, line: line, character: character)
-        if workspace.files.openURL == url { ui.show(.file(url: url, line: line)) }
+        if workspace.files.openURL == url {
+            ui.show(.file(url: url, line: line))
+            ModHost.shared.emit("fileOpened", ["path": workspace.files.relativePath ?? url.path, "pane": "editor"])
+        }
     }
 
     func showBrowser() { ui.show(.browser) }
@@ -322,55 +359,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showFindInFiles() { FindPresenter.shared.show(app: self) }
 
-    // MARK: Actions (Search Everywhere lists the menu commands)
-
-    var actionList: [(id: String, title: String)] {
-        let review = workspace.review, run = workspace.run
-        var list: [(String, String)] = [
-            ("openFolder", "Open Folder…"), ("save", "Save"), ("back", "Back"), ("forward", "Forward"),
-            ("findInFiles", "Find in Files…"), ("previousChange", "Previous Change"), ("nextChange", "Next Change"),
-            ("nextUnreviewed", "Next Unreviewed File"), ("commit", "Ask Claude to Commit Reviewed Files"),
-            ("rules", "Unimportant Files…"), ("refresh", "Refresh"), ("runConfigs", "Edit Run Configurations…"),
-            // Both directions of each switch, so either name finds it.
-            ("output.show", "Show Run Output"), ("output.hide", "Hide Run Output"),
-            ("fold.on", "Fold Unchanged Lines"), ("fold.off", "Show Unchanged Lines"),
-            ("layout.unified", "Unified Diff"), ("layout.split", "Side-by-Side Diff"),
-        ]
-        _ = review
-        if run.isRunning { list.append(("stop", "Stop")) } else if run.selected != nil { list.append(("run", "Run ‘\(run.selected!.name)’")) }
-        list += UIState.Tool.allCases.map { ("tool.\($0.rawValue)", "Show \($0.title)") }
-        list.append(("browser", "Show Browser"))
-        return list
-    }
-
-    func runAction(_ id: String) {
-        let review = workspace.review, run = workspace.run
-        switch id {
-        case "openFolder": projects.showOpenPanel()
-        case "save": save()
-        case "back": goBack()
-        case "forward": goForward()
-        case "findInFiles": showFindInFiles()
-        case "browser": showBrowser()
-        case "previousChange": review.jumpToChange(forward: false)
-        case "nextChange": review.jumpToChange(forward: true)
-        case "nextUnreviewed": review.nextUnreviewed(); if let p = review.selectedPath { ui.show(.diff(path: p)) }
-        case "commit": workspace.review.askClaudeToCommit()
-        case "rules": ui.editingRules = true
-        case "refresh": Task { await review.refresh() }
-        case "runConfigs": ui.editingRunConfigs = true
-        case "output.show": run.outputVisible = true
-        case "output.hide": run.outputVisible = false
-        case "fold.on": review.folding = true
-        case "fold.off": review.folding = false
-        case "layout.unified": review.unified = true
-        case "layout.split": review.unified = false
-        case "run": run.start(); run.outputVisible = true
-        case "stop": run.stop()
-        default:
-            if id.hasPrefix("tool."), let tool = UIState.Tool(rawValue: String(id.dropFirst(5))) { ui.tool = tool }
-        }
-    }
+    /// Runs a command by id (see Commands.swift).
+    func run(_ id: String) { CommandRegistry.shared.run(id) }
 
     // MARK: Quitting
 
@@ -415,7 +405,7 @@ struct VetCommands: Commands {
         SidebarCommands()
         ToolbarCommands()
         CommandGroup(replacing: .newItem) {
-            Button("Open Folder…") { app.projects.showOpenPanel() }.keyboardShortcut("o")
+            Button("Open Folder…") { app.run("app.openFolder") }.keyboardShortcut("o")
             Menu("Open Recent") {
                 ForEach(app.projects.recent, id: \.self) { url in
                     Button(url.lastPathComponent) { app.projects.open(url) }
@@ -423,7 +413,7 @@ struct VetCommands: Commands {
             }
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { app.save() }.keyboardShortcut("s")
+            Button("Save") { app.run("app.save") }.keyboardShortcut("s")
         }
         CommandGroup(after: .sidebar) {
             Divider()
@@ -431,27 +421,28 @@ struct VetCommands: Commands {
                 Button(tool == .changes ? "Changes" : "All Files") { app.go(to: tool == .changes ? .changes : .files) }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
-            Button("Browser") { app.showBrowser() }.keyboardShortcut("3")
+            Button("Browser") { app.run("app.browser") }.keyboardShortcut("3")
             Divider()
+            let _ = ModHost.shared.revision // mods add themes
             Picker("Theme", selection: Binding(get: { app.ui.themeID }, set: { DiffTheme.setTheme($0); app.ui.themeID = $0 })) {
-                ForEach(Palette.all, id: \.id) { Text($0.name).tag($0.id) }
+                ForEach(Palette.available, id: \.id) { Text($0.name).tag($0.id) }
             }
             Picker("Code Font", selection: Binding(get: { app.ui.codeFont }, set: { DiffTheme.setCodeFont($0); app.ui.codeFont = $0 })) {
                 ForEach(CodeFont.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             Divider()
-            Button("Bigger Code Text") { DiffTheme.setFontSize(DiffTheme.fontSize + 1) }.keyboardShortcut("+")
-            Button("Smaller Code Text") { DiffTheme.setFontSize(DiffTheme.fontSize - 1) }.keyboardShortcut("-")
-            Button("Actual Code Text Size") { DiffTheme.setFontSize(DiffTheme.defaultFontSize) }.keyboardShortcut("0")
+            Button("Bigger Code Text") { app.run("app.text.bigger") }.keyboardShortcut("+")
+            Button("Smaller Code Text") { app.run("app.text.smaller") }.keyboardShortcut("-")
+            Button("Actual Code Text Size") { app.run("app.text.actual") }.keyboardShortcut("0")
             Divider()
-            Button(app.workspace.run.outputVisible ? "Hide Run Output" : "Show Run Output") { app.workspace.run.outputVisible.toggle() }
+            Button(app.workspace.run.outputVisible ? "Hide Run Output" : "Show Run Output") { app.run("app.output.toggle") }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
-            Button(app.workspace.review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { app.workspace.review.folding.toggle() }
+            Button(app.workspace.review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { app.run("app.fold.toggle") }
             Toggle("Fold Reviewed Changes", isOn: Bindable(app.workspace.review).foldReviewed)
             // As in Xcode: fold or open everything (unchanged lines and reviewed changes).
-            Button("Collapse All") { app.workspace.review.setAllCollapsed(true) }
+            Button("Collapse All") { app.run("app.collapseAll") }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
-            Button("Expand All") { app.workspace.review.setAllCollapsed(false) }
+            Button("Expand All") { app.run("app.expandAll") }
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
             Picker("Diff Layout", selection: Bindable(app.workspace.review).unified) {
                 Text("Side by Side").tag(false)
@@ -459,42 +450,42 @@ struct VetCommands: Commands {
             }
         }
         CommandMenu("Navigate") {
-            Button("Back") { app.goBack() }.keyboardShortcut("[").disabled(!app.ui.canGoBack)
-            Button("Forward") { app.goForward() }.keyboardShortcut("]").disabled(!app.ui.canGoForward)
+            Button("Back") { app.run("app.back") }.keyboardShortcut("[").disabled(!app.ui.canGoBack)
+            Button("Forward") { app.run("app.forward") }.keyboardShortcut("]").disabled(!app.ui.canGoForward)
             Divider()
-            Button("Search Everywhere") { app.ui.focusSearch = true }.keyboardShortcut("o", modifiers: [.command, .shift])
-            Button("Find in Files…") { app.showFindInFiles() }.keyboardShortcut("f", modifiers: [.command, .shift])
+            Button("Search Everywhere") { app.run("app.searchEverywhere") }.keyboardShortcut("o", modifiers: [.command, .shift])
+            Button("Find in Files…") { app.run("app.findInFiles") }.keyboardShortcut("f", modifiers: [.command, .shift])
         }
         CommandMenu("Review") {
             // ⌘↑ ⌘↓ step through the changes; ⌘↩ approves the one you're on and moves to the next.
             // (Only in the diff: elsewhere the keys keep their usual meaning in text.)
             let inDiff = app.ui.location.map { if case .diff = $0 { true } else { false } } ?? false
-            Button("Previous Change") { app.workspace.review.jumpToChange(forward: false) }
+            Button("Previous Change") { app.run("app.previousChange") }
                 .keyboardShortcut(.upArrow, modifiers: .command)
                 .disabled(!inDiff)
-            Button("Next Change") { app.workspace.review.jumpToChange(forward: true) }
+            Button("Next Change") { app.run("app.nextChange") }
                 .keyboardShortcut(.downArrow, modifiers: .command)
                 .disabled(!inDiff)
-            Button("Connect Claude Code…") { app.connectClaudeCode() }
-            Button(app.workspace.review.plan == nil ? "No Review Order from Claude" : "Clear Claude's Review Order") { app.workspace.review.setPlan(nil) }
+            Button("Connect Claude Code…") { app.run("app.connectClaude") }
+            Button(app.workspace.review.plan == nil ? "No Review Order from Claude" : "Clear Claude's Review Order") { app.run("app.clearReviewOrder") }
                 .disabled(app.workspace.review.plan == nil)
             Divider()
-            Button("Approve Change and Next") { app.workspace.review.approveAndNext() }
+            Button("Approve Change and Next") { app.run("app.approveAndNext") }
                 .keyboardShortcut(.return, modifiers: .command)
-            Button("Next Unreviewed File") { app.workspace.review.nextUnreviewed(); if let p = app.workspace.review.selectedPath { app.ui.show(.diff(path: p)) } }
+            Button("Next Unreviewed File") { app.run("app.nextUnreviewed") }
                 .keyboardShortcut("u", modifiers: [.command, .option])
             Divider()
-            Button("Ask Claude to Commit Reviewed Files") { app.workspace.review.askClaudeToCommit() }.keyboardShortcut("k")
+            Button("Ask Claude to Commit Reviewed Files") { app.run("app.commit") }.keyboardShortcut("k")
             Divider()
-            Button("Unimportant Files…") { app.ui.editingRules = true }
-            Button("Refresh") { Task { await app.workspace.review.refresh() } }.keyboardShortcut("r", modifiers: [.command, .option])
+            Button("Unimportant Files…") { app.run("app.rules") }
+            Button("Refresh") { app.run("app.refresh") }.keyboardShortcut("r", modifiers: [.command, .option])
         }
         CommandMenu("Run") {
             let run = app.workspace.run
-            Button(run.selected.map { "Run ‘\($0.name)’" } ?? "Run") { run.start() }.keyboardShortcut("r").disabled(run.isRunning || run.selected == nil)
-            Button("Stop") { run.stop() }.keyboardShortcut(".").disabled(!run.isRunning)
+            Button(run.selected.map { "Run ‘\($0.name)’" } ?? "Run") { app.run("app.run") }.keyboardShortcut("r").disabled(run.isRunning || run.selected == nil)
+            Button("Stop") { app.run("app.stop") }.keyboardShortcut(".").disabled(!run.isRunning)
             Divider()
-            Button("Edit Configurations…") { app.ui.editingRunConfigs = true }
+            Button("Edit Configurations…") { app.run("app.runConfigs") }
         }
     }
 }
