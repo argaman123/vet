@@ -2,7 +2,7 @@ import AppKit
 
 /// One of Vet's color themes: the app's surfaces (window, sidebar, bars), the code panes, the
 /// diff, and the code colors. Vet is a dark app; `light` is used only if the system forces light.
-struct Palette: Sendable {
+struct Palette: Sendable, Codable {
     var id: String
     var name: String
     // App surfaces
@@ -223,6 +223,9 @@ extension Palette {
         p.tag = a.tag; p.attribute = a.attribute
     }
 
+    /// Themes from mods (ModHost), after Vet's own.
+    nonisolated(unsafe) static var modThemes: [Palette] = []
+    static var available: [Palette] { all + modThemes }
     static let all: [Palette] = [.ink, .tide, .spectral, .aurora, .vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .monokai, .neon]
 }
 

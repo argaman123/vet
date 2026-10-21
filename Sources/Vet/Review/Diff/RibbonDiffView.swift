@@ -216,6 +216,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         leftText.onSpace = { [weak self] in self?.onApproveKey?() }
         NotificationCenter.default.addObserver(self, selector: #selector(fontChanged), name: .vetCodeFontChanged, object: nil)
         // The working file (right side) can be edited and saved; HEAD (left) can't.
+        leftText.paneKind = "diffOld"
+        rightText.paneKind = "diff"
         rightText.isEditable = true
         rightText.allowsUndo = true
         rightText.delegate = self

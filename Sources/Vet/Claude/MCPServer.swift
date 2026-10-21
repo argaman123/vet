@@ -118,7 +118,9 @@ final class MCPServer: @unchecked Sendable {
                 Vet is the user's code review IDE (macOS). After you finish a feature or a set of changes, call \
                 set_review_plan with the changed files in the order the user should read them, a one- or two-line \
                 summary per file and notes on the key functions. Use get_selection when the user refers to "this", \
-                "here" or "the line I'm on". Use vet_status to see what is changed and already reviewed.
+                "here" or "the line I'm on". Use vet_status to see what is changed and already reviewed. When the \
+                user wants Vet itself to change (keys, colors, a new behavior or display: "a mod for Vet"), read \
+                mod_api_docs and build it with install_mod; Vet loads it at once.
                 """,
             ])
         case "ping":

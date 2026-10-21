@@ -276,6 +276,7 @@ extension CodeTextView {
         font = DiffTheme.font
         typingAttributes = CodeText.baseAttributes
         relayoutVisibleText()
+        if caretStyle != .bar { updateCaretOverlay() }
     }
 
     // Pinch to change the code text size (every pane follows).

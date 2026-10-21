@@ -19,6 +19,9 @@ struct MainArea: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .top) { Banner(app: app) }
                     .overlay(alignment: .bottom) { Toast(app: app) }
+                    .overlay(alignment: .bottom) { ModPromptBar(state: ModHost.shared.ui) }
+                    .overlay(alignment: .topTrailing) { ModPanels(state: ModHost.shared.ui) }
+                    .animation(.easeOut(duration: 0.18), value: ModHost.shared.ui.prompt?.serial)
                 if run.outputVisible {
                     Divider()
                         .overlay {

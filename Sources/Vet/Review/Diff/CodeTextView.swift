@@ -41,6 +41,13 @@ final class CodeTextView: NSTextView {
     /// The fold row under the pointer (drawn lit, with a hand cursor).
     var hoveredFoldLine: Int? { didSet { if oldValue != hoveredFoldLine { needsDisplay = true } } }
     private var hoverTracking: NSTrackingArea?
+    /// The caret's shape (mods change it; see CaretStyle.swift).
+    var caretStyle: CaretStyle = .bar { didSet { if oldValue != caretStyle { applyCaretStyle() } } }
+    var caretOverlay: CaretOverlay?
+    /// "editor", "diff" (the diff's work pane) or "diffOld": what mods see as the pane's kind.
+    var paneKind = "editor"
+    /// Ranges a mod marked (search matches), drawn like Find's.
+    var modMarks: [NSRange] = [] { didSet { if oldValue != modMarks { needsDisplay = true } } }
 
     static func make() -> (NSScrollView, CodeTextView) {
         let scroll = NSScrollView()
@@ -60,6 +67,12 @@ final class CodeTextView: NSTextView {
         tv.isEditable = false
         tv.isSelectable = true
         tv.isRichText = false
+        // Code, not prose: no curly quotes, dashes, text replacements or spaces added around pastes.
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticTextReplacementEnabled = false
+        tv.isAutomaticSpellingCorrectionEnabled = false
+        tv.smartInsertDeleteEnabled = false
         tv.drawsBackground = true
         tv.backgroundColor = DiffTheme.background
         tv.textColor = DiffTheme.text
@@ -80,7 +93,7 @@ final class CodeTextView: NSTextView {
         NotificationCenter.default.addObserver(forName: .vetThemeChanged, object: nil, queue: .main) { [weak tv, weak scroll] _ in
             MainActor.assumeIsolated {
                 tv?.backgroundColor = DiffTheme.background
-                tv?.insertionPointColor = DiffTheme.text
+                tv?.applyCaretStyle()
                 tv?.selectedTextAttributes = [.backgroundColor: DiffTheme.selection]
                 scroll?.backgroundColor = DiffTheme.background
                 tv?.needsDisplay = true
@@ -120,6 +133,7 @@ final class CodeTextView: NSTextView {
             r.fill()
         }
         drawWordHighlights(in: rect)
+        if !modMarks.isEmpty { drawModMarks(in: rect) }
         drawFoldRows(in: rect)
         if !inlayHints.isEmpty || !lenses.isEmpty { drawDecorations(in: rect) }
     }
@@ -151,9 +165,33 @@ final class CodeTextView: NSTextView {
 
     @objc func vetSave(_ sender: Any?) { onSave?() }
 
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        if caretStyle != .bar { updateCaretOverlay() }
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        if caretStyle != .bar { updateCaretOverlay() }
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { ModHost.shared.paneFocused(self) }
+        if caretStyle != .bar { DispatchQueue.main.async { [weak self] in self?.updateCaretOverlay() } }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        caretOverlay?.isHidden = true
+        return ok
+    }
+
     /// Space in a read-only pane (approve and move on).
     var onSpace: (() -> Void)?
     override func keyDown(with event: NSEvent) {
+        if ModHost.shared.offer(event, to: self) { return } // mods see every key first (a Vim mod)
         if !isEditable, let onSpace, event.charactersIgnoringModifiers == " ",
            event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
             onSpace()

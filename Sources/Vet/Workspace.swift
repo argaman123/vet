@@ -172,6 +172,7 @@ final class Workspace {
             return
         }
         root = folder
+        ModHost.shared.projectChanged()
         navigator?.shutdown()
         navigator = folder.map { CodeNavigator(root: $0) }
         review.navigator = { [weak self] kind, url, text, line, character in self?.navigate(kind, url: url, text: text, line: line, character: character) }

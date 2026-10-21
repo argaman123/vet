@@ -39,7 +39,7 @@ enum VetTools {
                   schema: ["type": "object", "required": ["path"], "properties": ["path": str, "line": int]]) { args in
                 open(app, args)
             },
-        ]
+        ] + ModTools.make()
     }
 
     private static func status(_ app: AppDelegate) -> String {
