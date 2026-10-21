@@ -389,7 +389,7 @@ enum FileIcons {
     static func icon(for name: String) -> NSImage {
         let lower = (name as NSString).lastPathComponent.lowercased()
         let ext = (lower as NSString).pathExtension
-        let key = (special[lower] != nil ? lower : ext) + (Design.monoIcons ? "#mono" : "")
+        let key = (special[lower] != nil ? lower : ext) + (Design.monoIcons ? "#mono" : "") + "#" + Design.fileIcon.rawValue
         if let i = cache[key] { return i }
         let style = special[lower] ?? styles[ext] ?? Style(mark: nil, symbol: "doc.text", color: 0x8A93A6)
         let i = draw(style)
@@ -431,8 +431,35 @@ enum FileIcons {
 
     private static func draw(_ style: Style) -> NSImage {
         let size = NSSize(width: 16, height: 16)
+        let variant = Design.fileIcon
         return NSImage(size: size, flipped: false) { rect in
             let color = Design.monoIcons ? NSColor.secondaryLabelColor : DiffTheme.hex(style.color)
+            switch variant {
+            case .badge: break
+            case .dot:
+                // Only the language's color, as a small dot.
+                color.withAlphaComponent(0.9).setFill()
+                NSBezierPath(ovalIn: NSRect(x: rect.midX - 3, y: rect.midY - 3, width: 6, height: 6)).fill()
+                return true
+            case .letters:
+                // The mark (or symbol) alone in the language's color: no badge behind it.
+                if let mark = style.mark {
+                    let font = NSFont.systemFont(ofSize: mark.count > 1 ? 8.5 : 10, weight: .bold)
+                    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+                    let t = mark as NSString, ts = t.size(withAttributes: attrs)
+                    t.draw(at: NSPoint(x: rect.midX - ts.width / 2, y: rect.midY - ts.height / 2 + 0.3), withAttributes: attrs)
+                    return true
+                }
+            case .glyph:
+                // One thin grey symbol per kind of file, as Finder and Xcode keep it.
+                let symbol = style.mark == nil ? (style.symbol ?? "doc") : ["{}": "curlybraces", "#": "number", "M": "doc.plaintext", "<>": "chevron.left.forwardslash.chevron.right"][style.mark!] ?? "doc.text"
+                if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(.init(pointSize: 11, weight: .regular).applying(.init(paletteColors: [NSColor.secondaryLabelColor]))) {
+                    let s = image.size
+                    image.draw(in: NSRect(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2, width: s.width, height: s.height))
+                }
+                return true
+            }
             if let mark = style.mark {
                 // A rounded badge in the language color with its mark in white.
                 let badge = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1.5), xRadius: 3.5, yRadius: 3.5)

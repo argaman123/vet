@@ -185,6 +185,8 @@ private struct VariantFileRow: View {
     let node: FileTreeNode
     let index: Int?
     let detail: String?
+    /// In a tree: the icon keeps in line with the folders' icons.
+    var inTree = false
     @State private var hovering = false
 
     var body: some View {
@@ -197,6 +199,7 @@ private struct VariantFileRow: View {
                 Text("\(index)").font(.callout.monospacedDigit()).foregroundStyle(.tertiary).frame(minWidth: 12, alignment: .trailing)
             }
             Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
+                .padding(.leading, inTree ? TreeMetrics.iconLead : 0)
             ChangeName(name: node.name, kind: change.kind).layoutPriority(1)
             if let detail {
                 Text(detail).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
@@ -227,6 +230,7 @@ private struct VariantTreeRow: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "folder").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: 16)
+                        .padding(.leading, TreeMetrics.iconLead) // air after the disclosure chevron
                     Text(item.name).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 4)
                     VariantMark(app: app, node: node, hovering: hovering)
@@ -237,7 +241,7 @@ private struct VariantTreeRow: View {
             .tag(node.path)
             .quietRow(node.path)
         } else {
-            VariantFileRow(app: app, node: node, index: nil, detail: nil).tag(node.path).quietRow(node.path)
+            VariantFileRow(app: app, node: node, index: nil, detail: nil, inTree: true).tag(node.path).quietRow(node.path)
         }
     }
 }

@@ -108,6 +108,7 @@ struct ProjectNodeRow: View {
                 // Folders recede: a thin outline and a quiet name, so the files carry the color.
                 HStack(spacing: 6) {
                     Image(systemName: "folder").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: 16)
+                        .padding(.leading, TreeMetrics.iconLead) // air after the disclosure chevron
                     Text(item.name).foregroundStyle(.secondary).lineLimit(1)
                 }
                 .opacity(app.workspace.review.isMarked(node.path) ? 0.45 : 1)
@@ -118,6 +119,7 @@ struct ProjectNodeRow: View {
         } else {
             HStack(spacing: 6) {
                 Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
+                    .padding(.leading, TreeMetrics.iconLead) // in line with the folders' icons
                 let change = app.workspace.review.changes.first(where: { $0.path == node.path })
                 ChangeName(name: node.name, kind: change?.kind, selected: app.workspace.files.relativePath == node.path)
             }
@@ -143,4 +145,10 @@ struct ProjectNodeRow: View {
             NSPasteboard.general.setString(node.path, forType: .string)
         }
     }
+}
+
+/// The file trees' spacing.
+enum TreeMetrics {
+    /// Between a folder's disclosure chevron and its icon (files at the same level move with it).
+    static let iconLead: CGFloat = 8
 }
