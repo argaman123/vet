@@ -276,8 +276,6 @@ struct EdgeFade: View {
 struct HeaderBar<Content: View>: View {
     /// Rows under the controls, inside the same glass (the pinned declarations, say).
     var extra: AnyView? = nil
-    /// Tinted with the code's color (over code); plain glass over a web page, which has its own colors.
-    var tinted = true
     @ViewBuilder let content: Content
     var body: some View {
         if Design.direction == .glass {
@@ -292,8 +290,7 @@ struct HeaderBar<Content: View>: View {
                 .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the code's I-beam
                 .padding(.horizontal, 14)
                 // A light tint of the code's own color keeps the header readable over passing code.
-                .glassEffect(tinted ? .regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)) : .regular,
-                             in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                .glassEffect(.regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
         } else {
@@ -369,26 +366,25 @@ struct OutputPane: View {
 struct BrowserScreen: View {
     let app: AppDelegate
     @FocusState private var editing: Bool
-    @State private var top: CGFloat = 0
 
     var body: some View {
         let browser = app.workspace.browser
-        // The address bar floats on the page in glass; the page scrolls under it (and is told how
-        // much it covers, so the top of a page still shows below it).
-        WebViewHost(webView: browser.webView, topInset: top)
-            .overlay(alignment: .top) {
-                HeaderBar(tinted: false) {
-                    Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
-                    Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
-                    Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help(browser.isLoading ? "Stop Loading" : "Reload")
-                    // Typed straight onto the glass: no box of its own.
-                    TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
-                        .textFieldStyle(.plain)
-                        .focused($editing)
-                        .onSubmit { browser.go(browser.address); editing = false }
-                }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { top = $0 }
+        // The address bar sits on the window's own grey, as the headers do over code, and the page
+        // starts under it: a web page's colors under glass read as a grey box.
+        VStack(spacing: 0) {
+            HeaderBar {
+                Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
+                Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
+                Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help(browser.isLoading ? "Stop Loading" : "Reload")
+                // Typed straight onto the glass: no box of its own.
+                TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
+                    .textFieldStyle(.plain)
+                    .focused($editing)
+                    .onSubmit { browser.go(browser.address); editing = false }
             }
+            WebViewHost(webView: browser.webView)
+        }
+        .background(Color(nsColor: DiffTheme.background))
     }
 }
 
