@@ -212,6 +212,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             out += "prompt: \(ModHost.shared.ui.prompt.map { $0.prefix + $0.text } ?? "-")  marks: \(p.modMarks.count)  dirty-editor: \(self.workspace.files.editorView.isDirty)\n"
             try? out.write(toFile: dir + "/state.txt", atomically: true, encoding: .utf8)
         }
+        SnapshotHook.on("note") { [weak self] args in
+            // note <n>: open the nth note bubble of the diff; note new <line>: write one on a 1-based line
+            guard let self else { return }
+            let view = self.workspace.review.diffView
+            if args.first == "new", let line = Int(args.dropFirst().first ?? "") { view.writeNote(line: line - 1); return }
+            if args.first == "add", let line = Int(args.dropFirst().first ?? ""), let staging = self.workspace.review.diff?.staging {
+                // note add <line> <text…>: as if written in the popover
+                view.onCreateNote?(line - 1, String(staging.work.lines[line - 1].text), args.dropFirst(2).joined(separator: " "))
+                return
+            }
+            let n = Int(args.first ?? "0") ?? 0
+            guard n < view.shownNotes.count, let row = view.workRow(ofFileLine: view.shownNotes[n].line) else { return }
+            view.debugClickNote(view.shownNotes[n].id, row: row)
+        }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
             guard args.count == 2, let line = Int(args[0]), let character = Int(args[1]) else { return }

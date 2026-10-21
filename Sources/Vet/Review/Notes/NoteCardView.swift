@@ -11,7 +11,7 @@ final class NoteCardView: NSView, NSTextViewDelegate {
     private var text: NSTextView { scroll.documentView as! NSTextView }
     private let buttons = NSStackView()
 
-    init(title label: String, text value: String, editing: Bool, sent: Bool) {
+    init(title label: String, text value: String, editing: Bool, sent: Bool, fromClaude: Bool = false) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 8
@@ -41,7 +41,9 @@ final class NoteCardView: NSView, NSTextViewDelegate {
         buttons.orientation = .horizontal
         buttons.alignment = .centerY
         buttons.spacing = 6
-        if editing {
+        if fromClaude {
+            buttons.setViews([button("Dismiss", #selector(delete))], in: .trailing)
+        } else if editing {
             let save = button("Save note", #selector(saveNote))
             save.keyEquivalent = "\r"
             save.keyEquivalentModifierMask = .command

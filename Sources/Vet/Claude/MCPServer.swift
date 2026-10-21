@@ -10,12 +10,24 @@ final class MCPServer: @unchecked Sendable {
     static let port: UInt16 = UInt16(ProcessInfo.processInfo.environment["VET_MCP_PORT"] ?? "") ?? 47821
     static var url: String { "http://127.0.0.1:\(port)/mcp" }
 
+    /// What a tool answers: text, and optionally a PNG (a screenshot).
+    struct Reply: Sendable {
+        var text: String
+        var isError = false
+        var png: Data?
+    }
+
     struct Tool: @unchecked Sendable { // immutable after creation
         let name: String
         let description: String
         let inputSchema: [String: Any]
-        let run: @MainActor ([String: Any]) -> (text: String, isError: Bool)
+        let run: @MainActor ([String: Any]) async -> Reply
         init(_ name: String, _ description: String, schema: [String: Any], run: @escaping @MainActor ([String: Any]) -> (text: String, isError: Bool)) {
+            self.name = name; self.description = description; inputSchema = schema
+            self.run = { args in let r = run(args); return Reply(text: r.text, isError: r.isError) }
+        }
+        /// A tool that waits for something (a page's text, a screenshot, a few seconds of output).
+        init(_ name: String, _ description: String, schema: [String: Any], async run: @escaping @MainActor ([String: Any]) async -> Reply) {
             self.name = name; self.description = description; inputSchema = schema; self.run = run
         }
     }
@@ -119,6 +131,8 @@ final class MCPServer: @unchecked Sendable {
                 set_review_plan with the changed files in the order the user should read them, a one- or two-line \
                 summary per file and notes on the key functions. Use get_selection when the user refers to "this", \
                 "here" or "the line I'm on". Use vet_status to see what is changed and already reviewed. When the \
+                user says they reviewed or left notes, read get_notes, fix them and resolve_notes. run_app, \
+                run_output and browser_view show their app as they see it in Vet. When the \
                 user wants Vet itself to change (keys, colors, a new behavior or display: "a mod for Vet"), read \
                 mod_api_docs and build it with install_mod; Vet loads it at once.
                 """,
@@ -132,12 +146,16 @@ final class MCPServer: @unchecked Sendable {
                 return Self.error(id, -32602, "Unknown tool")
             }
             nonisolated(unsafe) let args = params["arguments"] as? [String: Any] ?? [:]
-            let out = await MainActor.run { tool.run(args) }
-            return Self.result(id, ["content": [["type": "text", "text": out.text]], "isError": out.isError])
+            let out = await Self.call(tool, args)
+            var content: [[String: Any]] = [["type": "text", "text": out.text]]
+            if let png = out.png { content.append(["type": "image", "data": png.base64EncodedString(), "mimeType": "image/png"]) }
+            return Self.result(id, ["content": content, "isError": out.isError])
         default:
             return Self.error(id, -32601, "Method not found: \(method)")
         }
     }
+
+    @MainActor private static func call(_ tool: Tool, _ args: [String: Any]) async -> Reply { await tool.run(args) }
 
     private static func result(_ id: Any?, _ r: [String: Any]) -> [String: Any] { ["jsonrpc": "2.0", "id": id ?? NSNull(), "result": r] }
     private static func error(_ id: Any?, _ code: Int, _ message: String) -> [String: Any] {
