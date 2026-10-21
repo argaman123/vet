@@ -156,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? png.write(to: URL(fileURLWithPath: dir + "/web.png"))
             }
         }
+        SnapshotHook.on("hovermore") { _ in HoverPresenter.shared.expand() } // F1 on a hover
         SnapshotHook.on("collapse") { [weak self] args in self?.workspace.review.setAllCollapsed(args.first != "off") }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑

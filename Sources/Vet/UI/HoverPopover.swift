@@ -9,9 +9,10 @@ struct HoverContent: Equatable {
     var language: CodeLanguage
 }
 
-/// Hover info: rest the pointer on a symbol and a popover shows its signature and docs, as in
-/// VS Code and WebStorm. It stays while the pointer is on the symbol or inside the popover (so
-/// you can select and copy from it) and goes away when you move off, type, scroll or click.
+/// Hover info: rest the pointer on a symbol and a popover shows its signature and the start of its
+/// docs, as WebStorm does; F1 (or More) shows all of it. It stays while the pointer is on the
+/// symbol or inside the popover (so you can select and copy from it) and goes away when you move
+/// off, type, scroll or click.
 @MainActor
 final class HoverPresenter: NSObject, NSPopoverDelegate {
     static let shared = HoverPresenter()
@@ -24,6 +25,7 @@ final class HoverPresenter: NSObject, NSPopoverDelegate {
     private(set) var currentToken = 0
     private var shownKey: String?
     private var shownAnchor: (view: NSView, rect: NSRect)?
+    private var shownContent: HoverContent?
 
     /// Called when the pointer has rested on a symbol; `show` follows if the server answers.
     func prepare(view: NSView, rect: NSRect, key: String) {
@@ -47,22 +49,33 @@ final class HoverPresenter: NSObject, NSPopoverDelegate {
         popover.behavior = .applicationDefined
         popover.animates = false
         popover.delegate = self
-        let host = NSHostingController(rootView: HoverView(content: content))
-        host.sizingOptions = []
-        // Measure the content at most 560 pt wide (wrapping), and size the popover to it.
-        let fit = host.sizeThatFits(in: NSSize(width: 560, height: 2000))
-        let size = NSSize(width: ceil(min(560, max(140, fit.width))), height: ceil(min(520, fit.height)))
-        host.view.frame = NSRect(origin: .zero, size: size)
-        popover.contentViewController = host
-        popover.contentSize = size
+        popover.contentViewController = host(content, expanded: false, popover: popover)
         popover.show(relativeTo: p.rect, of: p.view, preferredEdge: .maxY)
         self.popover = popover
         shownKey = p.key
         shownAnchor = (p.view, p.rect)
+        shownContent = content
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel, .keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] event in
-            self?.handle(event)
-            return event
+            guard let self else { return event }
+            return self.handle(event) ? nil : event
         }
+    }
+
+    /// The popover's content, measured at most 560 pt wide (wrapping), and the popover sized to it.
+    private func host(_ content: HoverContent, expanded: Bool, popover: NSPopover) -> NSViewController {
+        let host = NSHostingController(rootView: HoverView(content: content, expanded: expanded) { [weak self] in self?.expand() })
+        host.sizingOptions = []
+        let fit = host.sizeThatFits(in: NSSize(width: 560, height: 2000))
+        let size = NSSize(width: ceil(min(560, max(140, fit.width))), height: ceil(min(520, fit.height)))
+        host.view.frame = NSRect(origin: .zero, size: size)
+        popover.contentSize = size
+        return host
+    }
+
+    /// The whole documentation, in place of the short version.
+    func expand() {
+        guard let popover, let content = shownContent, HoverView.isLong(content) else { return }
+        popover.contentViewController = host(content, expanded: true, popover: popover)
     }
 
     func close() {
@@ -72,18 +85,24 @@ final class HoverPresenter: NSObject, NSPopoverDelegate {
         popover = nil
         shownKey = nil
         shownAnchor = nil
+        shownContent = nil
     }
 
-    private func handle(_ event: NSEvent) {
-        guard let popover else { return }
+    /// True when the event was used here (F1 expands the docs, as Quick Documentation does).
+    private func handle(_ event: NSEvent) -> Bool {
+        guard let popover else { return false }
         let popoverWindow = popover.contentViewController?.view.window
+        if event.type == .keyDown, event.keyCode == 122, let content = shownContent, HoverView.isLong(content) { // F1
+            expand()
+            return true
+        }
         switch event.type {
         case .keyDown, .scrollWheel:
             if event.window !== popoverWindow { close() }
         case .leftMouseDown, .rightMouseDown:
             if event.window !== popoverWindow { close() }
         case .mouseMoved:
-            guard let anchor = shownAnchor, let window = anchor.view.window else { close(); return }
+            guard let anchor = shownAnchor, let window = anchor.view.window else { close(); return false }
             let screen = event.window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
             let symbol = window.convertToScreen(anchor.view.convert(anchor.rect, to: nil)).insetBy(dx: -3, dy: -3)
             // The gap between the symbol and the popover counts as inside, so you can move into it.
@@ -95,6 +114,7 @@ final class HoverPresenter: NSObject, NSPopoverDelegate {
             }
         default: break
         }
+        return false
     }
 
     func popoverDidClose(_ notification: Notification) {
@@ -103,28 +123,52 @@ final class HoverPresenter: NSObject, NSPopoverDelegate {
         popover = nil
         shownKey = nil
         shownAnchor = nil
+        shownContent = nil
     }
 }
 
 /// The popover's content: the signature in the code font and colors, then the documentation.
+/// Short by default, as WebStorm's hover: the signature (a few lines at most) and the docs' first
+/// paragraph; `expanded` shows everything.
 private struct HoverView: View {
     let content: HoverContent
+    var expanded = false
+    var expand: () -> Void = {}
+
+    /// Short-version limits.
+    static let signatureLines = 4, summaryLines = 3
+
+    /// Whether the short version leaves something out.
+    static func isLong(_ content: HoverContent) -> Bool {
+        let blocks = blocks(content.documentation)
+        let signatureLines = content.signature.components(separatedBy: "\n").count
+        if blocks.count > 1 || signatureLines > Self.signatureLines { return true }
+        if case .text(let s)? = blocks.first {
+            let summary = firstParagraph(s)
+            return summary != s.trimmingCharacters(in: .whitespacesAndNewlines) || summary.count > 220 || summary.components(separatedBy: "\n").count > summaryLines
+        }
+        return false
+    }
 
     var body: some View {
+        let all = Self.blocks(content.documentation)
+        // The short version keeps the first paragraph of prose.
+        let blocks = expanded ? all : Array(all.prefix { if case .text = $0 { true } else { false } }.prefix(1))
         VStack(alignment: .leading, spacing: 8) {
             if !content.signature.isEmpty {
                 Text(Self.code(content.signature, content.language))
                     .font(.system(size: 12, design: .monospaced))
+                    .lineLimit(expanded ? nil : Self.signatureLines)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            let blocks = Self.blocks(content.documentation)
             if !content.signature.isEmpty, !blocks.isEmpty { Divider() }
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .text(let s):
-                    Text(Self.markdown(s))
+                    Text(Self.markdown(expanded ? s : Self.firstParagraph(s)))
                         .font(.callout)
+                        .lineLimit(expanded ? nil : Self.summaryLines)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 case .code(let s):
@@ -134,11 +178,32 @@ private struct HoverView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            if !expanded, Self.isLong(content) {
+                Button(action: expand) {
+                    HStack(spacing: 6) {
+                        Text("More")
+                        Text("F1").foregroundStyle(.tertiary)
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.hand)
+                .help("Show the whole documentation (F1)")
+            }
         }
         .padding(12)
-        .frame(maxWidth: 560, alignment: .leading)
+        // As wide as the text needs, wrapping at the 560 pt the presenter offers.
         .fixedSize(horizontal: false, vertical: true)
+    }
 
+    /// Prose up to the first blank line or tag (the summary JSDoc and Swift docs start with).
+    static func firstParagraph(_ s: String) -> String {
+        var out: [String] = []
+        for line in s.components(separatedBy: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty || t.hasPrefix("@") || t.hasPrefix("- ") && !out.isEmpty { break }
+            out.append(line)
+        }
+        return out.joined(separator: "\n")
     }
 
     enum Block { case text(String), code(String) }
@@ -188,6 +253,8 @@ private struct HoverView: View {
                     i += 1
                     text = lines[i]
                 }
+                // The server's own "name - text" dash would double the one added here.
+                text = text.replacing(/^\s*[-–—]\s*/, with: "")
                 let name = m.2.map { " `\($0)`" } ?? ""
                 out.append("*@\(m.1)*\(name)\(text.isEmpty ? "" : " — \(text)")")
             } else {
