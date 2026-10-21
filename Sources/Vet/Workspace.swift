@@ -232,15 +232,20 @@ extension Workspace {
               url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/") else { gutter.changeBars = []; return }
         let path = String(url.standardizedFileURL.path.dropFirst(root.standardizedFileURL.path.count + 1))
         guard let change = review.changes.first(where: { $0.path == path }) else { gutter.changeBars = []; return }
-        gutter.onChangeBarClick = { [weak self, weak gutter] bar, rect in
-            guard let gutter else { return }
-            ChangeBarPopover.show(bar, at: rect, in: gutter) { self?.onShowDiff?(path) }
-        }
-        Task { [weak gutter] in
+        Task { [weak self, weak gutter] in
             let head = (try? await repo.headText(change)) ?? nil
             let bars = await Task.detached { Self.changeBars(head: head, text: text) }.value
             guard let gutter, current() else { return }
             gutter.changeBars = bars
+            let headText = head.map { String(decoding: $0, as: UTF8.self) }
+            gutter.onChangeBarClick = { [weak self, weak gutter] bar, rect in
+                guard let gutter else { return }
+                let navigator = self?.navigator
+                let semantic: (() async -> [SemanticToken])? = headText.flatMap { headText in
+                    navigator.flatMap { n in n.isSupported(url) ? { await n.semanticTokens(of: url, text: headText) } : nil }
+                }
+                ChangeBarPopover.show(bar, language: CodeLanguage(path: url.path), semantic: semantic, at: rect, in: gutter) { self?.onShowDiff?(path) }
+            }
         }
     }
 

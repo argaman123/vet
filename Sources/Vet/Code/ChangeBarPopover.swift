@@ -1,5 +1,7 @@
 import AppKit
+import Observation
 import SwiftUI
+import VetCore
 
 /// Clicking a change bar in the editor's gutter: what those lines were in the last commit, as in
 /// JetBrains IDEs, with a way into the full diff.
@@ -7,12 +9,22 @@ import SwiftUI
 enum ChangeBarPopover {
     private static var popover: NSPopover?
 
-    static func show(_ bar: LineNumberGutter.ChangeBar, at rect: NSRect, in view: NSView, showChanges: @escaping () -> Void) {
+    /// `semantic`: the language server's tokens for the last commit's file; the old lines take
+    /// its name colors when they arrive.
+    static func show(_ bar: LineNumberGutter.ChangeBar, language: CodeLanguage, semantic: (() async -> [SemanticToken])?,
+                     at rect: NSRect, in view: NSView, showChanges: @escaping () -> Void) {
         popover?.close()
+        let old = OldLines(CodeText.lines(bar.old, language: language))
+        if let semantic, !bar.old.isEmpty {
+            Task { @MainActor in
+                let tokens = await semantic()
+                if !tokens.isEmpty { old.lines = CodeText.lines(bar.old, language: language, semantic: tokens, firstLine: bar.oldStart) }
+            }
+        }
         let p = NSPopover()
         p.behavior = .transient
         p.animates = true
-        let host = NSHostingController(rootView: ChangeBarView(bar: bar, showChanges: { [weak p] in
+        let host = NSHostingController(rootView: ChangeBarView(bar: bar, old: old, showChanges: { [weak p] in
             p?.close()
             showChanges()
         }))
@@ -23,8 +35,16 @@ enum ChangeBarPopover {
     }
 }
 
+@MainActor @Observable
+private final class OldLines {
+    var lines: [AttributedString]
+    init(_ lines: [AttributedString]) { self.lines = lines }
+}
+
 private struct ChangeBarView: View {
     let bar: LineNumberGutter.ChangeBar
+    /// The old lines in the editor's colors.
+    let old: OldLines
     let showChanges: () -> Void
 
     var body: some View {
@@ -43,8 +63,8 @@ private struct ChangeBarView: View {
                             }
                         }
                         VStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(bar.old.enumerated()), id: \.offset) { _, line in
-                                Text(line.isEmpty ? " " : line).foregroundStyle(.secondary).textSelection(.enabled)
+                            ForEach(Array(old.lines.enumerated()), id: \.offset) { _, line in
+                                Text(line.characters.isEmpty ? AttributedString(" ") : line).textSelection(.enabled)
                             }
                         }
                     }

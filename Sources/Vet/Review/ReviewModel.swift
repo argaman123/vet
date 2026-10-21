@@ -410,6 +410,17 @@ final class ReviewModel {
         diffVersion += 1
     }
 
+    /// Everything folded: unchanged lines and reviewed changes, none opened by hand.
+    var allCollapsed: Bool { folding && foldReviewed && expandedFolds.isEmpty }
+
+    /// Folds every unchanged region and reviewed change, or opens them all.
+    func setAllCollapsed(_ collapsed: Bool) {
+        foldReviewed = collapsed
+        folding = collapsed
+        expandedFolds = []
+        diffVersion += 1
+    }
+
     func expandFold(_ id: Int) {
         expandedFolds.insert(id)
         diffVersion += 1

@@ -145,6 +145,12 @@ struct DiffHeader: View {
                 .help("Previous Change (⌘↑)")
             Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down") }
                 .help("Next Change (⌘↓)")
+            // Fold or open every unchanged region and reviewed change at once (its icon shows what it does).
+            Button { review.setAllCollapsed(!review.allCollapsed) } label: {
+                Image(systemName: review.allCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+            }
+            .help(review.allCollapsed ? "Expand All (⌥⇧⌘→)" : "Collapse All (⌥⇧⌘←)")
+            .accessibilityLabel(review.allCollapsed ? "Expand All" : "Collapse All")
             // One button that flips the layout (its icon shows the other one).
             Button { withAnimation(.easeInOut(duration: 0.2)) { review.unified.toggle() } } label: {
                 Image(systemName: review.unified ? "rectangle.split.2x1" : "rectangle.grid.1x2")

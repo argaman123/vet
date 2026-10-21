@@ -142,6 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         SnapshotHook.on("browser") { [weak self] _ in self?.showBrowser() }
         SnapshotHook.on("tool") { [weak self] args in if let t = UIState.Tool(rawValue: args.first ?? "") { self?.ui.tool = t } }
+        SnapshotHook.on("diff") { [weak self] args in if let p = args.first { self?.showDiff(p) } }
+        SnapshotHook.on("collapse") { [weak self] args in self?.workspace.review.setAllCollapsed(args.first != "off") }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑
         SnapshotHook.on("claudeforward") { _ in ClaudeReference.bringClaudeForward() } // test: the hand-off alone, clipboard untouched
@@ -432,6 +434,11 @@ struct VetCommands: Commands {
                 .keyboardShortcut("y", modifiers: [.command, .shift])
             Button(app.workspace.review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { app.workspace.review.folding.toggle() }
             Toggle("Fold Reviewed Changes", isOn: Bindable(app.workspace.review).foldReviewed)
+            // As in Xcode: fold or open everything (unchanged lines and reviewed changes).
+            Button("Collapse All") { app.workspace.review.setAllCollapsed(true) }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
+            Button("Expand All") { app.workspace.review.setAllCollapsed(false) }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
             Picker("Diff Layout", selection: Bindable(app.workspace.review).unified) {
                 Text("Side by Side").tag(false)
                 Text("Unified").tag(true)
