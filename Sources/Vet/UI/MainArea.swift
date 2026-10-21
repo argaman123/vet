@@ -383,7 +383,36 @@ struct BrowserScreen: View {
                     .onSubmit { browser.go(browser.address); editing = false }
             }
             WebViewHost(webView: browser.webView)
+                .overlay {
+                    // Vet's grey and a word on what happened, not WebKit's blank white page.
+                    if browser.loadError != nil || browser.address.isEmpty { BrowserPlaceholder(app: app) }
+                }
         }
+        .background(Color(nsColor: DiffTheme.background))
+    }
+}
+
+/// The browser with no page to show: nothing opened yet, or the page couldn't open.
+private struct BrowserPlaceholder: View {
+    let app: AppDelegate
+    var body: some View {
+        let browser = app.workspace.browser, run = app.workspace.run
+        let host = URL(string: browser.address).map { u in u.host.map { h in u.port.map { "\(h):\($0)" } ?? h } ?? browser.address } ?? browser.address
+        VStack(spacing: 6) {
+            Text(browser.loadError == nil ? "No Page" : "Can't Open \(host)").font(.headline)
+            Text(browser.loadError ?? "Type an address above, or run your app to open it here.")
+                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            HStack(spacing: 10) {
+                if let config = run.selected, !run.isRunning {
+                    Button("Run ‘\(config.name)’") { run.start(); run.outputVisible = true }
+                }
+                if browser.loadError != nil { Button("Try Again") { browser.reload() } }
+            }
+            .buttonStyle(.hand)
+            .padding(.top, 6)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: DiffTheme.background))
     }
 }
