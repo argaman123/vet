@@ -140,9 +140,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .write(toFile: dir + "/bars.txt", atomically: true, encoding: .utf8)
             if let n = Int(args.first ?? ""), n < gutter.changeBars.count { gutter.debugClickBar(n) }
         }
-        SnapshotHook.on("browser") { [weak self] _ in self?.showBrowser() }
+        SnapshotHook.on("browser") { [weak self] args in
+            self?.showBrowser()
+            if let url = args.first { self?.workspace.browser.go(url) }
+        }
         SnapshotHook.on("tool") { [weak self] args in if let t = UIState.Tool(rawValue: args.first ?? "") { self?.ui.tool = t } }
         SnapshotHook.on("diff") { [weak self] args in if let p = args.first { self?.showDiff(p) } }
+        SnapshotHook.on("websnap") { [weak self] _ in
+            // websnap: the browser's page as WebKit draws it, to VET_SNAPSHOT_DIR/web.png
+            guard let self, let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
+            let web = self.workspace.browser.webView
+            web.takeSnapshot(with: nil) { image, _ in
+                guard let image, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+                      let png = rep.representation(using: .png, properties: [:]) else { return }
+                try? png.write(to: URL(fileURLWithPath: dir + "/web.png"))
+            }
+        }
         SnapshotHook.on("collapse") { [weak self] args in self?.workspace.review.setAllCollapsed(args.first != "off") }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑
