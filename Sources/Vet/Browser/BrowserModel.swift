@@ -16,12 +16,19 @@ final class BrowserModel: NSObject, WKNavigationDelegate {
     private(set) var loadError: String?
     private var project: URL?
     private var observations: [NSKeyValueObservation] = []
+    /// The page's console messages and uncaught errors since it loaded, newest last (for Claude,
+    /// through browser_view).
+    private(set) var console: [String] = []
 
     override init() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
+        config.userContentController.addUserScript(WKUserScript(source: Self.consoleRecorder, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let recorder = ConsoleRecorder()
+        config.userContentController.add(recorder, name: "vetConsole")
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
+        recorder.model = self
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         observations = [
@@ -83,8 +90,52 @@ final class BrowserModel: NSObject, WKNavigationDelegate {
     private func key(_ project: URL) -> String { "browser.last." + project.standardizedFileURL.path }
 
     nonisolated func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        MainActor.assumeIsolated { loadError = nil }
+        MainActor.assumeIsolated { loadError = nil; console = [] }
     }
+
+    // MARK: What Claude can see (browser_view)
+
+    fileprivate func record(_ line: String) {
+        console.append(String(line.prefix(2000)))
+        if console.count > 300 { console.removeFirst(console.count - 300) }
+    }
+
+    /// The page's visible text.
+    func pageText() async -> String? {
+        try? await webView.evaluateJavaScript("document.body ? document.body.innerText : ''") as? String
+    }
+
+    /// The page as you see it, as PNG (nil when the browser isn't on screen).
+    func snapshot() async -> Data? {
+        guard webView.window != nil, webView.bounds.width > 10 else { return nil }
+        let image: NSImage? = await withCheckedContinuation { done in
+            webView.takeSnapshot(with: nil) { image, _ in done.resume(returning: image) }
+        }
+        guard let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])
+    }
+
+    /// Passes the page's console and uncaught errors to Vet, after the page's own handling.
+    private static let consoleRecorder = """
+    (() => {
+      const post = (level, args) => {
+        try {
+          const text = Array.from(args).map(a => {
+            if (a instanceof Error) return String(a) + (a.stack ? "\n" + a.stack : "");
+            if (typeof a === "object") { try { return JSON.stringify(a); } catch (e) { return String(a); } }
+            return String(a);
+          }).join(" ");
+          window.webkit.messageHandlers.vetConsole.postMessage(level + ": " + text);
+        } catch (e) {}
+      };
+      for (const level of ["log", "info", "warn", "error", "debug"]) {
+        const original = console[level];
+        console[level] = function (...args) { post(level, args); return original.apply(this, args); };
+      }
+      window.addEventListener("error", e => post("uncaught", [e.error || (e.message + " at " + e.filename + ":" + e.lineno)]));
+      window.addEventListener("unhandledrejection", e => post("unhandled rejection", [e.reason]));
+    })();
+    """
 
     nonisolated func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let message = Self.message(error)
@@ -101,5 +152,14 @@ final class BrowserModel: NSObject, WKNavigationDelegate {
             return "Nothing is answering there. Is the dev server running?"
         }
         return e.localizedDescription
+    }
+}
+
+/// Receives the page's console messages (WebKit keeps its handler strongly; the model it feeds isn't).
+private final class ConsoleRecorder: NSObject, WKScriptMessageHandler {
+    weak var model: BrowserModel?
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let line = message.body as? String else { return }
+        MainActor.assumeIsolated { model?.record(line) }
     }
 }

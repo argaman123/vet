@@ -13,6 +13,10 @@ struct ReviewNote: Codable, Identifiable, Hashable {
     var text: String
     var sent = false
     var created = Date()
+    /// Claude pointing at a line it thinks you must see (point_at_code); nil for your own notes.
+    var fromClaude: Bool?
+
+    var isClaude: Bool { fromClaude == true }
 }
 
 /// Notes for one project, kept in its .vet folder (which git ignores).

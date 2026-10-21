@@ -486,7 +486,16 @@ final class ReviewModel {
 
     var unsentNotes: [ReviewNote] {
         _ = notesVersion // so views showing the count update when notes change
-        return (notes?.notes ?? []).filter { !$0.sent && !$0.text.isEmpty }
+        return (notes?.notes ?? []).filter { !$0.sent && !$0.text.isEmpty && !$0.isClaude }
+    }
+
+    /// A note written in the popover beside a working-file line of the open diff.
+    func createNote(line: Int, lineText: String, text: String) {
+        guard let notes, let path = diff?.change.path else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        notes.upsert(ReviewNote(path: path, left: false, line: line, lineText: lineText, text: trimmed))
+        noteChanged()
     }
 
     func addNote(left: Bool, line: Int, lineText: String) {
@@ -521,6 +530,46 @@ final class ReviewModel {
         notes?.delete(id)
         if editingNoteID == id { editingNoteID = nil }
         noteChanged()
+    }
+
+    /// Your notes for Claude (get_notes): each with the line it's on now in the working file.
+    func notesForClaude() -> [ReviewNote] {
+        guard let notes, let root else { return [] }
+        var files: [String: [String]] = [:]
+        return notes.notes.filter { !$0.isClaude && !$0.text.isEmpty }.map { n in
+            guard !n.left else { return n }
+            var n = n
+            let lines = files[n.path] ?? ((try? String(contentsOf: root.appendingPathComponent(n.path), encoding: .utf8))?
+                .components(separatedBy: "\n") ?? [])
+            files[n.path] = lines
+            if n.line >= lines.count || lines[n.line] != n.lineText {
+                if let near = lines.indices.filter({ lines[$0] == n.lineText }).min(by: { abs($0 - n.line) < abs($1 - n.line) }) { n.line = near }
+            }
+            return n
+        }
+    }
+
+    /// Claude's notes that are still showing (point_at_code keeps them few).
+    var claudeNotes: [ReviewNote] { (notes?.notes ?? []).filter(\.isClaude) }
+
+    /// Claude points at lines of a changed file: a card under them in the diff, until you dismiss it.
+    func addClaudeNote(path: String, line: Int, lineText: String, text: String) -> ReviewNote? {
+        guard let notes else { return nil }
+        var note = ReviewNote(path: path, left: false, line: line, lineText: lineText, text: text)
+        note.fromClaude = true
+        notes.upsert(note)
+        noteChanged()
+        return note
+    }
+
+    /// Notes Claude handled (or pointers it takes back): gone from the diff.
+    func removeNotes(_ ids: [String]) -> Int {
+        guard let notes else { return 0 }
+        let found = ids.filter { id in notes.notes.contains { $0.id == id } }
+        for id in found { notes.delete(id) }
+        if let editing = editingNoteID, found.contains(editing) { editingNoteID = nil }
+        noteChanged()
+        return found.count
     }
 
     private func noteChanged() {

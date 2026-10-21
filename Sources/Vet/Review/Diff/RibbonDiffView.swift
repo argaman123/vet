@@ -24,6 +24,7 @@ struct RibbonDiffView: NSViewRepresentable {
                               cancel: { [weak model] id in model?.cancelNote(id) },
                               edit: { [weak model] id in model?.editNote(id) },
                               delete: { [weak model] id in model?.deleteNote(id) })
+        v.onCreateNote = { [weak model] line, lineText, text in model?.createNote(line: line, lineText: lineText, text: text) }
         v.onNavigate = { [weak model] kind, left, line, character in model?.navigate(kind, left: left, line: line, character: character) }
         v.onHover = { [weak model] line, character in model?.hover(line: line, character: character) }
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
@@ -48,6 +49,7 @@ struct RibbonDiffView: NSViewRepresentable {
             view.notes = []
             view.editingNoteID = model.editingNoteID
             view.show(model.diff, folding: model.folding, expanded: model.expandedFolds)
+            view.setNotes(model.notesForOpenFile())
             model.readingAids?(view)
         }
         if jumpSerial != view.lastJump {
@@ -82,6 +84,41 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     var onNavigate: ((CodeTextView.Navigation, Bool, Int, Int) -> Void)?
     /// A jump icon was clicked: (working-file line, the icon's rect in the gutter).
     var onJumpMark: ((Int, NSRect) -> Void)?
+
+    /// Notes on the working file, shown as bubbles beside their lines.
+    private(set) var shownNotes: [ReviewNote] = []
+    /// A note written in the popover: (working-file line, that line's text, the note).
+    var onCreateNote: ((Int, String, String) -> Void)?
+
+    func setNotes(_ notes: [ReviewNote]) {
+        shownNotes = notes.filter { !$0.left }
+        var rows: [Int: RibbonGutterView.NoteMark] = [:]
+        // Your note's bubble shows when a line has Claude's pointer too (the popover lists both).
+        for n in shownNotes.sorted(by: { $0.isClaude && !$1.isClaude }) {
+            if let r = workRow(ofFileLine: n.line) { rows[r] = .init(id: n.id, fromClaude: n.isClaude) }
+        }
+        gutter.noteMarks = rows
+    }
+
+    /// Every note on the clicked note's line (yours first, then Claude's).
+    private func showNote(id: String, rect: NSRect) {
+        guard let note = shownNotes.first(where: { $0.id == id }) else { return }
+        let here = shownNotes.filter { $0.line == note.line }.sorted { !$0.isClaude && $1.isClaude }
+        NotePopover.shared.show(here, line: note.line, at: rect, in: gutter, actions: .init(
+            save: { [weak self] id, text in if let id { self?.noteActions?.save(id, text) } },
+            delete: { [weak self] id in self?.noteActions?.delete(id) }))
+    }
+
+    func debugClickNote(_ id: String, row: Int) { showNote(id: id, rect: gutter.noteRect(row)) }
+
+    /// A new note on a working-file line, written in a popover beside it.
+    func writeNote(line: Int, rect: NSRect? = nil) {
+        guard let staging = shownStaging, line < staging.work.count, let row = workRow(ofFileLine: line) else { return }
+        let lineText = String(staging.work.lines[line].text)
+        NotePopover.shared.show([], line: line, at: rect ?? gutter.noteRect(row), in: gutter, actions: .init(
+            save: { [weak self] _, text in self?.onCreateNote?(line, lineText, text) },
+            delete: { _ in }))
+    }
 
     /// Jump icons (implemented, overrides) by working-file line.
     func setJumpMarks(_ marks: [Int: LineNumberGutter.JumpMark]) {
@@ -239,6 +276,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             guard let self, let (side, fileLine) = self.resolve(left: false, displayLine: line), !side else { return }
             self.onHover?(fileLine, character)
         }
+        gutter.onNoteClick = { [weak self] id, rect in self?.showNote(id: id, rect: rect) }
+        gutter.onAddNote = { [weak self] line, rect in self?.writeNote(line: line, rect: rect) }
         gutter.onToggle = { [weak self] id, staged, snapshot in self?.onToggle?(id, staged, snapshot) }
         gutter.onDrag = { [weak self] dx in self?.drag(dx) }
         gutter.onResetSplit = { [weak self] in self?.setSplit(0.5) }
@@ -466,7 +505,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             var rows = note.left ? seg.left : seg.right
             if unifiedRows != nil, let start = unifiedOfRight[seg.right.lowerBound] { rows = start..<(start + seg.right.count) }
             let editing = id == editingNoteID
-            let card = NoteCardView(title: "Note on line \(note.line + 1)", text: note.text, editing: editing, sent: note.sent)
+            let card = NoteCardView(title: note.isClaude ? "Claude · line \(note.line + 1)" : "Note on line \(note.line + 1)",
+                                    text: note.text, editing: editing && !note.isClaude, sent: note.sent, fromClaude: note.isClaude)
             card.onSave = { [weak self] text in self?.noteActions?.save(id, text) }
             card.onCancel = { [weak self] in self?.noteActions?.cancel(id) }
             card.onEdit = { [weak self] in self?.noteActions?.edit(id) }
@@ -734,6 +774,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             item("Reference in Claude") { ClaudeReference.send(path: path, lines: span, code: code) },
             .separator(),
         ], at: 0)
+        if !left { items.append(item("Add Note…") { [weak self] in self?.writeNote(line: line) }) }
         items.append(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         items.append(item("Copy path and line") {
             NSPasteboard.general.clearContents()

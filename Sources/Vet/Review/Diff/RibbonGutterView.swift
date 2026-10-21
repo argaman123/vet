@@ -133,9 +133,63 @@ final class RibbonGutterView: NSView {
         return NSRect(x: bounds.width - Self.marksWidth + (Self.marksWidth - s) / 2 - 1, y: y(row, left: false) + (DiffTheme.lineHeight - s) / 2, width: s, height: s)
     }
 
+    // MARK: Notes: a bubble beside the line (NotePopover.swift shows it)
+
+    struct NoteMark: Equatable { let id: String; let fromClaude: Bool }
+    /// Notes by working-file display row. A note's bubble takes the icon column on its row.
+    var noteMarks: [Int: NoteMark] = [:] { didSet { if oldValue != noteMarks { needsDisplay = true; window?.invalidateCursorRects(for: self) } } }
+    /// A note's bubble was clicked: (note id, the bubble's rect).
+    var onNoteClick: ((String, NSRect) -> Void)?
+    /// The faint bubble on a hovered row was clicked: (working-file line, the bubble's rect).
+    var onAddNote: ((Int, NSRect) -> Void)?
+    /// The row whose numbers the pointer is over: it shows a faint bubble to add a note.
+    private var addRow: Int? { didSet { if oldValue != addRow { needsDisplay = true } } }
+    private var noteTracking: NSTrackingArea?
+
+    func noteRect(_ row: Int) -> NSRect { markRect(row) }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let noteTracking { removeTrackingArea(noteTracking) }
+        let t = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(t)
+        noteTracking = t
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        // Only over the working file's numbers and the icon column, so passing by doesn't flicker.
+        guard mode != .leftOnly, p.x >= bounds.width - Self.marksWidth - Self.numbersWidth,
+              p.y > covered.top, p.y < bounds.height - covered.bottom else { addRow = nil; return }
+        let row = Int(floor((p.y + rightOffset - DiffTheme.inset.height) / DiffTheme.lineHeight))
+        addRow = row >= 0 && row < rightNumbers.count && rightNumbers[row] != nil && noteMarks[row] == nil ? row : nil
+    }
+
+    override func mouseExited(with event: NSEvent) { addRow = nil }
+
+    private static func noteImage(_ name: String, alpha: CGFloat) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 10.5, weight: .medium)
+            .applying(.init(paletteColors: [DiffTheme.text.withAlphaComponent(alpha)]))
+        return NSImage(systemSymbolName: name, accessibilityDescription: "Note")?.withSymbolConfiguration(config)
+    }
+
+    private func drawNotes() {
+        guard mode != .leftOnly else { return }
+        var bubbles = noteMarks.map { ($0.key, $0.value.fromClaude ? "sparkle" : "text.bubble.fill", CGFloat(0.75)) }
+        if let addRow { bubbles.append((addRow, "plus.bubble", 0.35)) }
+        for (row, name, alpha) in bubbles {
+            let r = noteRect(row)
+            guard r.maxY > covered.top, r.minY < bounds.height - covered.bottom, let image = Self.noteImage(name, alpha: alpha) else { continue }
+            DiffTheme.gutter.setFill()
+            r.insetBy(dx: -1, dy: -1).fill() // over a jump icon on the same row
+            let size = image.size
+            image.draw(in: NSRect(x: r.midX - size.width / 2, y: r.midY - size.height / 2, width: size.width, height: size.height))
+        }
+    }
+
     private func drawMarks() {
         guard mode != .leftOnly, !rightMarks.isEmpty else { return }
-        for (row, mark) in rightMarks {
+        for (row, mark) in rightMarks where noteMarks[row] == nil {
             let r = markRect(row)
             guard r.maxY > covered.top, r.minY < bounds.height - covered.bottom, let image = Self.markImage(mark) else { continue }
             let size = image.size
@@ -463,6 +517,7 @@ final class RibbonGutterView: NSView {
             numbers(rightNumbers, left: false, x: Self.numbersWidth)
         }
         drawMarks()
+        drawNotes()
         // The sticky rows' band runs across the bridge too, so no ribbon or ring shows through it.
         if mode == .split, let solid = pinnedBand {
             let bg = DiffTheme.background.withAlphaComponent(1)
@@ -488,6 +543,14 @@ final class RibbonGutterView: NSView {
     // Drag to resize the panes; double-click to reset.
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
+        if let (row, note) = noteMarks.first(where: { noteRect($0.key).insetBy(dx: -3, dy: -3).contains(p) }) {
+            onNoteClick?(note.id, noteRect(row))
+            return
+        }
+        if let row = addRow, noteRect(row).insetBy(dx: -4, dy: -3).contains(p), let line = rightNumbers[row] {
+            onAddNote?(line, noteRect(row))
+            return
+        }
         if let (row, _) = rightMarks.first(where: { markRect($0.key).insetBy(dx: -3, dy: -3).contains(p) }) {
             onMarkClick?(row, markRect(row))
             return
@@ -508,7 +571,7 @@ final class RibbonGutterView: NSView {
     var covered: (top: CGFloat, bottom: CGFloat) = (0, 0) { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
 
     override func resetCursorRects() {
-        for row in rightMarks.keys {
+        for row in Set(rightMarks.keys).union(noteMarks.keys) {
             let r = markRect(row)
             if r.maxY > covered.top, r.minY < bounds.height - covered.bottom { addCursorRect(r.insetBy(dx: -3, dy: -3), cursor: .pointingHand) }
         }
