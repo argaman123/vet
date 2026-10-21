@@ -199,6 +199,7 @@ final class RibbonGutterView: NSView {
     }
 
     private func placeCheckboxes() {
+        defer { if mode == .split { window?.invalidateCursorRects(for: self) } }
         let (x0, x1) = ribbonX
         if Design.marker == .inline || Design.marker == .row { boxes.values.forEach { $0.isHidden = true }; return }
         for (id, b) in boxes {
@@ -430,7 +431,8 @@ final class RibbonGutterView: NSView {
             open.append(NSBezierPath(rect: NSRect(x: x, y: top + band, width: Self.numbersWidth, height: max(0, bounds.height - top - band))))
             open.addClip()
             let changed = left ? changedLeft : changedRight, current = left ? currentLeft : currentRight
-            for i in first..<min(list.count, first + count) {
+            // (A side can end above the view, when the other side is longer: nothing to number then.)
+            for i in first..<max(first, min(list.count, first + count)) {
                 if let n = list[i] { number(n, x: x, y: y(i, left: left), changed: changed.contains(i), current: current.contains(i)) }
             }
             NSGraphicsContext.restoreGraphicsState()
@@ -510,8 +512,18 @@ final class RibbonGutterView: NSView {
             let r = markRect(row)
             if r.maxY > covered.top, r.minY < bounds.height - covered.bottom { addCursorRect(r.insetBy(dx: -3, dy: -3), cursor: .pointingHand) }
         }
+        // Dragging resizes the panes from the bridge only: the numbers and the icon column keep
+        // their own cursors (the arrow, the hand on icons and rings).
         guard mode == .split else { return }
-        addCursorRect(NSRect(x: 0, y: covered.top, width: bounds.width, height: max(0, bounds.height - covered.top - covered.bottom)), cursor: .resizeLeftRight)
+        // …and around each ring, which is a button.
+        let rings = boxes.values.filter { !$0.isHidden }.map { $0.frame.insetBy(dx: -2, dy: -2) }.sorted { $0.minY < $1.minY }
+        var y = covered.top
+        let end = bounds.height - covered.bottom
+        for r in rings where r.maxY > y && r.minY < end {
+            if r.minY > y { addCursorRect(NSRect(x: Self.numbersWidth, y: y, width: Self.ribbonWidth, height: r.minY - y), cursor: .resizeLeftRight) }
+            y = max(y, r.maxY)
+        }
+        if end > y { addCursorRect(NSRect(x: Self.numbersWidth, y: y, width: Self.ribbonWidth, height: end - y), cursor: .resizeLeftRight) }
     }
 }
 

@@ -169,7 +169,7 @@ struct DiffHeader: View {
                     NSPasteboard.general.setString(change.path, forType: .string)
                 }
             } label: { Image(systemName: "ellipsis") }
-            .menuStyle(.button).menuIndicator(.hidden).fixedSize()
+            .menuStyle(.button).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
         }
     }
 
@@ -229,7 +229,7 @@ struct EditorScreen: View {
                         }
                     }
                 } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.button).menuIndicator(.hidden).fixedSize()
+                .menuStyle(.button).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
             }
     }
 
@@ -283,7 +283,7 @@ struct HeaderBar<Content: View>: View {
                 if let extra { extra.padding(.bottom, 7) }
             }
                 .font(.callout)
-                .buttonStyle(.borderless)
+                .buttonStyle(.hand)
                 .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the code's I-beam
                 .padding(.horizontal, 14)
                 // A light tint of the code's own color keeps the header readable over passing code.
@@ -293,7 +293,7 @@ struct HeaderBar<Content: View>: View {
         } else {
             HStack(spacing: 8) { content }
                 .font(.callout)
-                .buttonStyle(.borderless)
+                .buttonStyle(.hand)
                 .padding(.horizontal, 14)
                 .frame(height: Design.direction == .studio ? 38 : 32)
                 .background(Color(nsColor: Design.direction == .monolith || Design.direction == .studio ? DiffTheme.background : DiffTheme.header))
@@ -395,9 +395,7 @@ struct ReviewFooter: View {
                 .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
         }
         .font(.callout)
-        .buttonStyle(.borderless)
-        .pointerStyle(.link)
-        .onContinuousHover { if case .active = $0 { NSCursor.pointingHand.set() } }
+        .buttonStyle(.hand)
         if floating {
             HStack {
                 Spacer()

@@ -47,7 +47,7 @@ struct ProjectTool: View {
                 ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { files.expanded = [] }
             }
             .font(.callout)
-            .buttonStyle(.borderless)
+            .buttonStyle(.hand)
             .foregroundStyle(.secondary)
             .padding(.leading, 12).padding(.trailing, 4)
             .frame(height: 28)

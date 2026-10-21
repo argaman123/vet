@@ -1117,9 +1117,19 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     /// Test aid: scrolls the right pane down `distance` points, a step per display frame, as a
     /// trackpad does, and reports how long each step's work took on the main thread (ms).
+    /// Frame times seen by the display link during a scroll test (gaps show dropped frames).
+    var debugFrames: [CFTimeInterval] = []
+    private var debugLink: CADisplayLink?
+    @objc private func debugFrame(_ link: CADisplayLink) { debugFrames.append(link.timestamp) }
+
     func debugScrollTest(distance: CGFloat, done: @escaping @MainActor ([Double]) -> Void) {
+        debugFrames = []
+        debugLink?.invalidate()
+        debugLink = displayLink(target: self, selector: #selector(debugFrame(_:)))
+        debugLink?.add(to: .main, forMode: .common)
         Task { @MainActor [weak self] in
             guard let self else { return }
+            defer { self.debugLink?.invalidate(); self.debugLink = nil }
             var costs: [Double] = []
             let clip = self.rightScroll.contentView
             let steps = 90
@@ -1288,6 +1298,7 @@ final class ClosureButton: NSButton {
 final class ChangeMapView: NSView {
     struct Mark { let rows: Range<Int>; let color: NSColor; let staged: Bool }
     var marks: [Mark] = [] { didSet { needsDisplay = true } }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) } // a click jumps there
     var total = 1 { didSet { needsDisplay = true } }
     var viewport: ClosedRange<CGFloat> = 0...0 { didSet { needsDisplay = true } }
     var onJump: ((Int) -> Void)?

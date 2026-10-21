@@ -351,7 +351,7 @@ struct ToolHeader<Content: View>: View {
     var body: some View {
         HStack(spacing: 2) { content }
             .font(.callout)
-            .buttonStyle(.borderless)
+            .buttonStyle(.hand)
             .controlSize(.small)
             .padding(.horizontal, 12)
             .frame(height: 26)

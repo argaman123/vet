@@ -159,6 +159,7 @@ private struct VariantHeader: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { open?.wrappedValue.toggle() }
+        .pointerStyle(open == nil ? nil : .link)
         .help(open.map { $0.wrappedValue ? "Fold \(title)" : "Unfold \(title)" } ?? "")
     }
 }
@@ -265,7 +266,7 @@ private struct FilterBar: View {
             }
         }
         .font(.callout)
-        .buttonStyle(.borderless)
+        .buttonStyle(.hand)
         .foregroundStyle(.secondary)
         .padding(.leading, 10).padding(.trailing, 4)
         .frame(height: 28)

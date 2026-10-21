@@ -246,7 +246,7 @@ enum Design {
     /// The pinned declarations (study): a band under the header (band), a breadcrumb in the header
     /// (crumbs), a second row inside the header's glass (pill), or one quiet line (quiet).
     enum Sticky: String { case band, crumbs, pill, quiet }
-    static var sticky: Sticky { Sticky(rawValue: UserDefaults.standard.string(forKey: "design.sticky") ?? "") ?? .pill }
+    static var sticky: Sticky { Sticky(rawValue: UserDefaults.standard.string(forKey: "design.sticky") ?? "") ?? .crumbs }
     /// The changes list's layout (study): the folder tree, a flat list, or files under folder headers.
     enum SidebarStyle: String { case current, tree, list, groups }
     static var sidebar: SidebarStyle { SidebarStyle(rawValue: UserDefaults.standard.string(forKey: "design.sidebar") ?? "") ?? .groups }

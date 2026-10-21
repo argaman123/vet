@@ -115,9 +115,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHook.on("scrolltest") { [weak self] args in
             // scrolltest <points>: scroll the diff down step by step; per-step cost to VET_SNAPSHOT_DIR/scroll.txt
             guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
-            self?.workspace.review.diffView.debugScrollTest(distance: CGFloat(Double(args.first ?? "") ?? 1500)) { costs in
+            let view = self?.workspace.review.diffView
+            view?.debugScrollTest(distance: CGFloat(Double(args.first ?? "") ?? 1500)) { costs in
                 let sorted = costs.sorted()
-                let line = String(format: "steps %d  median %.1f ms  p90 %.1f ms  max %.1f ms", costs.count, sorted[sorted.count / 2], sorted[sorted.count * 9 / 10], sorted.last ?? 0)
+                let frames = view?.debugFrames ?? []
+                let gaps = zip(frames.dropFirst(), frames).map { ($0 - $1) * 1000 }
+                let period = gaps.sorted().first.map { max($0, 1) } ?? 8.3
+                let dropped = gaps.reduce(0) { $0 + max(0, Int(($1 / period).rounded()) - 1) }
+                let line = String(format: "steps %d  median %.1f ms  p90 %.1f ms  max %.1f ms  |  frames %d, dropped %d, longest gap %.1f ms", costs.count, sorted[sorted.count / 2], sorted[sorted.count * 9 / 10], sorted.last ?? 0, frames.count, dropped, gaps.max() ?? 0)
                 try? (line + "\n" + costs.map { String(format: "%.1f", $0) }.joined(separator: " ")).write(toFile: dir + "/scroll.txt", atomically: true, encoding: .utf8)
             }
         }
