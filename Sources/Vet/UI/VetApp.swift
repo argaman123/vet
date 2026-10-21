@@ -161,6 +161,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? png.write(to: URL(fileURLWithPath: dir + "/web.png"))
             }
         }
+        SnapshotHook.on("select") { [weak self] args in
+            // select <line> <count>: select whole lines in the open editor file
+            guard let self, args.count == 2, let line = Int(args[0]), let count = Int(args[1]) else { return }
+            let pane = self.workspace.files.editorView.pane
+            if let a = pane.range(line: line, character: 0), let b = pane.range(line: line + count, character: 0) {
+                pane.setSelectedRange(NSRange(location: a.location, length: b.location - a.location))
+            }
+        }
         SnapshotHook.on("hovermore") { _ in HoverPresenter.shared.expand() } // F1 on a hover
         SnapshotHook.on("collapse") { [weak self] args in self?.workspace.review.setAllCollapsed(args.first != "off") }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩

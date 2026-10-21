@@ -290,3 +290,16 @@ extension CodeTextView {
     }
 }
 
+/// Draws a code pane's hint pills and lenses over its visible part, above the text and the
+/// selection. Never takes clicks: the pane under it handles them.
+final class DecorationOverlay: NSView {
+    weak var pane: CodeTextView?
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        guard let pane, let context = NSGraphicsContext.current?.cgContext else { return }
+        // Draw in the pane's coordinates.
+        context.translateBy(x: -frame.minX, y: -frame.minY)
+        pane.drawDecorations(in: dirtyRect.offsetBy(dx: frame.minX, dy: frame.minY))
+    }
+}

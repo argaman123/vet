@@ -25,8 +25,12 @@ final class CodeTextView: NSTextView {
     var onHover: ((Int, Int) -> Void)?
     private var hoverWork: DispatchWorkItem?
     /// Inline hints and end-of-line lenses (see CodeDecorations.swift).
-    var inlayHints: [InlayHintMark] = [] { didSet { if oldValue != inlayHints { applyHintGaps() } } }
-    var lenses: [LineLensMark] = [] { didSet { if oldValue != lenses { lensRectsByLine = [:]; needsDisplay = true } } }
+    var inlayHints: [InlayHintMark] = [] { didSet { if oldValue != inlayHints { applyHintGaps(); placeDecorationOverlay() } } }
+    var lenses: [LineLensMark] = [] { didSet { if oldValue != lenses { lensRectsByLine = [:]; needsDisplay = true; placeDecorationOverlay() } } }
+    /// The hint pills and lenses, drawn above the text so a selection doesn't cover them (TextKit
+    /// draws the selection over anything drawn in the background).
+    private var decorationOverlay: DecorationOverlay?
+    private var clipObserver: NSObjectProtocol?
     var onLensClick: ((LineLensMark, CodeTextView.Navigation) -> Void)?
     /// Where each line's lens parts were drawn. Kept per line: a draw often covers only a strip
     /// (scrolling draws what comes into view), and the rest must stay clickable.
@@ -137,7 +141,48 @@ final class CodeTextView: NSTextView {
         drawWordHighlights(in: rect)
         if !modMarks.isEmpty { drawModMarks(in: rect) }
         drawFoldRows(in: rect)
-        if !inlayHints.isEmpty || !lenses.isEmpty { drawDecorations(in: rect) }
+    }
+
+    // The decoration overlay covers what's on screen and is redrawn with the text.
+    override var needsDisplay: Bool {
+        get { super.needsDisplay }
+        set { super.needsDisplay = newValue; if newValue { decorationOverlay?.needsDisplay = true } }
+    }
+
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+        super.setNeedsDisplay(invalidRect)
+        if let o = decorationOverlay { o.setNeedsDisplay(convert(invalidRect, to: o)) }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        placeDecorationOverlay()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if let o = clipObserver { NotificationCenter.default.removeObserver(o) }
+        clipObserver = nil
+        guard let clip = superview as? NSClipView else { return }
+        clip.postsBoundsChangedNotifications = true
+        clipObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.placeDecorationOverlay() }
+        }
+    }
+
+    /// Keeps the overlay over the visible part of the text.
+    func placeDecorationOverlay() {
+        guard !inlayHints.isEmpty || !lenses.isEmpty else { decorationOverlay?.isHidden = true; return }
+        let overlay = decorationOverlay ?? {
+            let o = DecorationOverlay(frame: .zero)
+            o.pane = self
+            addSubview(o)
+            decorationOverlay = o
+            return o
+        }()
+        overlay.isHidden = false
+        let r = visibleRect.intersection(bounds)
+        if overlay.frame != r { overlay.frame = r; overlay.needsDisplay = true }
     }
 
     // A hint's gap is kerning on the character before it; typing there mustn't copy it.
