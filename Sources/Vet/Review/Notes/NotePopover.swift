@@ -25,7 +25,7 @@ final class NotePopover {
         p.animates = true
         let content = NoteList(notes: notes, line: line, close: { [weak p] in p?.close() }, actions: actions)
         p.contentViewController = NSHostingController(rootView: content)
-        p.show(relativeTo: rect, of: view, preferredEdge: .maxX)
+        p.show(relativeTo: rect, of: view, preferredEdge: view.isFlipped ? .maxY : .minY) // under the line (above near the bottom): the arrow on an edge, not wedged in a corner
         popover = p
     }
 
