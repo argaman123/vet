@@ -136,7 +136,7 @@ struct DiffHeader: View {
             // Claude's note on this file, one click away instead of a second bar.
             if Design.sticky == .crumbs { ScopeCrumbs(rows: scope) { review.scopeJump?($0) } }
             if let f = review.plan?.file(change.path) {
-                ClaudeNoteButton(file: f, key: "\(change.path)|\(f.summary)|\(doc.staging?.snapshotID ?? "")", review: review)
+                ClaudeNoteButton(file: f, key: ReviewModel.summaryKey(change.path, f.summary, doc.staging?.snapshotID ?? ""), review: review)
             }
             Spacer(minLength: 12)
             if review.diffDirty {
@@ -482,13 +482,19 @@ struct ClaudeNoteButton: View {
                 try? await Task.sleep(for: .seconds(0.35)) // once the header is in its window
                 if !Task.isCancelled { open = true }
             }
-            .onChange(of: open) { _, isOpen in if !isOpen { review.closedSummaries.insert(key) } }
+            .onChange(of: open) { _, isOpen in
+                guard !isOpen else { return }
+                review.closedSummaries.insert(key)
+                // Then Claude's note on the change you're on, if it has one.
+                if review.claudeNoteHere { DispatchQueue.main.async { review.diffView.showClaudeNoteHere() } }
+            }
             .foregroundStyle(.secondary)
             .help(file.summary)
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(file.summary).fixedSize(horizontal: false, vertical: true)
-                    if let notes = file.notes, !notes.isEmpty {
+                    // Notes on a line or a function show beside it in the diff; the rest here.
+                    if let notes = file.notes?.filter({ $0.line == nil && $0.symbol == nil }), !notes.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(Array(notes.enumerated()), id: \.offset) { _, n in
                                 VStack(alignment: .leading, spacing: 1) {

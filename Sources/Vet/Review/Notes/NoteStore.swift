@@ -21,6 +21,8 @@ struct ReviewNote: Codable, Identifiable, Hashable {
     var isClaude: Bool { fromClaude == true }
     /// Claude answering a note of yours, not pointing at a line on its own.
     var isReply: Bool { isClaude && question != nil }
+    /// Claude explaining a change, from the review order's notes (not stored with your notes).
+    var isExplanation: Bool { id.hasPrefix("plan:") }
 }
 
 /// Notes for one project, kept in its .vet folder (which git ignores).

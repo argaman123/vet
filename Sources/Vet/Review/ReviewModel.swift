@@ -490,8 +490,31 @@ final class ReviewModel {
 
     // MARK: Review notes
 
-    /// Notes on the open file, each re-found by its line's text if the file moved under it.
+    /// Notes on the open file: yours and Claude's (each re-found by its line's text if the file
+    /// moved under it), and Claude's explanations of its changes from the review order.
     func notesForOpenFile() -> [ReviewNote] {
+        guard let doc = diff, let staging = doc.staging else { return [] }
+        return storedNotesForOpenFile() + explanations(doc.change.path, staging.work)
+    }
+
+    /// The review order's notes on a file's functions and lines, as Claude's notes beside them.
+    /// A note with only a symbol goes on the first line that names it.
+    func explanations(_ path: String, _ work: TextLines) -> [ReviewNote] {
+        guard let file = plan?.file(path), let notes = file.notes else { return [] }
+        return notes.enumerated().compactMap { i, n in
+            let line = n.line.flatMap { $0 >= 0 && $0 < work.count ? $0 : nil } ?? n.symbol.flatMap { sym in
+                work.lines.firstIndex { $0.text.contains(sym) }
+            }
+            guard let line else { return nil }
+            var note = ReviewNote(path: path, left: false, line: line, lineText: String(work.lines[line].text),
+                                  text: n.symbol.map { "\($0): \(n.text)" } ?? n.text)
+            note.id = "plan:\(path):\(i)"
+            note.fromClaude = true
+            return note
+        }
+    }
+
+    private func storedNotesForOpenFile() -> [ReviewNote] {
         guard let notes, let doc = diff, let staging = doc.staging else { return [] }
         return notes.notes.filter { $0.path == doc.change.path }.map { n in
             var n = n
@@ -629,6 +652,15 @@ final class ReviewModel {
     /// File summaries you closed this session (file, summary and contents): they stay closed.
     @ObservationIgnored var closedSummaries: Set<String> = []
 
+    /// The key a file's summary is remembered by: the file, the summary and the file's contents.
+    static func summaryKey(_ path: String, _ summary: String, _ snapshot: String) -> String { "\(path)|\(summary)|\(snapshot)" }
+
+    /// The open file's summary will open by itself (you haven't closed it since it last changed).
+    func summaryWillOpen() -> Bool {
+        guard let doc = diff, let file = plan?.file(doc.change.path) else { return false }
+        return !closedSummaries.contains(Self.summaryKey(doc.change.path, file.summary, doc.staging?.snapshotID ?? ""))
+    }
+
     /// Wakes the Claude chat listening on this project (true), or nil/false when none is.
     @ObservationIgnored var onNotesSent: (() -> Bool)?
 
@@ -747,6 +779,20 @@ final class ReviewModel {
 
     /// The next file with changes left to review, after the open one in the sidebar's order,
     /// wrapping around (so after you check a fix up the list, you're taken back down to where you were).
+    /// ⌘↑ at the first change or ⌘↓ at the last, pressed twice: the previous or next file in the
+    /// sidebar's order, at its last or first change.
+    func stepFile(forward: Bool) {
+        let paths = sidebarOrder.filter { p in changes.contains { $0.path == p } }
+        guard let here = selectedPath.flatMap({ paths.firstIndex(of: $0) }) else { return }
+        let next = here + (forward ? 1 : -1)
+        guard paths.indices.contains(next) else { link?.flash(forward ? "That was the last file." : "That was the first file."); return }
+        diffView.landOnLast = !forward
+        if select(paths[next]) { expandAncestors(of: paths[next]); version += 1 }
+    }
+
+    /// Whether the change you're on has a note from Claude (⌘← shows it, ⌘→ hides it).
+    var claudeNoteHere = false
+
     func nextUnreviewed() {
         let byPath = Dictionary(changes.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
         let listed = sidebarOrder.compactMap { byPath[$0] }

@@ -83,6 +83,8 @@ extension AppDelegate {
         add("commit", "Ask Claude to Commit Reviewed Files") { review.askClaudeToCommit() }
         add("sendNotes", "Send Notes to Claude") { review.sendNotes() }
         add("addNote", "Add Note") { if review.diff != nil { review.diffView.writeNoteHere() } }
+        add("showClaudeNote", "Show Claude's Note on This Change") { review.diffView.showClaudeNoteHere() }
+        add("hideClaudeNote", "Hide Claude's Note") { review.diffView.hideClaudeNote() }
         add("connectClaude", "Connect Claude Code…") { [unowned self] in connectClaudeCode() }
         add("clearReviewOrder", "Clear Claude's Review Order") { review.setPlan(nil) }
         add("rules", "Unimportant Files…") { [unowned self] in ui.editingRules = true }

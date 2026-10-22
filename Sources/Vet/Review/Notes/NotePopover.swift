@@ -79,7 +79,7 @@ private struct NoteItem: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 5) {
                 if claude { Image(systemName: "sparkle") }
-                Text(note?.isReply == true ? "Claude replied" : claude ? "Claude" : note == nil ? "New note" : "Your note")
+                Text(note?.isExplanation == true ? "Claude on this change" : note?.isReply == true ? "Claude replied" : claude ? "Claude" : note == nil ? "New note" : "Your note")
                 Text("· line \(line + 1)").foregroundStyle(.tertiary)
             }
             .font(.caption.weight(.medium))
@@ -118,7 +118,9 @@ private struct NoteItem: View {
             }
             HStack {
                 Spacer()
-                if claude {
+                if note?.isExplanation == true {
+                    Text("\u{2318}\u{2192} hides, \u{2318}\u{2190} shows").font(.caption).foregroundStyle(.tertiary)
+                } else if claude {
                     Button("Dismiss") { if let note { actions.delete(note.id) }; close() }
                 } else if editing {
                     let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

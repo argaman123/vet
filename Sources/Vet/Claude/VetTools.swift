@@ -14,8 +14,9 @@ enum VetTools {
             },
             .init("set_review_plan", """
                 Tell Vet the order the user should review the changed files in, with a short summary of each \
-                (what changed and why it matters) and optional notes on key functions or lines. Vet lists the \
-                files in this order and shows each summary when the file opens. Paths are relative to the \
+                (what changed and why it matters) and notes on key functions or lines. Vet lists the files \
+                in this order, shows each summary when the file opens, and shows each note beside its change \
+                (opened when the user arrives there). Paths are relative to the \
                 project root. Call again to replace the plan; an empty files list clears it.
                 """,
                   schema: ["type": "object", "required": ["files"], "properties": [

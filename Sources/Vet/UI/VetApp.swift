@@ -547,6 +547,14 @@ struct VetCommands: Commands {
             Button("Next Unreviewed File") { app.run("app.nextUnreviewed") }
                 .keyboardShortcut("u", modifiers: [.command, .option])
             Divider()
+            // Claude's note on the change you're on opens when you land there; these hide and bring it back.
+            // (Only when there is one: otherwise ⌘← and ⌘→ keep their meaning in text.)
+            Button("Show Claude's Note") { app.run("app.showClaudeNote") }
+                .keyboardShortcut(.leftArrow, modifiers: .command)
+                .disabled(!inDiff || !app.workspace.review.claudeNoteHere)
+            Button("Hide Claude's Note") { app.run("app.hideClaudeNote") }
+                .keyboardShortcut(.rightArrow, modifiers: .command)
+                .disabled(!inDiff || !app.workspace.review.claudeNoteHere)
             // A note on the change you're on (or the selected line); ⌘↩ in it sends it to Claude.
             Button("Add Note") { app.run("app.addNote") }
                 .keyboardShortcut("n")

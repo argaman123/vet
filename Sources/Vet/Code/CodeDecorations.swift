@@ -79,8 +79,18 @@ extension CodeTextView {
     /// Attribute changes (gaps, colors) invalidate laid-out lines; lay the visible ones out again
     /// now, or they stay blank until the next scroll.
     func relayoutVisibleText() {
+        layoutAllText()
         textLayoutManager?.textViewportLayoutController.layoutViewport()
         needsDisplay = true
+    }
+
+    /// Lays out the whole text, so every line's position is exact. TextKit 2 otherwise lays out
+    /// only what's near the screen and estimates the rest: a jump far down (a change, a usage, a
+    /// note) then draws the wrong lines, or none, until you scroll. Cheap for source files; very
+    /// large texts keep the estimates.
+    func layoutAllText() {
+        guard let tlm = textLayoutManager, let tcm = tlm.textContentManager, (textStorage?.length ?? 0) < 1_500_000 else { return }
+        tlm.ensureLayout(for: tcm.documentRange)
     }
 
     /// The frame of a character range in this view's coordinates (laid-out text only).

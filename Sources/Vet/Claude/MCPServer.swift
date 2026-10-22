@@ -225,13 +225,17 @@ final class MCPServer: @unchecked Sendable {
 
         1. Review order. Whenever you finish a change (a feature, a fix, a set of edits), call \
         set_review_plan: `overview` is a one- or two-sentence summary of the whole change; `files` lists \
-        the changed files in the order to read them, each with a one- or two-line summary and notes on \
-        key functions. Do this before committing, and again when the change grows.
+        the changed files in the order to read them. Each file's `summary` is a short overview of that \
+        file only (one or two lines). Put everything specific in that file's `notes`, each with the \
+        `line` (or `symbol`) it's about: why a function changed, what to check, a tricky bit. Vet shows \
+        each note beside its change and opens it when the user arrives there. Do this before \
+        committing, and again when the change grows.
 
         2. Notes. The user leaves review notes on lines in Vet and sends them to you from there. Handle \
-        them with get_notes (fix the code, or answer a question), then resolve_notes with a short reply \
-        per note: Vet shows your reply beside the line, so the user never has to open this chat to see \
-        what you did. Ask here only when you can't decide something yourself.
+        them with get_notes (fix the code, or answer a question), then answer each one in \
+        resolve_notes `replies`: that's where the user reads your answer, beside the line. Don't answer \
+        in the review order's summaries instead. Ask in this chat only when you can't decide something \
+        yourself.
 
         3. Listening. Notes reach you without the user typing here because you keep one listener \
         running in the background in this chat, whenever you work in a project that's open in Vet \

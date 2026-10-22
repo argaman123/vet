@@ -30,6 +30,12 @@ struct RibbonDiffView: NSViewRepresentable {
         v.onHover = { [weak model] line, character in model?.hover(line: line, character: character) }
         v.onFoldClick = { [weak model] id in model?.expandFold(id) }
         v.onFileDone = { [weak model] in model?.nextUnreviewed() }
+        v.onFileStep = { [weak model] forward in model?.stepFile(forward: forward) }
+        v.onEdgeHint = { [weak model] forward in
+            model?.link?.flash(forward ? "Last change in this file. \u{2318}\u{2193} again for the next file." : "First change in this file. \u{2318}\u{2191} again for the previous file.")
+        }
+        v.summaryOpens = { [weak model] in model?.summaryWillOpen() ?? false }
+        v.onClaudeNoteHere = { [weak model] here in if model?.claudeNoteHere != here { model?.claudeNoteHere = here } }
         v.onApproveKey = { [weak model] in model?.approveAndNext() }
         v.onScope = { [weak model] rows in model?.scope = rows.map { ($0.line, $0.text) } }
         model.scopeJump = { [weak v] line in v?.showScope(line: line) }
@@ -185,6 +191,17 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private var openedChange: (row: Int, count: Int)?
     /// Every change in the file is reviewed: move on to the next file.
     var onFileDone: (() -> Void)?
+    /// ⌘↑/⌘↓ pressed again at the first/last change: go to the previous/next file.
+    var onFileStep: ((Bool) -> Void)?
+    var onEdgeHint: ((Bool) -> Void)?
+    /// The next file opens at its last change (you came up from the file below), not its first.
+    var landOnLast = false
+    /// The direction ⌘↑/⌘↓ last ran out of changes in, and when: a second press moves to the next file.
+    private var edge: (forward: Bool, at: Date)?
+    /// Whether the file's summary is about to open by itself (then the change's note waits for it).
+    var summaryOpens: (() -> Bool)?
+    /// Whether the change you're on has Claude's note (for ⌘← and ⌘→).
+    var onClaudeNoteHere: ((Bool) -> Void)?
     /// Space in a read-only pane.
     var onApproveKey: (() -> Void)?
     var shownVersion = -1
@@ -403,6 +420,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             unifiedHunks = [:]
             rightText.textStorage?.setAttributedString(rightAttr)
         }
+        leftText.layoutAllText() // exact positions before anything scrolls (see layoutAllText)
+        rightText.layoutAllText()
 
         var leftBands: [CodeTextView.Band] = [], rightBands: [CodeTextView.Band] = []
         var leftMarkers: [(Int, NSColor)] = [], rightMarkers: [(Int, NSColor)] = []
@@ -505,13 +524,17 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             focusedID = nil
             leftScroll.contentView.scroll(to: NSPoint(x: 0, y: -leftScroll.contentInsets.top))
             rightScroll.contentView.scroll(to: NSPoint(x: 0, y: -rightScroll.contentInsets.top))
-            if let first = layout.segments.first(where: { if case .hunk = $0.kind { true } else { false } }) {
+            let isHunk: (DiffLayout.Segment) -> Bool = { if case .hunk = $0.kind { true } else { false } }
+            if let first = landOnLast ? layout.segments.last(where: isHunk) : layout.segments.first(where: isHunk) {
                 var rows = first.right
                 if case .hunk(let id) = first.kind, let r = unifiedHunks[id] { rows = r }
+                if case .hunk(let id) = first.kind { focusedID = id }
                 let count = max(rows.count, first.left.count)
                 openedChange = (rows.lowerBound, count)
                 reveal(row: rows.lowerBound, count: count, animated: false)
+                landed(quiet: summaryOpens?() ?? false) // the summary first; closing it opens the note
             }
+            landOnLast = false
         }
         leftScroll.reflectScrolledClipView(leftScroll.contentView)
         rightScroll.reflectScrolledClipView(rightScroll.contentView)
@@ -1174,6 +1197,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// Brings a change into the part of the pane the glass doesn't cover: a third of the way down
     /// that clear area, or, when the change is tall, its first lines just under the header.
     private func reveal(row start: Int, count: Int, animated: Bool = true) {
+        workPane.layoutAllText()
+        headPane.layoutAllText()
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
         let i = scroll.contentInsets, lh = DiffTheme.lineHeight
         let clear = scroll.contentView.bounds.height - i.top - i.bottom
@@ -1331,6 +1356,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let count = max(rows.count, next.left.count)
         reveal(row: rows.lowerBound, count: count)
         syncGutter()
+        landed()
         flushHeldMarks() // at once when the jump didn't glide (reduced motion)
     }
 
@@ -1354,11 +1380,51 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let target = here.map { h in forward ? spans.first { $0.0 > h } : spans.last { $0.0 < h } }
             ?? (forward ? spans.first { $0.0 > current + 1 } : spans.last { $0.0 < current - 1 })
         if let target {
+            edge = nil
             focusedID = target.2
             reveal(row: target.0, count: target.1)
             syncGutter()
+            landed()
+        } else if let e = edge, e.forward == forward, Date().timeIntervalSince(e.at) < 4 {
+            edge = nil
+            onFileStep?(forward)
+        } else {
+            edge = (forward, Date())
+            onEdgeHint?(forward)
         }
     }
+
+    // MARK: Claude's notes on the change you land on
+
+    /// Claude's notes (explanations, replies, pointers) on a change's lines.
+    private func claudeNotes(onChange id: Int) -> [ReviewNote] {
+        guard let hunk = shownStaging?.hunks.first(where: { $0.id == id }) else { return [] }
+        let lines = hunk.work.isEmpty ? hunk.work.lowerBound..<(hunk.work.lowerBound + 1) : hunk.work
+        return shownNotes.filter { $0.isClaude && lines.contains($0.line) }.sorted { $0.line < $1.line }
+    }
+
+    /// You arrived at a change: Claude's note on it opens beside it (⌘→ closes it, ⌘← brings it back).
+    private func landed(quiet: Bool = false) {
+        NotePopover.shared.close()
+        let notes = focusedID.map(claudeNotes(onChange:)) ?? []
+        onClaudeNoteHere?(!notes.isEmpty)
+        guard !notes.isEmpty, !quiet else { return }
+        let id = focusedID
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in // once the glide has landed
+            guard let self, self.focusedID == id else { return }
+            self.showClaudeNoteHere()
+        }
+    }
+
+    /// ⌘←: Claude's note on the change you're on.
+    func showClaudeNoteHere() {
+        guard let id = focusedID ?? currentChangeID(), let note = claudeNotes(onChange: id).first,
+              let row = workRow(ofFileLine: note.line) else { return }
+        showNote(id: note.id, rect: gutter.noteRect(row))
+    }
+
+    /// ⌘→: closes it.
+    func hideClaudeNote() { NotePopover.shared.close() }
 }
 
 /// A button that runs a closure.

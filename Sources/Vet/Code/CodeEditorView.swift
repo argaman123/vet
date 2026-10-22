@@ -128,6 +128,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
         self.language = language
         let display = (0..<text.count).map { DiffLayout.DisplayLine.code($0) }
         textView.textStorage?.setAttributedString(CodeText.attributed(text, display, language))
+        textView.layoutAllText()
         textView.undoManager?.removeAllActions(withTarget: textView.textStorage as Any)
         gutter.numbers = (0..<max(1, text.count)).map { $0 }
         sizeDocument(lineCount: max(1, text.count))
@@ -138,6 +139,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     }
 
     func scrollTo(line: Int, character: Int = 0) {
+        textView.layoutAllText()
         let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - scroll.contentView.bounds.height / 3
         scroll.contentView.scroll(to: NSPoint(x: 0, y: clampY(y)))
         scroll.reflectScrolledClipView(scroll.contentView)
@@ -152,6 +154,7 @@ final class CodeEditorView: NSView, NSTextViewDelegate {
     /// Shows a line a third of the way down with a full-row band, and marks `columns` on it, without
     /// taking focus or moving the selection (for previews).
     func reveal(line: Int, columns: Range<Int>?) {
+        textView.layoutAllText()
         let y = DiffTheme.inset.height + CGFloat(line) * DiffTheme.lineHeight - scroll.contentView.bounds.height / 3
         scroll.contentView.scroll(to: NSPoint(x: 0, y: clampY(y)))
         scroll.reflectScrolledClipView(scroll.contentView)
