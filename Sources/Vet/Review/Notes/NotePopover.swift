@@ -110,7 +110,7 @@ private struct NoteItem: View {
             // Where a sent note goes: the Claude chat that's listening, or nowhere yet.
             if !claude, editing || note?.sent != true {
                 let listening = NotePopover.isListening()
-                Label(listening ? "Claude is listening: Send wakes it to fix this." : "No Claude chat is listening: tell Claude \u{201C}watch Vet\u{201D} once.",
+                Label(listening ? "Claude is listening: Send wakes it to fix this." : "No Claude chat is listening: type \u{201C}vet\u{201D} once in your Claude chat.",
                       systemImage: listening ? "dot.radiowaves.left.and.right" : "moon.zzz")
                     .font(.caption)
                     .foregroundStyle(.tertiary)

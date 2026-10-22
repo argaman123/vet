@@ -284,22 +284,45 @@ final class ReviewModel {
     /// Works out every changed file's sections (in the background, file by file) and, the first
     /// time Vet opens a project, takes what git already has staged as reviewed.
     private func scanUnits() async {
-        guard let repo, let store else { return }
+        guard let repo, let store, let root else { return }
+        let started = Date()
         scanSerial += 1
         let serial = scanSerial
         let seed = store.isNew && units.isEmpty
+        let cache = UnitsCache(root: root)
+        let keys = await repo.unitKeys(changes)
+        guard serial == scanSerial else { return }
+        // Files unchanged since last time: their sections at once, so your marks show on open.
         var fresh: [String: [String]] = [:]
+        var stale: [FileChange] = []
         for c in changes {
+            if !seed, let key = keys[c.path], let hit = cache.units(c.path, key: key) { fresh[c.path] = hit } else { stale.append(c) }
+        }
+        if !fresh.isEmpty {
+            for (path, u) in fresh { units[path] = u }
+            version += 1
+            autoReviewUnimportant()
+        }
+        // The rest, one by one, each showing as soon as it's known.
+        var lastShown = Date()
+        for c in stale {
             let (u, staged) = await repo.reviewUnits(c)
             guard serial == scanSerial else { return } // a newer refresh took over
             fresh[c.path] = u
+            units[c.path] = u
+            if let key = keys[c.path] { cache.set(c.path, key: key, units: u) }
             if seed, !staged.isEmpty { store.set(c.path, Array(staged), reviewed: true) }
             store.prune(c.path, keeping: u)
+            if Date().timeIntervalSince(lastShown) > 0.12 { version += 1; lastShown = Date() }
         }
         units = fresh
         version += 1
+        cache.save(keeping: Set(changes.map(\.path)))
         if seed { store.save() }
         autoReviewUnimportant()
+        if SnapshotHook.isTesting, let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] {
+            try? "scan: \(changes.count) files (\(stale.count) diffed) in \(Int(Date().timeIntervalSince(started) * 1000)) ms".write(toFile: dir + "/scan.txt", atomically: true, encoding: .utf8)
+        }
     }
 
     /// Marks (or unmarks) whole files: every section in them.
@@ -621,7 +644,7 @@ final class ReviewModel {
         noteChanged()
         let woke = onNotesSent?() ?? false
         let what = chosen.count == 1 ? "Note" : "\(chosen.count) notes"
-        link?.flash(woke ? "\(what) sent to Claude." : "\(what) waiting for Claude. No Claude chat is listening: tell Claude \u{201C}watch Vet\u{201D} once.")
+        link?.flash(woke ? "\(what) sent to Claude." : "\(what) waiting for Claude. No Claude chat is listening: type \u{201C}vet\u{201D} once in your Claude chat.")
     }
 
     /// What a listening chat is told when your notes are waiting for it; nil when none are.
@@ -718,8 +741,17 @@ final class ReviewModel {
         if due.contains(where: { $0.path == diff?.change.path }) { diffVersion += 1 }
     }
 
+    /// The changed files as the sidebar lists them right now (review order first, then its
+    /// sections), set by the sidebar: ⌘↩ moves through files in this order.
+    @ObservationIgnored var sidebarOrder: [String] = []
+
+    /// The next file with changes left to review, after the open one in the sidebar's order,
+    /// wrapping around (so after you check a fix up the list, you're taken back down to where you were).
     func nextUnreviewed() {
-        let files = FileTreeNode.filesInOrder(tree)
+        let byPath = Dictionary(changes.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+        let listed = sidebarOrder.compactMap { byPath[$0] }
+        let shown = Set(listed.map(\.path))
+        let files = listed + FileTreeNode.filesInOrder(tree).filter { !shown.contains($0.path) }
         guard !files.isEmpty else { return }
         let start = files.firstIndex { $0.path == selectedPath }.map { $0 + 1 } ?? 0
         let ordered = files[start...] + files[..<start]

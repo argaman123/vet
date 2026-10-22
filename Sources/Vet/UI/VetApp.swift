@@ -219,6 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? (out + "\nhidden=\(NSApp.isHidden) active=\(NSApp.isActive)").write(toFile: dir + "/windows.txt", atomically: true, encoding: .utf8)
         }
         SnapshotHook.on("hovermore") { _ in HoverPresenter.shared.expand() } // F1 on a hover
+        SnapshotHook.on("command") { args in if let id = args.first { CommandRegistry.shared.run(id) } } // command <id>: as its menu item or key would
         SnapshotHook.on("collapse") { [weak self] args in self?.workspace.review.setAllCollapsed(args.first != "off") }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑
@@ -546,6 +547,10 @@ struct VetCommands: Commands {
             Button("Next Unreviewed File") { app.run("app.nextUnreviewed") }
                 .keyboardShortcut("u", modifiers: [.command, .option])
             Divider()
+            // A note on the change you're on (or the selected line); ⌘↩ in it sends it to Claude.
+            Button("Add Note") { app.run("app.addNote") }
+                .keyboardShortcut("n")
+                .disabled(!inDiff)
             // Every note you haven't sent yet, in one draft (a single note sends from its popover, ⌘↩).
             Button("Send Notes to Claude") { app.run("app.sendNotes") }
                 .keyboardShortcut(.return, modifiers: [.command, .option])

@@ -235,6 +235,20 @@ actor GitRepo {
     /// What review marks attach to in a file: each section by its content, or the whole file
     /// (by its bytes) when there are no sections to show (binary, a symlink, a file that only
     /// changed mode…). `staged`: the ones git's index already has, for seeding Vet's own marks.
+    /// A cheap fingerprint per file of what its sections depend on: HEAD's commit and the working
+    /// file's size and modification time (no diff). Same key, same sections.
+    func unitKeys(_ changes: [FileChange]) -> [String: String] {
+        let head = (try? run(["rev-parse", "--verify", "-q", "HEAD"])).map { String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) } ?? "none"
+        var out: [String: String] = [:]
+        for c in changes {
+            let a = try? FileManager.default.attributesOfItem(atPath: root.appendingPathComponent(c.path).path)
+            let size = (a?[.size] as? NSNumber)?.int64Value ?? -1
+            let time = (a?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            out[c.path] = "\(head)|\(c.kind)|\(c.modeWork)|\(c.origPath ?? "")|\(size)|\(time)"
+        }
+        return out
+    }
+
     func reviewUnits(_ change: FileChange) -> (units: [String], staged: Set<String>) {
         if case .document(let doc) = loadDiff(change), let staging = doc.staging, !staging.hunks.isEmpty {
             let fps = staging.fingerprints()

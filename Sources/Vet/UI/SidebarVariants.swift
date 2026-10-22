@@ -51,6 +51,16 @@ struct ChangesVariant: View {
         let rest = visible.filter { !planned.contains($0.path) }
         let unimportant = rest.filter { review.isMarked($0.path) }
         let important = rest.filter { !review.isMarked($0.path) }
+        // The order the rows appear in, top to bottom: ⌘↩ moves through files in it.
+        let byPath: ([FileChange]) -> [String] = { $0.map(\.path).sorted() }
+        let middle: [String] = switch style {
+        case .tree, .current: FileTreeNode.filesInOrder(FileTreeNode.build(important)).map(\.path)
+        case .list: byPath(important.filter { review.stage(of: $0) != .staged }) + byPath(important.filter { review.stage(of: $0) == .staged })
+        case .groups: Dictionary(grouping: important) { ($0.path as NSString).deletingLastPathComponent }
+            .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }.flatMap { byPath($0.value) }
+        }
+        let tail = style == .tree ? FileTreeNode.filesInOrder(FileTreeNode.build(unimportant)).map(\.path) : byPath(unimportant)
+        let order = planPaths + middle + tail
         return List(selection: Binding(get: { row ?? review.selectedPath }, set: { path in
             row = path
             if let path, review.changes.contains(where: { $0.path == path }) { app.showDiff(path) }
@@ -119,6 +129,8 @@ struct ChangesVariant: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .quietSelection(row ?? review.selectedPath)
+        .onAppear { review.sidebarOrder = order }
+        .onChange(of: order) { _, o in review.sidebarOrder = o }
     }
 
     /// Files as one flat list: the name, then its folder in a quiet tone.

@@ -112,6 +112,9 @@ struct ChangesTool: View {
             }
         }
         .onChange(of: review.selectedPath) { _, path in row = path }
+        // The order the rows appear in: ⌘↩ moves through files in it.
+        .onAppear { review.sidebarOrder = planned.map(\.path) + FileTreeNode.filesInOrder(rest).map(\.path) }
+        .onChange(of: planned.map(\.path) + FileTreeNode.filesInOrder(rest).map(\.path)) { _, o in review.sidebarOrder = o }
         // Rebuilt lists never animate row moves: AppKit's outline view leaves moved rows drawn
         // over each other when a refresh reorders them mid-animation.
         .transaction { $0.disablesAnimations = true; $0.animation = nil }

@@ -64,3 +64,27 @@ final class ReviewStore {
         if let raw = try? JSONEncoder().encode(data) { try? raw.write(to: file, options: .atomic) }
     }
 }
+
+/// Each changed file's sections as last computed, with the key they were computed for (see
+/// GitRepo.unitKeys), kept in the project's .vet folder: opening Vet shows your review marks at
+/// once, and only files that changed since are diffed again.
+@MainActor
+final class UnitsCache {
+    private struct Entry: Codable { var key: String; var units: [String] }
+    private var entries: [String: Entry] = [:]
+    private let file: URL
+
+    init(root: URL) {
+        file = ProjectFolder.url(root, "units.json")
+        if let raw = try? Foundation.Data(contentsOf: file), let decoded = try? JSONDecoder().decode([String: Entry].self, from: raw) { entries = decoded }
+    }
+
+    func units(_ path: String, key: String) -> [String]? { entries[path].flatMap { $0.key == key ? $0.units : nil } }
+    func set(_ path: String, key: String, units: [String]) { entries[path] = Entry(key: key, units: units) }
+
+    /// Writes the cache, keeping only the files still changed.
+    func save(keeping paths: Set<String>) {
+        entries = entries.filter { paths.contains($0.key) }
+        if let raw = try? JSONEncoder().encode(entries) { try? raw.write(to: file, options: .atomic) }
+    }
+}

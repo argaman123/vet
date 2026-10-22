@@ -119,6 +119,21 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     func debugClickNote(_ id: String, row: Int) { showNote(id: id, rect: gutter.noteRect(row)) }
 
+    /// ⌘N: a note on the change you're on (at its first line), or on the first selected line when
+    /// you've selected some, or else on the line at the top of the view.
+    func writeNoteHere() {
+        guard let staging = shownStaging, staging.work.count > 0 else { return }
+        let fileLine: (Int) -> Int? = { row in self.workRows.first { $0.value == row }?.key }
+        let selected = workPane.selectedRange()
+        if selected.length > 0, let line = fileLine(workPane.displayLines(of: selected).lowerBound) { return writeNote(line: line) }
+        if let id = focusedID ?? currentChangeID(), let hunk = staging.hunks.first(where: { $0.id == id }) {
+            return writeNote(line: min(hunk.work.lowerBound, staging.work.count - 1))
+        }
+        let scroll = rightScroll
+        let top = Int((scroll.contentView.bounds.minY + scroll.contentInsets.top - DiffTheme.inset.height) / DiffTheme.lineHeight)
+        if let line = (max(0, top)..<(max(0, top) + 60)).lazy.compactMap(fileLine).first { writeNote(line: line) }
+    }
+
     /// Scrolls to a note's line and opens it (Show on Claude's banner).
     func revealNote(_ id: String) {
         guard let note = shownNotes.first(where: { $0.id == id }), let row = workRow(ofFileLine: note.line) else { return }
