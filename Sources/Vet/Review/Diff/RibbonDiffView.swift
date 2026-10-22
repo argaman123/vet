@@ -380,7 +380,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         var states: [Int: StageState] = [:]
         for h in staging.hunks { states[h.id] = pendingHunks[h.id] ?? .unstaged } // Vet's own marks
         // Reviewed sections fold away when you ask for it (View ▸ Fold Reviewed Changes).
-        let reviewed = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? false
+        let reviewed = false // reviewed changes never fold (they're the code as it now is)
             ? Set(staging.hunks.filter { states[$0.id] == .staged }.map(\.id)) : []
         let layout = DiffLayout(headCount: staging.head.count, workCount: staging.work.count,
                                 hunks: staging.hunks, folding: folding, expanded: expanded,
@@ -518,7 +518,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             leftScroll.contentView.scroll(to: keepLeft)
             rightScroll.contentView.scroll(to: keepRight)
             // (When reviewed changes fold, the rows move, so the anchor puts the view back on the same code.)
-            let folds = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? false
+            let folds = false
             if let anchor, !(sameText && !folds) { restore(anchor, staging: staging, layout: layout) }
         } else {
             focusedID = nil

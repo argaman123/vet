@@ -48,10 +48,6 @@ final class ReviewModel {
     private(set) var diff: DiffDocument?
     private(set) var diffVersion = 0
     /// Fold unchanged regions (remembered across files and launches).
-    /// Reviewed changes fold to one line (off by default: they stay, in a quieter color).
-    var foldReviewed = UserDefaults.standard.object(forKey: "foldReviewed") as? Bool ?? false {
-        didSet { UserDefaults.standard.set(foldReviewed, forKey: "foldReviewed"); diffVersion += 1 }
-    }
     var folding = UserDefaults.standard.object(forKey: "foldUnchanged") as? Bool ?? true {
         didSet { UserDefaults.standard.set(folding, forKey: "foldUnchanged"); expandedFolds = []; diffVersion += 1 }
     }
@@ -433,12 +429,12 @@ final class ReviewModel {
         diffVersion += 1
     }
 
-    /// Everything folded: unchanged lines and reviewed changes, none opened by hand.
-    var allCollapsed: Bool { folding && foldReviewed && expandedFolds.isEmpty }
+    /// Every unchanged region folded, none opened by hand. (Reviewed changes never fold: they're
+    /// the code as it now is, so they stay, only quieter.)
+    var allCollapsed: Bool { folding && expandedFolds.isEmpty }
 
-    /// Folds every unchanged region and reviewed change, or opens them all.
+    /// Folds every unchanged region, or opens them all.
     func setAllCollapsed(_ collapsed: Bool) {
-        foldReviewed = collapsed
         folding = collapsed
         expandedFolds = []
         diffVersion += 1

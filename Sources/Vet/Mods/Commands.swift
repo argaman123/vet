@@ -98,7 +98,6 @@ extension AppDelegate {
         add("fold.toggle", "Fold or Show Unchanged Lines", listed: false) { review.folding.toggle() }
         add("fold.on", "Fold Unchanged Lines") { review.folding = true }
         add("fold.off", "Show Unchanged Lines") { review.folding = false }
-        add("foldReviewed.toggle", "Fold Reviewed Changes") { review.foldReviewed.toggle() }
         add("collapseAll", "Collapse All") { review.setAllCollapsed(true) }
         add("expandAll", "Expand All") { review.setAllCollapsed(false) }
         add("layout.unified", "Unified Diff") { review.unified = true }

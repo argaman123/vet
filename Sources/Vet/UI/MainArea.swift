@@ -161,7 +161,7 @@ struct DiffHeader: View {
                 .help("Previous Change (⌘↑)")
             Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down") }
                 .help("Next Change (⌘↓)")
-            // Fold or open every unchanged region and reviewed change at once (its icon shows what it does).
+            // Fold or open every unchanged region at once (its icon shows what it does).
             Button { review.setAllCollapsed(!review.allCollapsed) } label: {
                 Image(systemName: review.allCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
             }

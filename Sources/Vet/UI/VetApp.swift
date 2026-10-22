@@ -510,8 +510,7 @@ struct VetCommands: Commands {
             Button(app.workspace.run.outputVisible ? "Hide Run Output" : "Show Run Output") { app.run("app.output.toggle") }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
             Button(app.workspace.review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { app.run("app.fold.toggle") }
-            Toggle("Fold Reviewed Changes", isOn: Bindable(app.workspace.review).foldReviewed)
-            // As in Xcode: fold or open everything (unchanged lines and reviewed changes).
+            // As in Xcode: fold or open every unchanged region.
             Button("Collapse All") { app.run("app.collapseAll") }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
             Button("Expand All") { app.run("app.expandAll") }

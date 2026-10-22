@@ -453,12 +453,13 @@ final class RibbonGutterView: NSView {
         }
         // Line numbers.
         let attrs: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumber]
-        // Numbers on a changed row sit on its color: brighter, so they stay readable.
+        // Numbers on a changed row sit on its color: brighter, so they stay readable. A reviewed
+        // change has only a faint wash, so its numbers stay plain.
         var changedLeft = IndexSet(), changedRight = IndexSet()
         if mode == .unified {
-            for r in unifiedRanges.values { changedLeft.insert(integersIn: r); changedRight.insert(integersIn: r) }
+            for (id, r) in unifiedRanges where states[id] != .staged { changedLeft.insert(integersIn: r); changedRight.insert(integersIn: r) }
         } else {
-            for s in segments.values { changedLeft.insert(integersIn: s.left); changedRight.insert(integersIn: s.right) }
+            for (id, s) in segments where states[id] != .staged { changedLeft.insert(integersIn: s.left); changedRight.insert(integersIn: s.right) }
         }
         let bright: [NSAttributedString.Key: Any] = [.font: DiffTheme.numberFont, .foregroundColor: DiffTheme.lineNumberCurrent]
         // The change ⌘↩ approves next: its line numbers in the accent color.

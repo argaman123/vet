@@ -189,17 +189,18 @@ enum DiffTheme {
         }
     }
 
-    /// A section's line color: IntelliJ's block color at full strength; a reviewed section fades.
+    /// A section's line color: IntelliJ's block color at full strength; a reviewed section is only
+    /// a faint wash of it (it's accepted: it stays readable but stops asking for attention).
     static func fill(_ change: Change, hasWords: Bool, staged: Bool) -> NSColor {
         fill(block(change), hasWords: hasWords, staged: staged)
     }
     static func fill(_ base: NSColor, hasWords: Bool, staged: Bool) -> NSColor {
-        staged ? solid(base, 0.35) : base
+        staged ? solid(base, 0.16) : base
     }
     /// Changed words inside a modified section: a brighter shade of it, so they stand out.
     static var modifiedWord: NSColor { Design.direction == .monolith ? hex(0x2D4A78) : color("modifiedWord") { $0.modifiedWord } }
     /// Changed words (faded once reviewed).
-    static func word(_ base: NSColor, staged: Bool) -> NSColor { staged ? solid(base, 0.5) : base }
+    static func word(_ base: NSColor, staged: Bool) -> NSColor { staged ? solid(base, 0.22) : base }
 
     /// The marker color for a section (pure insertions and deletions get a line on the other side).
     static func marker(_ change: Change) -> NSColor {
