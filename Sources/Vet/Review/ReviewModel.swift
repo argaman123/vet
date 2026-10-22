@@ -489,13 +489,16 @@ final class ReviewModel {
         return (notes?.notes ?? []).filter { !$0.sent && !$0.text.isEmpty && !$0.isClaude }
     }
 
-    /// A note written in the popover beside a working-file line of the open diff.
-    func createNote(line: Int, lineText: String, text: String) {
-        guard let notes, let path = diff?.change.path else { return }
+    /// A note written in the popover beside a working-file line of the open diff; its id.
+    @discardableResult
+    func createNote(line: Int, lineText: String, text: String) -> String? {
+        guard let notes, let path = diff?.change.path else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        notes.upsert(ReviewNote(path: path, left: false, line: line, lineText: lineText, text: trimmed))
+        guard !trimmed.isEmpty else { return nil }
+        let note = ReviewNote(path: path, left: false, line: line, lineText: lineText, text: trimmed)
+        notes.upsert(note)
         noteChanged()
+        return note.id
     }
 
     func addNote(left: Bool, line: Int, lineText: String) {
@@ -577,17 +580,21 @@ final class ReviewModel {
         diffVersion += 1
     }
 
-    /// All unsent notes, as one draft for Claude: file, line, the line itself, and what you wrote.
-    func sendNotes() {
+    /// Notes for Claude to fix, as one draft: file, line, the line itself, and what you wrote, and
+    /// how to clear them in Vet once done. `ids` picks notes (sent before or not); nil sends every
+    /// unsent one.
+    func sendNotes(ids: [String]? = nil) {
         guard let notes, let link else { return }
-        let pending = unsentNotes.sorted { ($0.path, $0.line) < ($1.path, $1.line) }
+        let chosen = ids.map { ids in notes.notes.filter { ids.contains($0.id) && !$0.isClaude && !$0.text.isEmpty } } ?? unsentNotes
+        let pending = chosen.sorted { ($0.path, $0.line) < ($1.path, $1.line) }
         guard !pending.isEmpty else { return }
-        var text = "Review notes on the current changes:\n"
+        var text = pending.count == 1 ? "Please fix this review note:\n" : "Please fix these review notes:\n"
         for (i, n) in pending.enumerated() {
             text += "\n\(i + 1). \(n.path):\(n.line + 1)\(n.left ? " (old version)" : "")\n"
             text += "   > \(n.lineText.trimmingCharacters(in: .whitespaces))\n"
             text += n.text.split(separator: "\n", omittingEmptySubsequences: false).map { "   " + $0 }.joined(separator: "\n") + "\n"
         }
+        text += "\nWhen done, clear \(pending.count == 1 ? "it" : "them") with Vet's resolve_notes (ids: \(pending.map(\.id).joined(separator: ", "))).\n"
         link.sendDraft(text)
         for var n in pending { n.sent = true; notes.upsert(n) }
         noteChanged()

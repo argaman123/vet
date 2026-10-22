@@ -23,7 +23,8 @@ struct RibbonDiffView: NSViewRepresentable {
         v.noteActions = .init(save: { [weak model] id, text in model?.saveNote(id, text: text) },
                               cancel: { [weak model] id in model?.cancelNote(id) },
                               edit: { [weak model] id in model?.editNote(id) },
-                              delete: { [weak model] id in model?.deleteNote(id) })
+                              delete: { [weak model] id in model?.deleteNote(id) },
+                              send: { [weak model] id in model?.sendNotes(ids: [id]) })
         v.onCreateNote = { [weak model] line, lineText, text in model?.createNote(line: line, lineText: lineText, text: text) }
         v.onNavigate = { [weak model] kind, left, line, character in model?.navigate(kind, left: left, line: line, character: character) }
         v.onHover = { [weak model] line, character in model?.hover(line: line, character: character) }
@@ -75,6 +76,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let cancel: (String) -> Void
         let edit: (String) -> Void
         let delete: (String) -> Void
+        /// To Claude, to fix.
+        let send: (String) -> Void
     }
     var notes: [ReviewNote] = []
     var editingNoteID: String?
@@ -88,7 +91,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     /// Notes on the working file, shown as bubbles beside their lines.
     private(set) var shownNotes: [ReviewNote] = []
     /// A note written in the popover: (working-file line, that line's text, the note).
-    var onCreateNote: ((Int, String, String) -> Void)?
+    var onCreateNote: ((Int, String, String) -> String?)?
 
     func setNotes(_ notes: [ReviewNote]) {
         shownNotes = notes.filter { !$0.left }
@@ -106,7 +109,12 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let here = shownNotes.filter { $0.line == note.line }.sorted { !$0.isClaude && $1.isClaude }
         NotePopover.shared.show(here, line: note.line, at: rect, in: gutter, actions: .init(
             save: { [weak self] id, text in if let id { self?.noteActions?.save(id, text) } },
-            delete: { [weak self] id in self?.noteActions?.delete(id) }))
+            delete: { [weak self] id in self?.noteActions?.delete(id) },
+            send: { [weak self] id, text in
+                guard let self, let id else { return }
+                if let text { self.noteActions?.save(id, text) }
+                self.noteActions?.send(id)
+            }))
     }
 
     func debugClickNote(_ id: String, row: Int) { showNote(id: id, rect: gutter.noteRect(row)) }
@@ -116,8 +124,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         guard let staging = shownStaging, line < staging.work.count, let row = workRow(ofFileLine: line) else { return }
         let lineText = String(staging.work.lines[line].text)
         NotePopover.shared.show([], line: line, at: rect ?? gutter.noteRect(row), in: gutter, actions: .init(
-            save: { [weak self] _, text in self?.onCreateNote?(line, lineText, text) },
-            delete: { _ in }))
+            save: { [weak self] _, text in _ = self?.onCreateNote?(line, lineText, text) },
+            delete: { _ in },
+            send: { [weak self] _, text in
+                if let text, let id = self?.onCreateNote?(line, lineText, text) { self?.noteActions?.send(id) }
+            }))
     }
 
     /// Jump icons (implemented, overrides) by working-file line.

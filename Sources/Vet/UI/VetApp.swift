@@ -169,6 +169,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 pane.setSelectedRange(NSRange(location: a.location, length: b.location - a.location))
             }
         }
+        SnapshotHook.on("noterender") { _ in
+            // noterender: the note popover (new, and a saved note) drawn off screen to VET_SNAPSHOT_DIR
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
+            NotePopover.debugRender([], line: 21, to: dir + "/note-new.png")
+            let note = ReviewNote(path: "a.ts", left: false, line: 21, lineText: "", text: "Return the hex in upper case")
+            NotePopover.debugRender([note], line: 21, to: dir + "/note-read.png")
+        }
+        SnapshotHook.on("windows") { _ in
+            // windows: every window of the app (class, frame, visible, level) to VET_SNAPSHOT_DIR/windows.txt
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
+            let out = NSApp.windows.map { "\(type(of: $0)) \($0.frame) visible=\($0.isVisible) level=\($0.level.rawValue) onActiveSpace=\($0.isOnActiveSpace)" }.joined(separator: "\n")
+            try? (out + "\nhidden=\(NSApp.isHidden) active=\(NSApp.isActive)").write(toFile: dir + "/windows.txt", atomically: true, encoding: .utf8)
+        }
         SnapshotHook.on("hovermore") { _ in HoverPresenter.shared.expand() } // F1 on a hover
         SnapshotHook.on("collapse") { [weak self] args in self?.workspace.review.setAllCollapsed(args.first != "off") }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
@@ -497,6 +510,10 @@ struct VetCommands: Commands {
             Button("Next Unreviewed File") { app.run("app.nextUnreviewed") }
                 .keyboardShortcut("u", modifiers: [.command, .option])
             Divider()
+            // Every note you haven't sent yet, in one draft (a single note sends from its popover, ⌘↩).
+            Button("Send Notes to Claude") { app.run("app.sendNotes") }
+                .keyboardShortcut(.return, modifiers: [.command, .option])
+                .disabled(app.workspace.review.unsentNotes.isEmpty)
             Button("Ask Claude to Commit Reviewed Files") { app.run("app.commit") }.keyboardShortcut("k")
             Divider()
             Button("Unimportant Files…") { app.run("app.rules") }
