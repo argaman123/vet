@@ -1211,9 +1211,19 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let fits = anchor - i.top >= 2 * lh && anchor + tall + lh <= height - i.bottom
         let below = min(clear * 0.3, max(2 * lh, clear - tall - 2 * lh)) // room left above the change
         let top = DiffTheme.inset.height + CGFloat(start) * lh - (fits ? anchor : i.top + below)
+        // The left side's start goes level with the right side's, wherever that lands: near a
+        // file's ends the right pane can't scroll as far, and lining up a third of the way down
+        // would then push the left start out of view.
         var leftTop: CGFloat?
-        if mode == .split, !fits, let seg = diffLayout?.segments.first(where: { if case .hunk = $0.kind { $0.right.lowerBound == start } else { false } }) {
-            leftTop = DiffTheme.inset.height + CGFloat(seg.left.lowerBound) * lh - leftScroll.contentInsets.top - below
+        if mode == .split, let seg = diffLayout?.segments.first(where: { if case .hunk = $0.kind { $0.right.lowerBound == start } else { false } }) {
+            let startY = DiffTheme.inset.height + CGFloat(start) * lh - clampY(top, scroll) // the right start, from the view's top
+            var y = DiffTheme.inset.height + CGFloat(seg.left.lowerBound) * lh - startY
+            // A left side taller than what's left below: its start near the top instead.
+            let leftTall = CGFloat(max(1, seg.left.count)) * lh
+            if startY + leftTall > height - leftScroll.contentInsets.bottom, startY > leftScroll.contentInsets.top + 2 * lh {
+                y = DiffTheme.inset.height + CGFloat(seg.left.lowerBound) * lh - leftScroll.contentInsets.top - 2 * lh
+            }
+            leftTop = y
         }
         scrollRight(toY: top, leftY: leftTop, animated: animated)
     }
