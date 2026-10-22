@@ -73,6 +73,9 @@ enum VetTools {
             files.append(.init(path: path, summary: f["summary"] as? String ?? "", notes: notes.isEmpty ? nil : notes))
         }
         app.workspace.review.setPlan(ReviewPlan(overview: args["overview"] as? String, files: files))
+        let overview = (args["overview"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        app.claudeDid(overview.isEmpty ? "Claude finished: \(files.count) file\(files.count == 1 ? "" : "s") to review, in order." : "Claude finished: \(overview)",
+                      path: files.first?.path)
         var msg = "Vet now lists \(files.count) files in your order."
         if !unknown.isEmpty { msg += " Not among the changed files (shown anyway): \(unknown.joined(separator: ", "))." }
         let missing = changed.subtracting(files.map(\.path))

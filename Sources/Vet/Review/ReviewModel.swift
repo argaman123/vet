@@ -566,10 +566,10 @@ final class ReviewModel {
     }
 
     /// Claude's answers to your notes: each of those notes becomes Claude's reply on the same line
-    /// (you read it in Vet and dismiss it). Returns how many it found.
-    func replyToNotes(_ replies: [String: String]) -> Int {
-        guard let notes else { return 0 }
-        var n = 0
+    /// (you read it in Vet and dismiss it). Returns how many it found, and the replies made.
+    func replyToNotes(_ replies: [String: String]) -> (count: Int, made: [ReviewNote]) {
+        guard let notes else { return (0, []) }
+        var n = 0, made: [ReviewNote] = []
         for (id, text) in replies {
             guard let mine = notes.notes.first(where: { $0.id == id && !$0.isClaude }) else { continue }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -579,12 +579,13 @@ final class ReviewModel {
                 reply.fromClaude = true
                 reply.question = mine.text
                 notes.upsert(reply)
+                made.append(reply)
             }
             n += 1
         }
         if editingNoteID.map({ replies[$0] != nil }) == true { editingNoteID = nil }
         noteChanged()
-        return n
+        return (n, made)
     }
 
     /// Notes Claude handled (or pointers it takes back): gone from the diff.
@@ -601,6 +602,9 @@ final class ReviewModel {
         notesVersion += 1
         diffVersion += 1
     }
+
+    /// File summaries you closed this session (file, summary and contents): they stay closed.
+    @ObservationIgnored var closedSummaries: Set<String> = []
 
     /// Wakes the Claude chat listening on this project (true), or nil/false when none is.
     @ObservationIgnored var onNotesSent: (() -> Bool)?

@@ -55,7 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let root = self.workspace.root, let message = self.workspace.review.wakeMessage() else { return false }
             return self.mcp?.wake(root: root.path, message: message) ?? false
         }
+        mcp?.appendix = { [weak self] tool in
+            guard let self, let root = self.workspace.root, !self.workspace.claudeListening,
+                  ["vet_status", "get_notes", "resolve_notes", "set_review_plan", "point_at_code", "get_selection"].contains(tool) else { return nil }
+            return MCPServer.listenHint(root: root.path)
+        }
         NotePopover.isListening = { [weak self] in self?.workspace.claudeListening ?? false }
+        setUpClaudeNotifications()
         workspace.review.link = workspace.link // its message bar ("Note sent to Claude.")
         mcp?.start()
         searchEverywhere.app = self

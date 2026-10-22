@@ -31,7 +31,13 @@ enum WorkTools {
                 let replies = args["replies"] as? [String: String] ?? [:]
                 let ids = (args["ids"] as? [String] ?? []).filter { replies[$0] == nil }
                 guard !ids.isEmpty || !replies.isEmpty else { return ("Pass the notes you handled: replies (id → reply) or ids.", true) }
-                let n = app.workspace.review.replyToNotes(replies) + (ids.isEmpty ? 0 : app.workspace.review.removeNotes(ids))
+                let answered = app.workspace.review.replyToNotes(replies)
+                let n = answered.count + (ids.isEmpty ? 0 : app.workspace.review.removeNotes(ids))
+                if let first = answered.made.sorted(by: { ($0.path, $0.line) < ($1.path, $1.line) }).first {
+                    let file = (first.path as NSString).lastPathComponent
+                    app.claudeDid(answered.made.count == 1 ? "Claude answered your note in \(file)." : "Claude answered \(answered.made.count) of your notes.",
+                                  path: first.path, line: first.line, noteID: first.id)
+                }
                 return n == 0 ? ("None of those notes exist (already cleared?).", true)
                     : ("Done: \(n) note\(n == 1 ? "" : "s")\(replies.isEmpty ? " cleared" : ", your replies are beside their lines in Vet").", false)
             },
@@ -120,6 +126,7 @@ enum WorkTools {
         let lines = (try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8))?.components(separatedBy: "\n") ?? []
         guard line >= 1, line <= lines.count else { return ("\(path) has \(lines.count) lines.", true) }
         guard let note = review.addClaudeNote(path: path, line: line - 1, lineText: lines[line - 1], text: text) else { return ("No project is open.", true) }
+        app.claudeDid("Claude left you a note in \((path as NSString).lastPathComponent), line \(line).", path: path, line: line - 1, noteID: note.id)
         return ("Pointer \(note.id) is under \(path):\(line).", false)
     }
 

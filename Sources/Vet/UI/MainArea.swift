@@ -18,7 +18,13 @@ struct MainArea: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .top) { Banner(app: app) }
-                    .overlay(alignment: .bottom) { Toast(app: app) }
+                    .overlay(alignment: .bottom) {
+                        VStack(spacing: 8) {
+                            ClaudeBanner(app: app)
+                            Toast(app: app)
+                        }
+                        .animation(.easeOut(duration: 0.25), value: app.workspace.claudeEvent)
+                    }
                     .overlay(alignment: .bottom) { ModPromptBar(state: ModHost.shared.ui) }
                     .overlay(alignment: .topTrailing) { ModPanels(state: ModHost.shared.ui) }
                     .animation(.easeOut(duration: 0.18), value: ModHost.shared.ui.prompt?.serial)
@@ -129,7 +135,9 @@ struct DiffHeader: View {
             }
             // Claude's note on this file, one click away instead of a second bar.
             if Design.sticky == .crumbs { ScopeCrumbs(rows: scope) { review.scopeJump?($0) } }
-            if let f = review.plan?.file(change.path) { ClaudeNoteButton(file: f) }
+            if let f = review.plan?.file(change.path) {
+                ClaudeNoteButton(file: f, key: "\(change.path)|\(f.summary)|\(doc.staging?.snapshotID ?? "")", review: review)
+            }
             Spacer(minLength: 12)
             if review.diffDirty {
                 Text("Edited").foregroundStyle(.secondary)
@@ -458,12 +466,23 @@ struct ReviewFooter: View {
 /// Claude's summary of the open file (from the review plan), with its notes on key functions.
 /// Claude's note on the open file (from the review plan): a sparkle in the file's header that
 /// opens the summary and the notes on key functions.
+/// Claude's summary of the file, from the review order: open the first time you see the file,
+/// and once you close it, closed for the session until the file (or the summary) changes.
 struct ClaudeNoteButton: View {
     let file: ReviewPlan.File
+    /// The file, its summary and its contents: a new key opens the summary again.
+    let key: String
+    let review: ReviewModel
     @State private var open = false
 
     var body: some View {
         Button { open.toggle() } label: { Image(systemName: "sparkle") }
+            .task(id: key) {
+                guard !review.closedSummaries.contains(key) else { return }
+                try? await Task.sleep(for: .seconds(0.35)) // once the header is in its window
+                if !Task.isCancelled { open = true }
+            }
+            .onChange(of: open) { _, isOpen in if !isOpen { review.closedSummaries.insert(key) } }
             .foregroundStyle(.secondary)
             .help(file.summary)
             .popover(isPresented: $open, arrowEdge: .bottom) {

@@ -43,6 +43,9 @@ final class MCPServer: @unchecked Sendable {
     var onWaitersChanged: (@MainActor @Sendable ([String]) -> Void)?
     /// A chat started waiting on `root`: if notes were already sent, the message to wake it with.
     var pendingMessage: (@MainActor @Sendable (String) -> String?)?
+    /// Text added to a tool's reply (by tool name): how to listen, while no chat is listening.
+    /// Chats read Vet's instructions only when they start, but every reply when it comes.
+    var appendix: (@MainActor @Sendable (String) -> String?)?
     private let tools: [Tool]
     private(set) var running = false
 
@@ -204,7 +207,9 @@ final class MCPServer: @unchecked Sendable {
             }
             nonisolated(unsafe) let args = params["arguments"] as? [String: Any] ?? [:]
             let out = await Self.call(tool, args)
-            var content: [[String: Any]] = [["type": "text", "text": out.text]]
+            var text = out.text
+            if let extra = await appendix?(name) { text += "\n\n" + extra }
+            var content: [[String: Any]] = [["type": "text", "text": text]]
             if let png = out.png { content.append(["type": "image", "data": png.base64EncodedString(), "mimeType": "image/png"]) }
             return Self.result(id, ["content": content, "isError": out.isError])
         default:
@@ -228,13 +233,15 @@ final class MCPServer: @unchecked Sendable {
         per note: Vet shows your reply beside the line, so the user never has to open this chat to see \
         what you did. Ask here only when you can't decide something yourself.
 
-        3. Listening. So notes reach you without the user typing here, keep one listener running in the \
-        background in this chat whenever you work in a project that's open in Vet (vet_status shows it). \
-        Start it with your Bash tool, run_in_background: true:
-        curl -s --get --data-urlencode "root=<the project's root folder>" http://127.0.0.1:\(port)/vet/wait
-        It ends when the user sends notes, and its output says what to do; after handling them, start it \
-        again. Start it once per chat (not if one is already running), and don't restart it if it ended \
-        because Vet isn't running (curl fails to connect).
+        3. Listening. Notes reach you without the user typing here because you keep one listener \
+        running in the background in this chat, whenever you work in a project that's open in Vet \
+        (vet_status shows it). Start it on your own, without being asked, with your Bash tool and \
+        run_in_background: true:
+        \(listenCommand(root: "<the project's root folder>"))
+        This works: when a background command ends, you get a new turn automatically, even while the \
+        chat is idle. It ends when the user sends notes, and its output says what to do; after \
+        handling them, start it again. One per chat: not if one is already running; not again if it \
+        ended because Vet isn't running (curl fails to connect).
 
         4. Pointers. point_at_code puts a note from you under a line the user must not miss (a security \
         hole, data loss, a subtle behavior change). Rarely; summaries belong in the review order.
@@ -243,6 +250,21 @@ final class MCPServer: @unchecked Sendable {
         vet_status lists the changes and what's reviewed. run_app, run_output and browser_view show their \
         app as they see it in Vet. When the user wants Vet itself to change (keys, colors, a new behavior \
         or display: "a mod for Vet"), read mod_api_docs and build it with install_mod.
+        """
+    }
+
+    /// The command a chat runs (in the background) to wait for the user's notes on `root`.
+    static func listenCommand(root: String) -> String {
+        "curl -s --get --data-urlencode \"root=\(root)\" http://127.0.0.1:\(port)/vet/wait"
+    }
+
+    /// Added to replies while no chat listens on the project.
+    static func listenHint(root: String) -> String {
+        """
+        Vet: no chat is listening for the user's notes. Start the listener now, without asking (Bash, \
+        run_in_background: true): \(listenCommand(root: root))
+        When it ends you get a turn automatically, even while idle; its output says what to do. Then \
+        start it again. Skip this if you already have one running in this chat.
         """
     }
 

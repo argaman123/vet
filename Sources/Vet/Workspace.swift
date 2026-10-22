@@ -26,6 +26,8 @@ final class Workspace {
     /// Set when Claude finishes a reply in this project: unreviewed files for the Review badge.
     var onClaudeFinished: ((Int) -> Void)?
     private(set) var root: URL?
+    /// What Claude just did, shown as a banner with Show (see ClaudeActivity.swift).
+    var claudeEvent: ClaudeEvent?
     /// Projects a Claude chat is listening on for your notes (see MCPServer's waiting chats).
     var listeningRoots: [String] = []
     /// A Claude chat is listening on this project: sending notes reaches it at once.

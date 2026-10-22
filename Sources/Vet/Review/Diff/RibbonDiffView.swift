@@ -119,6 +119,13 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     func debugClickNote(_ id: String, row: Int) { showNote(id: id, rect: gutter.noteRect(row)) }
 
+    /// Scrolls to a note's line and opens it (Show on Claude's banner).
+    func revealNote(_ id: String) {
+        guard let note = shownNotes.first(where: { $0.id == id }), let row = workRow(ofFileLine: note.line) else { return }
+        reveal(row: row, count: 1, animated: false)
+        DispatchQueue.main.async { [weak self] in self?.showNote(id: id, rect: self?.gutter.noteRect(row) ?? .zero) }
+    }
+
     /// A new note on a working-file line, written in a popover beside it.
     func writeNote(line: Int, rect: NSRect? = nil) {
         guard let staging = shownStaging, line < staging.work.count, let row = workRow(ofFileLine: line) else { return }
