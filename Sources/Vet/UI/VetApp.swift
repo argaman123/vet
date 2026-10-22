@@ -45,6 +45,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerCommands()
         ModHost.shared.start(app: self)
         mcp = MCPServer(tools: VetTools.make(self))
+        // Claude chats listening for notes: shown in Vet, woken when you send notes.
+        mcp?.onWaitersChanged = { [weak self] roots in self?.workspace.listeningRoots = roots }
+        mcp?.pendingMessage = { [weak self] root in
+            guard let self, let current = self.workspace.root, MCPServer.canonical(current.path) == root else { return nil }
+            return self.workspace.review.wakeMessage()
+        }
+        workspace.review.onNotesSent = { [weak self] in
+            guard let self, let root = self.workspace.root, let message = self.workspace.review.wakeMessage() else { return false }
+            return self.mcp?.wake(root: root.path, message: message) ?? false
+        }
+        NotePopover.isListening = { [weak self] in self?.workspace.claudeListening ?? false }
+        workspace.review.link = workspace.link // its message bar ("Note sent to Claude.")
         mcp?.start()
         searchEverywhere.app = self
         find.app = self
@@ -189,6 +201,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotePopover.debugRender([], line: 21, to: dir + "/note-new.png")
             let note = ReviewNote(path: "a.ts", left: false, line: 21, lineText: "", text: "Return the hex in upper case")
             NotePopover.debugRender([note], line: 21, to: dir + "/note-read.png")
+            var reply = ReviewNote(path: "a.ts", left: false, line: 21, lineText: "", text: "Done: hex() now returns upper case (toUpperCase on the formatted value).")
+            reply.fromClaude = true
+            reply.question = "Return the hex in upper case"
+            NotePopover.debugRender([reply], line: 21, to: dir + "/note-reply.png")
         }
         SnapshotHook.on("windows") { _ in
             // windows: every window of the app (class, frame, visible, level) to VET_SNAPSHOT_DIR/windows.txt

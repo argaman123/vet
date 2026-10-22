@@ -7,6 +7,8 @@ import SwiftUI
 final class NotePopover {
     static let shared = NotePopover()
     private var popover: NSPopover?
+    /// Whether a Claude chat is listening on the project (set by the app): sending reaches it now.
+    static var isListening: () -> Bool = { false }
 
     struct Actions {
         var save: (String?, String) -> Void // (note id, or nil for a new note; its text)
@@ -77,11 +79,20 @@ private struct NoteItem: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 5) {
                 if claude { Image(systemName: "sparkle") }
-                Text(claude ? "Claude" : note == nil ? "New note" : "Your note")
+                Text(note?.isReply == true ? "Claude replied" : claude ? "Claude" : note == nil ? "New note" : "Your note")
                 Text("· line \(line + 1)").foregroundStyle(.tertiary)
             }
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
+            // A reply: what you wrote, quoted above Claude's answer.
+            if let question = note?.question {
+                Text(question)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 8)
+                    .overlay(alignment: .leading) { Capsule().fill(.quaternary).frame(width: 2) }
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if editing {
                 TextEditor(text: $text)
                     .font(.body)
@@ -96,6 +107,15 @@ private struct NoteItem: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Where a sent note goes: the Claude chat that's listening, or nowhere yet.
+            if !claude, editing || note?.sent != true {
+                let listening = NotePopover.isListening()
+                Label(listening ? "Claude is listening: Send wakes it to fix this." : "No Claude chat is listening: tell Claude \u{201C}watch Vet\u{201D} once.",
+                      systemImage: listening ? "dot.radiowaves.left.and.right" : "moon.zzz")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
                 Spacer()
                 if claude {
@@ -107,16 +127,16 @@ private struct NoteItem: View {
                         .keyboardShortcut("s", modifiers: .command)
                         .disabled(empty)
                     // ⌘↩ saves the note and hands it to Claude to fix.
-                    Button("Send to Claude") { actions.send(note?.id, text); close() }
+                    Button("Send") { actions.send(note?.id, text); close() }
                         .keyboardShortcut(.return, modifiers: .command)
                         .buttonStyle(.glassProminent)
                         .disabled(empty)
                         .help("Save and send to Claude to fix (⌘↩)")
                 } else {
-                    if note?.sent == true { Text("Sent").font(.caption).foregroundStyle(.tertiary) }
+                    if note?.sent == true { Text("Sent to Claude").font(.caption).foregroundStyle(.tertiary) }
                     Button("Delete") { if let note { actions.delete(note.id) }; close() }
                     Button("Edit") { text = note?.text ?? ""; editing = true; focused = true }
-                    Button(note?.sent == true ? "Send Again" : "Send to Claude") { if let note { actions.send(note.id, nil) }; close() }
+                    Button(note?.sent == true ? "Send Again" : "Send") { if let note { actions.send(note.id, nil) }; close() }
                         .keyboardShortcut(.return, modifiers: .command)
                         .buttonStyle(.glassProminent)
                         .help("Send to Claude to fix (⌘↩)")

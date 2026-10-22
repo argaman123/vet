@@ -57,6 +57,17 @@ struct ChangesVariant: View {
         })) {
             if !planPaths.isEmpty {
                 Section { if open("#order").wrappedValue {
+                    // Claude's summary of the whole change, above the files in the order to read them.
+                    if let overview = review.plan?.overview?.trimmingCharacters(in: .whitespacesAndNewlines), !overview.isEmpty {
+                        Text(overview)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(6)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 2)
+                            .selectionDisabled()
+                            .listRowSeparator(.hidden)
+                    }
                     ForEach(Array(planPaths.enumerated()), id: \.element) { i, path in
                         if let node = FileTreeNode.find(path, in: review.tree) {
                             VariantFileRow(app: app, node: node, index: i + 1, detail: nil).tag(path).quietRow(path)

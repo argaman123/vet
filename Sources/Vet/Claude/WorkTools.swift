@@ -11,18 +11,29 @@ enum WorkTools {
         return [
             // MARK: Notes
             .init("get_notes", """
-                The user's review notes: comments they left under lines while reviewing the diff, like \
+                The user's review notes: comments they left on lines while reviewing the diff, like \
                 pull-request comments. Each has an id, the file, the line it's on now (1-based), that line's \
-                text, and what they wrote. Fix what they ask, then call resolve_notes with the ids you handled.
+                text, what they wrote, and whether they sent it to you (sent) or it's still a draft. Handle the \
+                sent ones (fix the code, or answer a question); drafts only when the user asks. Then call \
+                resolve_notes with the ids and a short reply for each.
                 """, schema: none) { _ in
                 notes(app)
             },
-            .init("resolve_notes", "Clear review notes you've handled (they disappear from the diff). Pass the ids from get_notes.",
-                  schema: ["type": "object", "required": ["ids"], "properties": ["ids": ["type": "array", "items": str]] as [String: Any]]) { args in
-                let ids = args["ids"] as? [String] ?? []
-                guard !ids.isEmpty else { return ("Pass the ids of the notes you handled.", true) }
-                let n = app.workspace.review.removeNotes(ids)
-                return n == 0 ? ("None of those notes exist (already cleared?).", true) : ("Cleared \(n) note\(n == 1 ? "" : "s").", false)
+            .init("resolve_notes", """
+                Clear review notes you've handled. Give each a short reply in `replies` (id → one or two \
+                sentences: what you changed, or your answer): Vet shows it beside the line, where the user \
+                reads it while reviewing, instead of their note. Ids in `ids` without a reply are just cleared.
+                """,
+                  schema: ["type": "object", "properties": [
+                    "ids": ["type": "array", "items": str],
+                    "replies": ["type": "object", "additionalProperties": str, "description": "Note id → your reply."],
+                  ] as [String: Any]]) { args in
+                let replies = args["replies"] as? [String: String] ?? [:]
+                let ids = (args["ids"] as? [String] ?? []).filter { replies[$0] == nil }
+                guard !ids.isEmpty || !replies.isEmpty else { return ("Pass the notes you handled: replies (id → reply) or ids.", true) }
+                let n = app.workspace.review.replyToNotes(replies) + (ids.isEmpty ? 0 : app.workspace.review.removeNotes(ids))
+                return n == 0 ? ("None of those notes exist (already cleared?).", true)
+                    : ("Done: \(n) note\(n == 1 ? "" : "s")\(replies.isEmpty ? " cleared" : ", your replies are beside their lines in Vet").", false)
             },
 
             // MARK: Point at code
@@ -83,11 +94,11 @@ enum WorkTools {
     }
 
     private static func notes(_ app: AppDelegate) -> (String, Bool) {
-        let list = app.workspace.review.notesForClaude().sorted { ($0.path, $0.line) < ($1.path, $1.line) }
+        let list = app.workspace.review.notesForClaude().filter { !$0.isClaude }.sorted { ($0.path, $0.line) < ($1.path, $1.line) }
         guard !list.isEmpty else { return ("No review notes.", false) }
         var out = "\(list.count) review note\(list.count == 1 ? "" : "s"):\n"
         for n in list {
-            out += "\n[\(n.id)] \(n.path):\(n.line + 1)\(n.left ? " (on the old version, before the change)" : "")\(n.sent ? " (also sent as a chat draft)" : "")\n"
+            out += "\n[\(n.id)] \(n.path):\(n.line + 1)\(n.left ? " (on the old version, before the change)" : "")\(n.sent ? " (sent)" : " (draft)")\n"
             out += "  > \(n.lineText.trimmingCharacters(in: .whitespaces))\n"
             out += n.text.split(separator: "\n", omittingEmptySubsequences: false).map { "  " + $0 }.joined(separator: "\n") + "\n"
         }
@@ -102,7 +113,7 @@ enum WorkTools {
         }
         let path = raw.hasPrefix(root.path + "/") ? String(raw.dropFirst(root.path.count + 1)) : raw
         guard review.changes.contains(where: { $0.path == path }) else { return ("\(path) isn't among the changed files: pointers show in diffs only.", true) }
-        let open = review.claudeNotes
+        let open = review.claudeNotes.filter { !$0.isReply } // your replies to notes don't count
         guard open.count < 3 else {
             return ("There are already 3 pointers showing (\(open.map { "\($0.path):\($0.line + 1) [\($0.id)]" }.joined(separator: ", "))). Keep them for what matters most: remove one first.", true)
         }

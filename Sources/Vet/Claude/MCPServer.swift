@@ -34,6 +34,15 @@ final class MCPServer: @unchecked Sendable {
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "dev.vet.mcp")
+    /// Claude chats waiting for the user's notes (`GET /vet/wait?root=…`, held open by a command
+    /// Claude runs in the background), oldest first. Answering one ends that command, and Claude
+    /// takes a turn: this is how Vet reaches a chat without the user typing there.
+    private var waiters: [(id: UUID, root: String, c: NWConnection)] = []
+    private let waitersLock = NSLock() // connection callbacks run on `queue`, wake on the main actor
+    /// The projects a chat is waiting on, whenever that changes (on the main actor).
+    var onWaitersChanged: (@MainActor @Sendable ([String]) -> Void)?
+    /// A chat started waiting on `root`: if notes were already sent, the message to wake it with.
+    var pendingMessage: (@MainActor @Sendable (String) -> String?)?
     private let tools: [Tool]
     private(set) var running = false
 
@@ -84,6 +93,7 @@ final class MCPServer: @unchecked Sendable {
             send(c, status: "403 Forbidden", body: Data())
             return
         }
+        if r.path.hasPrefix("/vet/wait"), r.method == "GET" { await addWaiter(c, root: Self.query(r.path)["root"] ?? ""); return }
         guard r.path.hasPrefix("/mcp") else { send(c, status: "404 Not Found", body: Data()); return }
         guard r.method == "POST" else { send(c, status: "405 Method Not Allowed", body: Data(), extra: ["Allow: POST"]); return }
         guard let json = try? JSONSerialization.jsonObject(with: r.body) else {
@@ -112,6 +122,62 @@ final class MCPServer: @unchecked Sendable {
         c.send(content: out, completion: .contentProcessed { _ in c.cancel() })
     }
 
+    // MARK: Waiting chats
+
+    /// One path for a folder however it's spelled (symlinks like /tmp, a trailing slash).
+    static func canonical(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private func addWaiter(_ c: NWConnection, root: String) async {
+        let root = Self.canonical(root), id = UUID()
+        waitersLock.withLock { waiters.append((id, root, c)) }
+        // The command was stopped (or the chat closed): forget it.
+        c.receive(minimumIncompleteLength: 1, maximumLength: 1) { [weak self] _, _, done, error in
+            if done || error != nil { self?.removeWaiter(id) }
+        }
+        c.stateUpdateHandler = { [weak self] state in
+            switch state { case .failed, .cancelled: self?.removeWaiter(id); default: break }
+        }
+        publishWaiters()
+        if let message = await pendingMessage?(root) { _ = wake(root: root, message: message) }
+    }
+
+    private func removeWaiter(_ id: UUID) {
+        let removed = waitersLock.withLock { () -> Bool in
+            guard let i = waiters.firstIndex(where: { $0.id == id }) else { return false }
+            waiters.remove(at: i)
+            return true
+        }
+        if removed { publishWaiters() }
+    }
+
+    private func publishWaiters() {
+        let roots = waitersLock.withLock { waiters.map(\.root) }
+        Task { @MainActor in self.onWaitersChanged?(roots) }
+    }
+
+    /// Wakes the chat that started waiting on `root` most recently (one chat handles the notes);
+    /// false when none is waiting.
+    @discardableResult
+    func wake(root: String, message: String) -> Bool {
+        let root = Self.canonical(root)
+        let picked = waitersLock.withLock { () -> NWConnection? in
+            guard let i = waiters.lastIndex(where: { $0.root == root }) else { return nil }
+            return waiters.remove(at: i).c
+        }
+        guard let c = picked else { return false }
+        c.stateUpdateHandler = nil
+        send(c, status: "200 OK", body: Data((message + "\n").utf8), extra: ["Content-Type: text/plain; charset=utf-8"])
+        publishWaiters()
+        return true
+    }
+
+    private static func query(_ path: String) -> [String: String] {
+        guard let q = URLComponents(string: "http://x" + path)?.queryItems else { return [:] }
+        return Dictionary(q.compactMap { i in i.value.map { (i.name, $0) } }, uniquingKeysWith: { a, _ in a })
+    }
+
     // MARK: JSON-RPC
 
     private func handle(_ m: [String: Any]) async -> [String: Any]? {
@@ -126,16 +192,7 @@ final class MCPServer: @unchecked Sendable {
                 "protocolVersion": version,
                 "capabilities": ["tools": ["listChanged": false]],
                 "serverInfo": ["name": "vet", "title": "Vet", "version": "2.0"],
-                "instructions": """
-                Vet is the user's code review IDE (macOS). After you finish a feature or a set of changes, call \
-                set_review_plan with the changed files in the order the user should read them, a one- or two-line \
-                summary per file and notes on the key functions. Use get_selection when the user refers to "this", \
-                "here" or "the line I'm on". Use vet_status to see what is changed and already reviewed. When the \
-                user says they reviewed or left notes, read get_notes, fix them and resolve_notes. run_app, \
-                run_output and browser_view show their app as they see it in Vet. When the \
-                user wants Vet itself to change (keys, colors, a new behavior or display: "a mod for Vet"), read \
-                mod_api_docs and build it with install_mod; Vet loads it at once.
-                """,
+                "instructions": Self.instructions,
             ])
         case "ping":
             return Self.result(id, [:])
@@ -153,6 +210,40 @@ final class MCPServer: @unchecked Sendable {
         default:
             return Self.error(id, -32601, "Method not found: \(method)")
         }
+    }
+
+    /// What every Claude session learns about Vet when it connects (the MCP limit is 4,096
+    /// characters): so Claude uses Vet's review order, notes and listener without being asked.
+    static var instructions: String { """
+        Vet is the user's code review IDE on this Mac. They read your changes in Vet, not in this chat, \
+        and want to stay in Vet while reviewing. Use it without being asked:
+
+        1. Review order. Whenever you finish a change (a feature, a fix, a set of edits), call \
+        set_review_plan: `overview` is a one- or two-sentence summary of the whole change; `files` lists \
+        the changed files in the order to read them, each with a one- or two-line summary and notes on \
+        key functions. Do this before committing, and again when the change grows.
+
+        2. Notes. The user leaves review notes on lines in Vet and sends them to you from there. Handle \
+        them with get_notes (fix the code, or answer a question), then resolve_notes with a short reply \
+        per note: Vet shows your reply beside the line, so the user never has to open this chat to see \
+        what you did. Ask here only when you can't decide something yourself.
+
+        3. Listening. So notes reach you without the user typing here, keep one listener running in the \
+        background in this chat whenever you work in a project that's open in Vet (vet_status shows it). \
+        Start it with your Bash tool, run_in_background: true:
+        curl -s --get --data-urlencode "root=<the project's root folder>" http://127.0.0.1:\(port)/vet/wait
+        It ends when the user sends notes, and its output says what to do; after handling them, start it \
+        again. Start it once per chat (not if one is already running), and don't restart it if it ended \
+        because Vet isn't running (curl fails to connect).
+
+        4. Pointers. point_at_code puts a note from you under a line the user must not miss (a security \
+        hole, data loss, a subtle behavior change). Rarely; summaries belong in the review order.
+
+        5. Context. get_selection is what the user is looking at ("this", "here", "this line"). \
+        vet_status lists the changes and what's reviewed. run_app, run_output and browser_view show their \
+        app as they see it in Vet. When the user wants Vet itself to change (keys, colors, a new behavior \
+        or display: "a mod for Vet"), read mod_api_docs and build it with install_mod.
+        """
     }
 
     @MainActor private static func call(_ tool: Tool, _ args: [String: Any]) async -> Reply { await tool.run(args) }

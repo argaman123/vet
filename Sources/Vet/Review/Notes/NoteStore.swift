@@ -15,8 +15,12 @@ struct ReviewNote: Codable, Identifiable, Hashable {
     var created = Date()
     /// Claude pointing at a line it thinks you must see (point_at_code); nil for your own notes.
     var fromClaude: Bool?
+    /// On Claude's reply to one of your notes: what you wrote (the reply replaces your note).
+    var question: String?
 
     var isClaude: Bool { fromClaude == true }
+    /// Claude answering a note of yours, not pointing at a line on its own.
+    var isReply: Bool { isClaude && question != nil }
 }
 
 /// Notes for one project, kept in its .vet folder (which git ignores).

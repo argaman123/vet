@@ -67,7 +67,8 @@ struct RootView: View {
         guard review.isGitRepo, app.projects.current != nil else { return "" }
         let n = review.changes.count
         let changed = n == 0 ? "no changes" : "\(review.reviewedCount) of \(n) reviewed"
-        return branch.isEmpty ? changed : "\(branch) · \(changed)"
+        let listening = app.workspace.claudeListening ? " · Claude listening" : ""
+        return (branch.isEmpty ? changed : "\(branch) · \(changed)") + listening
     }
 }
 

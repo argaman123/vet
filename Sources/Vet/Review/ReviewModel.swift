@@ -565,6 +565,28 @@ final class ReviewModel {
         return note
     }
 
+    /// Claude's answers to your notes: each of those notes becomes Claude's reply on the same line
+    /// (you read it in Vet and dismiss it). Returns how many it found.
+    func replyToNotes(_ replies: [String: String]) -> Int {
+        guard let notes else { return 0 }
+        var n = 0
+        for (id, text) in replies {
+            guard let mine = notes.notes.first(where: { $0.id == id && !$0.isClaude }) else { continue }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            notes.delete(id)
+            if !trimmed.isEmpty {
+                var reply = ReviewNote(path: mine.path, left: mine.left, line: mine.line, lineText: mine.lineText, text: trimmed)
+                reply.fromClaude = true
+                reply.question = mine.text
+                notes.upsert(reply)
+            }
+            n += 1
+        }
+        if editingNoteID.map({ replies[$0] != nil }) == true { editingNoteID = nil }
+        noteChanged()
+        return n
+    }
+
     /// Notes Claude handled (or pointers it takes back): gone from the diff.
     func removeNotes(_ ids: [String]) -> Int {
         guard let notes else { return 0 }
@@ -580,32 +602,34 @@ final class ReviewModel {
         diffVersion += 1
     }
 
-    /// Notes for Claude to fix, as one message: file, line, the line itself, and what you wrote, and
-    /// how to clear them in Vet once done. Like Ask Claude to Commit, it goes on the clipboard and
-    /// Claude comes forward, ready to paste. `ids` picks notes (sent before or not); nil sends
-    /// every unsent one.
+    /// Wakes the Claude chat listening on this project (true), or nil/false when none is.
+    @ObservationIgnored var onNotesSent: (() -> Bool)?
+
+    /// Your notes go to Claude to fix: marked sent, and the Claude chat listening on this project
+    /// (see MCPServer's waiting chats) is woken to read them with get_notes. With no chat
+    /// listening they wait, and the next one to listen gets them at once. `ids` picks notes (sent
+    /// before or not); nil sends every unsent one.
     func sendNotes(ids: [String]? = nil) {
         guard let notes else { return }
         let chosen = ids.map { ids in notes.notes.filter { ids.contains($0.id) && !$0.isClaude && !$0.text.isEmpty } } ?? unsentNotes
-        let pending = chosen.sorted { ($0.path, $0.line) < ($1.path, $1.line) }
-        guard !pending.isEmpty else { return }
-        var text = pending.count == 1 ? "Please fix this review note:\n" : "Please fix these review notes:\n"
-        for (i, n) in pending.enumerated() {
-            text += "\n\(i + 1). \(n.path):\(n.line + 1)\(n.left ? " (old version)" : "")\n"
-            text += "   > \(n.lineText.trimmingCharacters(in: .whitespaces))\n"
-            text += n.text.split(separator: "\n", omittingEmptySubsequences: false).map { "   " + $0 }.joined(separator: "\n") + "\n"
-        }
-        text += "\nWhen done, clear \(pending.count == 1 ? "it" : "them") with Vet's resolve_notes (ids: \(pending.map(\.id).joined(separator: ", "))).\n"
-        if SnapshotHook.isTesting {
-            // Tests leave your clipboard and your Claude window alone.
-            if let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] { try? text.write(toFile: dir + "/sent.txt", atomically: true, encoding: .utf8) }
-        } else {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            ClaudeReference.bringClaudeForward()
-        }
-        for var n in pending { n.sent = true; notes.upsert(n) }
+        guard !chosen.isEmpty else { return }
+        for var n in chosen { n.sent = true; notes.upsert(n) }
         noteChanged()
+        let woke = onNotesSent?() ?? false
+        let what = chosen.count == 1 ? "Note" : "\(chosen.count) notes"
+        link?.flash(woke ? "\(what) sent to Claude." : "\(what) waiting for Claude. No Claude chat is listening: tell Claude \u{201C}watch Vet\u{201D} once.")
+    }
+
+    /// What a listening chat is told when your notes are waiting for it; nil when none are.
+    func wakeMessage() -> String? {
+        let waiting = (notes?.notes ?? []).filter { $0.sent && !$0.isClaude && !$0.text.isEmpty }
+        guard !waiting.isEmpty, let root else { return nil }
+        let count = waiting.count == 1 ? "a review note" : "\(waiting.count) review notes"
+        return """
+            Vet: the user sent you \(count) in \(root.path). Call get_notes, handle the ones marked sent \
+            (fix the code, or answer if it's a question), then call resolve_notes with a short reply for each \
+            (Vet shows it beside the line). Then start this same listener again in the background.
+            """
     }
 
     /// Asks Claude about some lines: the location and the code go in as a draft for you to finish.

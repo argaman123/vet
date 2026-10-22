@@ -26,6 +26,10 @@ final class Workspace {
     /// Set when Claude finishes a reply in this project: unreviewed files for the Review badge.
     var onClaudeFinished: ((Int) -> Void)?
     private(set) var root: URL?
+    /// Projects a Claude chat is listening on for your notes (see MCPServer's waiting chats).
+    var listeningRoots: [String] = []
+    /// A Claude chat is listening on this project: sending notes reaches it at once.
+    var claudeListening: Bool { root.map { listeningRoots.contains(MCPServer.canonical($0.path)) } ?? false }
     private var watcher: RepoWatcher?
     /// What Search Everywhere currently suggests.
 
