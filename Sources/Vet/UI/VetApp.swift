@@ -220,6 +220,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         SnapshotHook.on("hovermore") { _ in HoverPresenter.shared.expand() } // F1 on a hover
         SnapshotHook.on("command") { args in if let id = args.first { CommandRegistry.shared.run(id) } } // command <id>: as its menu item or key would
+        SnapshotHook.on("panes") { [weak self] _ in
+            // panes: append both diff panes' scroll positions to VET_SNAPSHOT_DIR/panes.txt
+            guard let self, let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
+            let line = self.workspace.review.diffView.debugPanes + "\n"
+            if let h = FileHandle(forWritingAtPath: dir + "/panes.txt") { h.seekToEndOfFile(); h.write(Data(line.utf8)); h.closeFile() }
+            else { try? line.write(toFile: dir + "/panes.txt", atomically: true, encoding: .utf8) }
+        }
         SnapshotHook.on("collapse") { [weak self] args in self?.workspace.review.setAllCollapsed(args.first != "off") }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑

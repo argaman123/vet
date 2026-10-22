@@ -125,6 +125,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
     func debugClickNote(_ id: String, row: Int) { showNote(id: id, rect: gutter.noteRect(row)) }
 
+    /// Test aid: both panes' scroll positions and the change you're on.
+    var debugPanes: String {
+        String(format: "L %.0f  R %.0f  focus %@", leftScroll.contentView.bounds.minY, rightScroll.contentView.bounds.minY, focusedID.map(String.init) ?? "-")
+    }
+
     /// ⌘N: a note on the change you're on (at its first line), or on the first selected line when
     /// you've selected some, or else on the line at the top of the view.
     func writeNoteHere() {
@@ -302,10 +307,12 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         for tv in [leftText, rightText] { tv.onFoldClick = { [weak self] id in self?.onFoldClick?(id) } }
         leftText.onSpace = { [weak self] in self?.onApproveKey?() }
         NotificationCenter.default.addObserver(self, selector: #selector(fontChanged), name: .vetCodeFontChanged, object: nil)
-        // The working file (right side) can be edited and saved; HEAD (left) can't.
+        // Both sides are for reading: edits happen in the editor (Open in Editor), so a stray key
+        // never changes the code you're reviewing. Space approves here too.
         leftText.paneKind = "diffOld"
         rightText.paneKind = "diff"
-        rightText.isEditable = true
+        rightText.isEditable = false
+        rightText.onSpace = { [weak self] in self?.onApproveKey?() }
         rightText.allowsUndo = true
         rightText.delegate = self
         rightText.onSave = { [weak self] in self?.save() }
@@ -359,7 +366,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         savedBase = nil
         shownStaging = staging
         shownLanguage = doc.language
-        rightText.isEditable = doc.change.kind != .deleted
+        rightText.isEditable = false
         let keepLeft = leftScroll.contentView.bounds.origin, keepRight = rightScroll.contentView.bounds.origin
         // Keep the caret where it was (an autosave refreshes the pane while you're in it).
         let keepSelection = shownPath == doc.change.path ? rightText.selectedRange() : nil
@@ -1203,27 +1210,43 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         let i = scroll.contentInsets, lh = DiffTheme.lineHeight
         let height = scroll.contentView.bounds.height
         let clear = height - i.top - i.bottom
+        let seg = mode == .split ? diffLayout?.segments.first(where: { if case .hunk = $0.kind { $0.right.lowerBound == start } else { false } }) : nil
+        let rightRows = seg.map { max(1, $0.right.count) } ?? max(1, count)
+        // A side whose part of the change is already in full view (or, if it's taller than the
+        // view, whose start is) stays still: moving on never sends a pane back up for nothing.
+        func inView(_ first: Int, _ rows: Int, _ pane: NSScrollView) -> Bool {
+            let b = pane.contentView.bounds, ins = pane.contentInsets
+            let top = DiffTheme.inset.height + CGFloat(first) * lh, bottom = top + CGFloat(rows) * lh
+            let clearTop = b.minY + ins.top, clearBottom = b.maxY - ins.bottom
+            // (Not at the bottom edge either: there it's in view, but not where you're looking.)
+            return top >= clearTop + lh * 0.5 && top <= clearTop + clear * 0.7
+                && (bottom <= clearBottom - lh * 0.5 || (CGFloat(rows) * lh > clearBottom - clearTop && top <= clearTop + clear * 0.4))
+        }
         let tall = CGFloat(max(1, count)) * lh
         // Side by side, the panes line up a third of the way down (see align). A change that fits
         // starts exactly there, so both sides start together and show whole; one that doesn't
-        // starts near the top on each side, each pane scrolled to its own start.
+        // starts near the top.
         let anchor = height / 3
         let fits = anchor - i.top >= 2 * lh && anchor + tall + lh <= height - i.bottom
         let below = min(clear * 0.3, max(2 * lh, clear - tall - 2 * lh)) // room left above the change
-        let top = DiffTheme.inset.height + CGFloat(start) * lh - (fits ? anchor : i.top + below)
-        // The left side's start goes level with the right side's, wherever that lands: near a
-        // file's ends the right pane can't scroll as far, and lining up a third of the way down
-        // would then push the left start out of view.
+        let rightStays = inView(start, rightRows, scroll)
+        let top = rightStays ? scroll.contentView.bounds.minY : DiffTheme.inset.height + CGFloat(start) * lh - (fits ? anchor : i.top + below)
+        // The left side: still if its part is in view; else its start level with the right
+        // side's, wherever that lands (near a file's ends the right pane can't scroll as far).
         var leftTop: CGFloat?
-        if mode == .split, let seg = diffLayout?.segments.first(where: { if case .hunk = $0.kind { $0.right.lowerBound == start } else { false } }) {
-            let startY = DiffTheme.inset.height + CGFloat(start) * lh - clampY(top, scroll) // the right start, from the view's top
-            var y = DiffTheme.inset.height + CGFloat(seg.left.lowerBound) * lh - startY
-            // A left side taller than what's left below: its start near the top instead.
-            let leftTall = CGFloat(max(1, seg.left.count)) * lh
-            if startY + leftTall > height - leftScroll.contentInsets.bottom, startY > leftScroll.contentInsets.top + 2 * lh {
-                y = DiffTheme.inset.height + CGFloat(seg.left.lowerBound) * lh - leftScroll.contentInsets.top - 2 * lh
+        if let seg {
+            if inView(seg.left.lowerBound, max(1, seg.left.count), leftScroll) {
+                leftTop = leftScroll.contentView.bounds.minY
+            } else {
+                let startY = DiffTheme.inset.height + CGFloat(start) * lh - clampY(top, scroll) // the right start, from the view's top
+                var y = DiffTheme.inset.height + CGFloat(seg.left.lowerBound) * lh - startY
+                // A left side taller than what's left below: its start near the top instead.
+                let leftTall = CGFloat(max(1, seg.left.count)) * lh
+                if startY + leftTall > height - leftScroll.contentInsets.bottom, startY > leftScroll.contentInsets.top + 2 * lh {
+                    y = DiffTheme.inset.height + CGFloat(seg.left.lowerBound) * lh - leftScroll.contentInsets.top - 2 * lh
+                }
+                leftTop = y
             }
-            leftTop = y
         }
         scrollRight(toY: top, leftY: leftTop, animated: animated)
     }
@@ -1343,6 +1366,16 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         }
     }
 
+    /// Whether a change is (partly) in the clear part of the pane.
+    private func focusedInView(_ id: Int) -> Bool {
+        guard let layout = diffLayout, let s = layout.segments.first(where: { if case .hunk(let n) = $0.kind { n == id } else { false } }) else { return false }
+        let scroll = mode == .leftOnly ? leftScroll : rightScroll
+        let rows = unifiedHunks[id] ?? (mode == .leftOnly ? s.left : s.right)
+        let lh = DiffTheme.lineHeight, b = scroll.contentView.bounds, i = scroll.contentInsets
+        let top = DiffTheme.inset.height + CGFloat(rows.lowerBound) * lh, bottom = top + CGFloat(max(1, rows.count)) * lh
+        return bottom > b.minY + i.top && top < b.maxY - i.bottom
+    }
+
     /// The unreviewed change you're on: the topmost one still on screen, else the next below,
     /// else the last above.
     func currentChangeID() -> Int? {
@@ -1413,8 +1446,9 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             let r = mode == .leftOnly ? s.left : s.right
             return (r.lowerBound, max(r.count, s.left.count), id)
         }
-        // From the change you're on (if any), else from where the view is.
-        let here = focusedID.flatMap { f in spans.first { $0.2 == f }?.0 }
+        // From the change you're on, while it's still on screen; after you've scrolled away from
+        // it, from where the view is.
+        let here = focusedID.flatMap { f in focusedInView(f) ? spans.first { $0.2 == f }?.0 : nil }
         let target = here.map { h in forward ? spans.first { $0.0 > h } : spans.last { $0.0 < h } }
             ?? (forward ? spans.first { $0.0 > current + 1 } : spans.last { $0.0 < current - 1 })
         if let target {

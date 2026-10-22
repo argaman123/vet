@@ -264,6 +264,7 @@ final class ReviewModel {
 
     /// Reviewed, partly reviewed or not, from Vet's own marks.
     func stage(of change: FileChange) -> StageState {
+        _ = version // marks live in the store, which views can't watch: they follow `version`
         guard let u = units[change.path], let store, !u.isEmpty else { return .unstaged }
         let n = store.reviewedCount(change.path, of: u)
         return n == 0 ? .unstaged : n == u.count ? .staged : .partial
