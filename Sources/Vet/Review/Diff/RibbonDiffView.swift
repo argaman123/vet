@@ -1105,7 +1105,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     }
 
     @objc private func scrolled(_ note: Notification) {
-        guard !syncing, mode == .split, let clip = note.object as? NSClipView else {
+        guard !syncing, holdLeft == 0, mode == .split, let clip = note.object as? NSClipView else {
             syncGutter()
             return
         }
@@ -1201,12 +1201,25 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         headPane.layoutAllText()
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
         let i = scroll.contentInsets, lh = DiffTheme.lineHeight
-        let clear = scroll.contentView.bounds.height - i.top - i.bottom
+        let height = scroll.contentView.bounds.height
+        let clear = height - i.top - i.bottom
         let tall = CGFloat(max(1, count)) * lh
+        // Side by side, the panes line up a third of the way down (see align). A change that fits
+        // starts exactly there, so both sides start together and show whole; one that doesn't
+        // starts near the top on each side, each pane scrolled to its own start.
+        let anchor = height / 3
+        let fits = anchor - i.top >= 2 * lh && anchor + tall + lh <= height - i.bottom
         let below = min(clear * 0.3, max(2 * lh, clear - tall - 2 * lh)) // room left above the change
-        let top = DiffTheme.inset.height + CGFloat(start) * lh - i.top - below
-        scrollRight(toY: top, animated: animated)
+        let top = DiffTheme.inset.height + CGFloat(start) * lh - (fits ? anchor : i.top + below)
+        var leftTop: CGFloat?
+        if mode == .split, !fits, let seg = diffLayout?.segments.first(where: { if case .hunk = $0.kind { $0.right.lowerBound == start } else { false } }) {
+            leftTop = DiffTheme.inset.height + CGFloat(seg.left.lowerBound) * lh - leftScroll.contentInsets.top - below
+        }
+        scrollRight(toY: top, leftY: leftTop, animated: animated)
     }
+
+    /// The left pane is being placed by a jump (not lined up with the right one meanwhile).
+    private var holdLeft = 0
 
     /// Test aid: the right pane's scroll position 60 times a second for `seconds`, then `done`.
     func debugTrace(seconds: Double, done: @escaping @MainActor ([CGFloat]) -> Void) {
@@ -1278,22 +1291,30 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         for m in marks { onToggle?(m.id, true, m.snapshot) }
     }
 
-    private func scrollRight(toY y: CGFloat, animated: Bool = true) {
+    private func scrollRight(toY y: CGFloat, leftY: CGFloat? = nil, animated: Bool = true) {
         let scroll = mode == .leftOnly ? leftScroll : rightScroll
         let target = NSPoint(x: 0, y: clampY(y, scroll))
+        let leftTarget = leftY.map { NSPoint(x: 0, y: clampY($0, leftScroll)) }
         Timing.note(String(format: "glide %@ from %.1f to %.1f (gliding %d)", animated ? "animated" : "instant", scroll.contentView.bounds.minY, target.y, gliding))
         // Jumps glide (the other pane follows), unless motion is reduced or the view is still loading.
         if animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             gliding += 1
+            if leftTarget != nil { holdLeft += 1 }
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.28
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 ctx.allowsImplicitAnimation = true
                 scroll.contentView.animator().setBoundsOrigin(target)
+                if let leftTarget { leftScroll.contentView.animator().setBoundsOrigin(leftTarget) }
             } completionHandler: { [weak self, weak scroll] in
                 MainActor.assumeIsolated {
                     if let scroll { scroll.reflectScrolledClipView(scroll.contentView) }
                     guard let self else { return }
+                    if leftTarget != nil {
+                        self.leftScroll.reflectScrolledClipView(self.leftScroll.contentView)
+                        self.holdLeft -= 1
+                        self.syncGutter()
+                    }
                     Timing.note(String(format: "glide landed R %.1f", self.rightScroll.contentView.bounds.minY))
                     self.gliding -= 1
                     self.flushHeldMarks()
@@ -1302,6 +1323,13 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         } else {
             scroll.contentView.scroll(to: target)
             scroll.reflectScrolledClipView(scroll.contentView)
+            if let leftTarget {
+                syncing = true
+                leftScroll.contentView.scroll(to: leftTarget)
+                leftScroll.reflectScrolledClipView(leftScroll.contentView)
+                syncing = false
+                syncGutter()
+            }
         }
     }
 
