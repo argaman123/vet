@@ -580,11 +580,12 @@ final class ReviewModel {
         diffVersion += 1
     }
 
-    /// Notes for Claude to fix, as one draft: file, line, the line itself, and what you wrote, and
-    /// how to clear them in Vet once done. `ids` picks notes (sent before or not); nil sends every
-    /// unsent one.
+    /// Notes for Claude to fix, as one message: file, line, the line itself, and what you wrote, and
+    /// how to clear them in Vet once done. Like Ask Claude to Commit, it goes on the clipboard and
+    /// Claude comes forward, ready to paste. `ids` picks notes (sent before or not); nil sends
+    /// every unsent one.
     func sendNotes(ids: [String]? = nil) {
-        guard let notes, let link else { return }
+        guard let notes else { return }
         let chosen = ids.map { ids in notes.notes.filter { ids.contains($0.id) && !$0.isClaude && !$0.text.isEmpty } } ?? unsentNotes
         let pending = chosen.sorted { ($0.path, $0.line) < ($1.path, $1.line) }
         guard !pending.isEmpty else { return }
@@ -595,7 +596,14 @@ final class ReviewModel {
             text += n.text.split(separator: "\n", omittingEmptySubsequences: false).map { "   " + $0 }.joined(separator: "\n") + "\n"
         }
         text += "\nWhen done, clear \(pending.count == 1 ? "it" : "them") with Vet's resolve_notes (ids: \(pending.map(\.id).joined(separator: ", "))).\n"
-        link.sendDraft(text)
+        if SnapshotHook.isTesting {
+            // Tests leave your clipboard and your Claude window alone.
+            if let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] { try? text.write(toFile: dir + "/sent.txt", atomically: true, encoding: .utf8) }
+        } else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            ClaudeReference.bringClaudeForward()
+        }
         for var n in pending { n.sent = true; notes.upsert(n) }
         noteChanged()
     }

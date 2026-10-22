@@ -169,6 +169,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 pane.setSelectedRange(NSRange(location: a.location, length: b.location - a.location))
             }
         }
+        SnapshotHook.on("notesend") { [weak self] args in
+            // notesend <n>: the nth note bubble's Send to Claude, as the popover's button does; the outcome to VET_SNAPSHOT_DIR/notesend.txt
+            guard let self, let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
+            let view = self.workspace.review.diffView
+            let n = Int(args.first ?? "0") ?? 0
+            guard n < view.shownNotes.count else { try? "no note \(n) of \(view.shownNotes.count)".write(toFile: dir + "/notesend.txt", atomically: true, encoding: .utf8); return }
+            let id = view.shownNotes[n].id
+            view.noteActions?.send(id)
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                let sent = self.workspace.review.notes?.notes.first { $0.id == id }?.sent
+                try? "actions=\(view.noteActions != nil) sent=\(String(describing: sent)) toast=\(self.workspace.link.toast ?? "nil") connected=\(self.workspace.link.connected)".write(toFile: dir + "/notesend.txt", atomically: true, encoding: .utf8)
+            }
+        }
         SnapshotHook.on("noterender") { _ in
             // noterender: the note popover (new, and a saved note) drawn off screen to VET_SNAPSHOT_DIR
             guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] else { return }
