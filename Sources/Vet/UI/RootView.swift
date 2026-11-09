@@ -205,19 +205,13 @@ private struct WindowTint: NSViewRepresentable {
         w.isOpaque = !Design.frosted
         w.backgroundColor = Design.frosted ? .clear : DiffTheme.window
         if Design.shell == .native {
-            // One glass panel to the top edge: no title, a see-through title bar, and an empty
-            // toolbar so the window's buttons sit centered in a 52-pt row beside the project name.
+            // One glass panel to the top edge: no title and a see-through title bar.
             w.isOpaque = false
             w.backgroundColor = .clear
             w.titleVisibility = .hidden
             w.titlebarAppearsTransparent = true
             w.styleMask.insert(.fullSizeContentView)
-            if w.toolbar == nil {
-                let toolbar = NSToolbar(identifier: "vet.native")
-                toolbar.showsBaselineSeparator = false
-                w.toolbar = toolbar
-            }
-            w.toolbarStyle = .unified
+            w.toolbarStyle = .unified // the title row is the toolbar (NativeShell): 52 pt, buttons centered
         }
     }
 }

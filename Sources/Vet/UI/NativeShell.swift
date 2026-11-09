@@ -15,6 +15,7 @@ struct NativeShell: View {
     @AppStorage("sidebarWidth") private var sidebarWidth = 272.0
     @AppStorage("sidebarHidden") private var sidebarHidden = false
     @State private var dragStart: Double?
+    @State private var windowWidth: CGFloat = 1200
 
     var body: some View {
         HStack(spacing: 0) {
@@ -38,6 +39,7 @@ struct NativeShell: View {
             VStack(spacing: 0) {
                 NativeTopRow(app: app, sidebarHidden: sidebarHidden) { sidebarHidden = false }
                     .frame(height: NativeShell.rowHeight)
+                    .zIndex(1)
                 MainArea(app: app)
                     .environment(\.headerInRow, true)
                     // The card: dark glass over the window's glass, the wallpaper faint through it.
@@ -51,12 +53,27 @@ struct NativeShell: View {
         .animation(.easeOut(duration: 0.2), value: sidebarHidden)
         .ignoresSafeArea() // up to the window's top edge: the rows sit beside the window buttons
         .background { NativeWindowGlass().ignoresSafeArea() }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        // The toolbar holds Search, at the right end of the row: it makes the title bar the 52-pt row
+        // with the window's buttons centered in it, and (unlike a bare NSToolbar) SwiftUI's lets
+        // clicks through to the rows under it everywhere else.
+        .toolbar {
+            ToolbarSpacer(.flexible)
+            ToolbarItem { SearchCapsule(app: app) }.sharedBackgroundVisibility(.hidden) // its own glass, like the row's
+        }
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
     /// The title row's height: the window buttons sit centered in it.
     static let rowHeight: CGFloat = 52
     /// Room the window's buttons take at the row's start.
-    static let buttonsWidth: CGFloat = 78
+    static let buttonsWidth: CGFloat = 86
+    /// Room Search takes at the row's end (it lives in the toolbar).
+    static let searchWidth: CGFloat = 28
+    /// The row's control groups: rounded squares of glass (the mock's), Search's too.
+    static let capsuleHeight: CGFloat = 34
+    static let capsuleRadius: CGFloat = 11
 }
 
 /// The window's own glass: one material behind everything, the same from top to bottom.
@@ -182,7 +199,7 @@ private struct NativeTopRow: View {
     var body: some View {
         HStack(spacing: 8) {
             if sidebarHidden {
-                Color.clear.frame(width: NativeShell.buttonsWidth - 12)
+                Color.clear.frame(width: NativeShell.buttonsWidth - 8)
                 RowIcon(symbol: "sidebar.left", help: "Show Sidebar", action: showSidebar)
             }
             switch app.ui.location {
@@ -193,10 +210,10 @@ private struct NativeTopRow: View {
             case nil: Spacer()
             }
             RunCapsule(app: app)
-            SearchCapsule(app: app)
+            Color.clear.frame(width: NativeShell.searchWidth) // Search, in the toolbar
         }
         .environment(\.headerInRow, true)
-        .font(.callout)
+        .font(.system(size: 13))
         .padding(.leading, sidebarHidden ? 10 : 4)
         .padding(.trailing, 12)
     }
@@ -212,9 +229,9 @@ struct RowGroup<Content: View>: View {
             HStack(spacing: 2) { content }
                 .foregroundStyle(.secondary)
                 .tint(.secondary)
-                .padding(.horizontal, 6)
-                .frame(height: 32)
-                .glassEffect(.regular, in: .capsule)
+                .padding(.horizontal, 5)
+                .frame(height: NativeShell.capsuleHeight)
+                .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
         } else {
             content
         }
@@ -255,8 +272,8 @@ private struct RunCapsule: View {
             .help("Run Configurations")
         }
         .padding(.leading, 6).padding(.trailing, 12)
-        .frame(height: 32)
-        .glassEffect(.regular, in: .capsule)
+        .frame(height: NativeShell.capsuleHeight)
+        .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
     }
 }
 
@@ -266,11 +283,11 @@ private struct SearchCapsule: View {
     var body: some View {
         Button { app.ui.focusSearch = true } label: {
             Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .medium))
-                .frame(width: 32, height: 32).contentShape(Circle())
+                .frame(width: NativeShell.capsuleHeight, height: NativeShell.capsuleHeight).contentShape(Rectangle())
         }
         .buttonStyle(.hand)
         .foregroundStyle(.secondary)
-        .glassEffect(.regular, in: .circle)
+        .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
         .help("Search Everywhere (⇧⇧)")
         .popover(isPresented: Bindable(app.ui).focusSearch, arrowEdge: .bottom) { SearchPanel(app: app) }
     }

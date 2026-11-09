@@ -235,7 +235,6 @@ extension CodeTextView {
             let row = NSRect(x: 0, y: frame.minY, width: max(bounds.width, enclosingScrollView?.contentSize.width ?? 0), height: DiffTheme.lineHeight)
             let lit = hovered == line(at: NSPoint(x: 0, y: row.midY))
             let reviewed = ((storage.attribute(.vetFold, at: r.location, effectiveRange: nil) as? Int) ?? 0) < 0
-            if reviewed { DiffTheme.reviewedBand.setFill(); row.fill() } else { Self.drawWave(in: row) }
             let fg = lit ? DiffTheme.text : DiffTheme.foldLabel
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: fg, .paragraphStyle: HintBox.paragraph]
             let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold).applying(.init(paletteColors: [fg]))
@@ -245,8 +244,16 @@ extension CodeTextView {
             let size = (label as NSString).size(withAttributes: attrs)
             let chevronWidth = chevron?.size.width ?? 0
             let pill = NSRect(x: textContainerOrigin.x, y: row.minY + 1.5, width: ceil(size.width) + chevronWidth + 22, height: DiffTheme.lineHeight - 3)
+            // The wave runs up to the pill and on after it (a see-through pill would show it inside).
+            if reviewed { DiffTheme.reviewedBand.setFill(); row.fill() }
+            else {
+                Self.drawWave(in: NSRect(x: row.minX, y: row.minY, width: max(0, pill.minX - 6 - row.minX), height: row.height))
+                Self.drawWave(in: NSRect(x: pill.maxX + 6, y: row.minY, width: max(0, row.maxX - pill.maxX - 6), height: row.height))
+            }
             (reviewed ? DiffTheme.reviewedPill : lit ? DiffTheme.foldPillHover : DiffTheme.foldPill).setFill()
-            let shape = NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2)
+            // On glass, a rounded square like the window's controls; else WebStorm's capsule.
+            let radius = Design.shell == .native ? 6 : pill.height / 2
+            let shape = NSBezierPath(roundedRect: pill, xRadius: radius, yRadius: radius)
             shape.fill()
             DiffTheme.foldPillBorder.setStroke(); shape.lineWidth = 1; shape.stroke()
             var x = pill.minX + 8

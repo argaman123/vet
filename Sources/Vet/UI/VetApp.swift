@@ -227,6 +227,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let h = FileHandle(forWritingAtPath: dir + "/panes.txt") { h.seekToEndOfFile(); h.write(Data(line.utf8)); h.closeFile() }
             else { try? line.write(toFile: dir + "/panes.txt", atomically: true, encoding: .utf8) }
         }
+        SnapshotHook.on("click") { args in
+            // click <x> <y>: a mouse click sent straight into the window (points from its top-left), no real pointer.
+            guard args.count == 2, let x = Double(args[0]), let y = Double(args[1]),
+                  let w = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 }) else { return }
+            let p = NSPoint(x: x, y: w.frame.height - y)
+            func send(_ type: NSEvent.EventType) {
+                if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) {
+                    w.sendEvent(e)
+                }
+            }
+            w.makeKey() // key within the app only: an inactive app's window stays where it is
+            send(.leftMouseDown)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { send(.leftMouseUp) }
+        }
+        SnapshotHook.on("views") { _ in
+            // views: every AppKit-backed button in the window with its frame (points from the top-left) → views.txt
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"],
+                  let w = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 }), let root = w.contentView?.superview else { return }
+            var out = ""
+            func walk(_ v: NSView, _ depth: Int) {
+                let name = "\(type(of: v))"
+                if name.contains("Button") || name.contains("Hosting") || name.contains("Toolbar") || depth < 2 {
+                    let r = v.convert(v.bounds, to: nil)
+                    if name.contains("Button"), r.minX > 1100, r.minY > w.frame.height - 60 {
+                        var a = v.superview
+                        while let s = a { let f = s.convert(s.bounds, to: nil); out += "   ^ \(String("\(type(of: s))".prefix(70))) frame=\(s.frame) win=\(Int(f.minX)),\(Int(w.frame.height - f.maxY)) \(Int(f.width))x\(Int(f.height))\n"; a = s.superview }
+                    }
+                    out += String(repeating: " ", count: depth) + "\(name.prefix(60)) x=\(Int(r.minX)) y=\(Int(w.frame.height - r.maxY)) w=\(Int(r.width)) h=\(Int(r.height)) hidden=\(v.isHiddenOrHasHiddenAncestor)\n"
+                }
+                for s in v.subviews { walk(s, depth + 1) }
+            }
+            walk(root, 0)
+            try? out.write(toFile: dir + "/views.txt", atomically: true, encoding: .utf8)
+        }
+        SnapshotHook.on("hittest") { args in
+            // hittest <x> <y>: which view takes a click at that point (window points, from the top-left) → VET_SNAPSHOT_DIR/hit.txt
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"], args.count == 2, let x = Double(args[0]), let y = Double(args[1]),
+                  let w = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 }), let frame = w.contentView?.superview else { return }
+            let p = NSPoint(x: x, y: w.frame.height - y)
+            var out = ""
+            var v = frame.hitTest(p)
+            while let view = v { out += "\(type(of: view))\n"; v = view.superview }
+            for b in [NSWindow.ButtonType.closeButton, .zoomButton] { if let btn = w.standardWindowButton(b) { out += "btn \(b.rawValue): \(btn.convert(btn.bounds, to: nil)) super=\(btn.superview.map { "\($0.frame)" } ?? "")\n" } }
+            if let t = w.toolbar { out += "toolbar visible=\(t.isVisible) items=\(t.items.count) display=\(t.displayMode.rawValue)\n"
+                for it in t.items { out += "  item \(it.itemIdentifier.rawValue) view=\(it.view.map { "\($0.convert($0.bounds, to: nil))" } ?? "nil") visible=\(it.isVisible)\n" } }
+            else { out += "no toolbar\n" }
+            let line = "(\(x), \(y)):\n" + out + "\n"
+            if let h = FileHandle(forWritingAtPath: dir + "/hit.txt") { h.seekToEndOfFile(); h.write(Data(line.utf8)); h.closeFile() }
+            else { try? line.write(toFile: dir + "/hit.txt", atomically: true, encoding: .utf8) }
+        }
         SnapshotHook.on("collapse") { [weak self] args in self?.workspace.review.setAllCollapsed(args.first != "off") }
         SnapshotHook.on("approve") { [weak self] _ in self?.workspace.review.approveAndNext() } // ⌘↩
         SnapshotHook.on("nextchange") { [weak self] args in self?.workspace.review.jumpToChange(forward: args.first != "back") } // ⌘↓ / ⌘↑

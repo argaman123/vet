@@ -129,6 +129,7 @@ struct DiffScreen: View {
 struct DiffHeader: View {
     let app: AppDelegate
     let doc: DiffDocument
+    @Environment(\.headerInRow) private var inRow
 
     var body: some View {
         let review = app.workspace.review
@@ -136,6 +137,11 @@ struct DiffHeader: View {
         let change = review.changes.first { $0.path == doc.change.path } ?? doc.change
         let scope = review.scope
         HeaderBar(extra: Design.sticky == .pill && !scope.isEmpty ? AnyView(ScopeRows(rows: scope) { review.scopeJump?($0) }) : nil) {
+            if inRow {
+                // The window's title row: the file as a title (approving it is the sidebar's and the footer's).
+                RowTitle(name: (change.path as NSString).lastPathComponent,
+                         detail: change.origPath.map { "renamed from \($0)" } ?? (change.path as NSString).deletingLastPathComponent)
+            } else {
             let node = FileTreeNode.build([change]).first.map(leaf)
             TriStateCheckbox(state: review.stage(of: change)) { on in
                 if let node { review.setStaged(node, on) }
@@ -146,6 +152,7 @@ struct DiffHeader: View {
                 Text("renamed from \(orig)").foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             } else {
                 Text((change.path as NSString).deletingLastPathComponent).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+            }
             }
             // Claude's note on this file, one click away instead of a second bar.
             if Design.sticky == .crumbs { ScopeCrumbs(rows: scope) { review.scopeJump?($0) } }
@@ -184,12 +191,14 @@ struct DiffHeader: View {
             // Fold or open every unchanged region at once (its icon shows what it does).
             Button { review.setAllCollapsed(!review.allCollapsed) } label: {
                 Image(systemName: review.allCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+                    .frame(width: 24, height: 24).contentShape(Rectangle())
             }
             .help(review.allCollapsed ? "Expand All (⌥⇧⌘→)" : "Collapse All (⌥⇧⌘←)")
             .accessibilityLabel(review.allCollapsed ? "Expand All" : "Collapse All")
             // One button that flips the layout (its icon shows the other one).
             Button { withAnimation(.easeInOut(duration: 0.2)) { review.unified.toggle() } } label: {
                 Image(systemName: review.unified ? "rectangle.split.2x1" : "rectangle.grid.1x2")
+                    .frame(width: 24, height: 24).contentShape(Rectangle())
             }
             .help(review.unified ? "Side by Side" : "Unified")
             .accessibilityLabel(review.unified ? "Side by Side" : "Unified")
@@ -201,7 +210,7 @@ struct DiffHeader: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(change.path, forType: .string)
                 }
-            } label: { Image(systemName: "ellipsis") }
+            } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle()) }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
             }
         }
@@ -244,10 +253,14 @@ struct EditorScreen: View {
 /// The editor's header: the open file, then save, reload and Show Changes.
 struct EditorHeader: View {
     let app: AppDelegate
+    @Environment(\.headerInRow) private var inRow
     var body: some View {
         let files = app.workspace.files
         return HeaderBar {
-                if let url = files.openURL {
+                if let url = files.openURL, inRow {
+                    RowTitle(name: url.lastPathComponent, detail: ((files.relativePath ?? "") as NSString).deletingLastPathComponent)
+                    if Design.sticky == .crumbs { ScopeCrumbs(rows: files.scope) { files.editorView.scrollTo(line: $0) } }
+                } else if let url = files.openURL {
                     Image(nsImage: FileIcons.icon(for: url.lastPathComponent)).resizable().frame(width: 16, height: 16)
                     Text(url.lastPathComponent).fontWeight(.semibold)
                         .foregroundStyle(app.workspace.review.changes.first { $0.path == files.relativePath }.map { AnyShapeStyle($0.kind.color) } ?? AnyShapeStyle(.primary))
@@ -257,15 +270,25 @@ struct EditorHeader: View {
                 }
                 Spacer(minLength: 12)
                 if files.changedOnDisk {
-                    Text("Changed on disk").foregroundStyle(.orange)
-                    Button("Reload") { files.revertToDisk() }
+                    RowGroup {
+                        Text("Changed on disk").foregroundStyle(.orange).padding(.horizontal, 4)
+                        Button("Reload") { files.revertToDisk() }.padding(.trailing, 4)
+                    }
                 }
                 if files.isDirty {
-                    Text("Edited").foregroundStyle(.secondary)
-                    Button("Save") { files.saveEditor() }
+                    RowGroup {
+                        Text("Edited").foregroundStyle(.secondary).padding(.horizontal, 4)
+                        Button("Save") { files.saveEditor() }.padding(.trailing, 4)
+                    }
                 }
+                RowGroup {
                 if let path = files.relativePath, app.workspace.review.changes.contains(where: { $0.path == path }) {
-                    Button("Show Changes") { app.showDiff(path) }
+                    if inRow {
+                        Button { app.showDiff(path) } label: { Image(systemName: "plus.forwardslash.minus").frame(width: 24, height: 24).contentShape(Rectangle()) }
+                            .help("Show Changes").accessibilityLabel("Show Changes")
+                    } else {
+                        Button("Show Changes") { app.showDiff(path) }
+                    }
                 }
                 Menu {
                     if let url = files.openURL {
@@ -276,9 +299,25 @@ struct EditorHeader: View {
                             NSPasteboard.general.setString(files.relativePath ?? url.path, forType: .string)
                         }
                     }
-                } label: { Image(systemName: "ellipsis") }
+                } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle()) }
                 .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
+                }
             }
+    }
+}
+
+/// The open file as the window's title, in the row above the card: a quiet glyph, the name, the folder.
+struct RowTitle: View {
+    let name: String
+    let detail: String
+    var body: some View {
+        HStack(spacing: 0) {
+            Image(nsImage: FileIcons.icon(for: name)).resizable().frame(width: 14, height: 14)
+                .opacity(0.75).padding(.trailing, 7)
+            Text(name).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(.primary).lineLimit(1)
+            Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head).padding(.leading, 7)
+        }
+        .padding(.leading, 6)
     }
 }
 
@@ -427,10 +466,12 @@ struct BrowserScreen: View {
         // starts under it: a web page's colors under glass read as a grey box.
         VStack(spacing: 0) {
             if !inRow { BrowserHeader(app: app) }
+            let noPage = browser.loadError != nil || browser.address.isEmpty
             WebViewHost(webView: browser.webView)
+                .opacity(noPage ? 0 : 1) // its empty page would show through the card's see-through ground
                 .overlay {
                     // Vet's grey and a word on what happened, not WebKit's blank white page.
-                    if browser.loadError != nil || browser.address.isEmpty { BrowserPlaceholder(app: app) }
+                    if noPage { BrowserPlaceholder(app: app) }
                 }
         }
         .background(Color(nsColor: DiffTheme.background))
@@ -444,13 +485,20 @@ struct BrowserHeader: View {
     var body: some View {
         let browser = app.workspace.browser
         HeaderBar {
-            Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
-            Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
-            Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help(browser.isLoading ? "Stop Loading" : "Reload")
-            TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
-                .textFieldStyle(.plain)
-                .focused($editing)
-                .onSubmit { browser.go(browser.address); editing = false }
+            RowGroup {
+                Button { browser.back() } label: { Image(systemName: "chevron.left").frame(width: 24, height: 24).contentShape(Rectangle()) }.disabled(!browser.canGoBack).help("Back")
+                Button { browser.forward() } label: { Image(systemName: "chevron.right").frame(width: 24, height: 24).contentShape(Rectangle()) }.disabled(!browser.canGoForward).help("Forward")
+                Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise").frame(width: 24, height: 24).contentShape(Rectangle()) }.help(browser.isLoading ? "Stop Loading" : "Reload")
+            }
+            RowGroup {
+                TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(.primary)
+                    .focused($editing)
+                    .onSubmit { browser.go(browser.address); editing = false }
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 }

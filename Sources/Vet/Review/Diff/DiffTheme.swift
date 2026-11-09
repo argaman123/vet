@@ -68,21 +68,25 @@ enum DiffTheme {
     /// Frosted: a surface becomes a veil over the desktop (its alpha), else stays solid.
     static func veil(_ c: NSColor, _ alpha: CGFloat) -> NSColor { Design.frosted ? c.withAlphaComponent(alpha) : c }
     static var gutter: NSColor { background }
-    static var foldLabel: NSColor { color("foldLabel") { $0.foldLabel } }
-    static var foldPill: NSColor { color("foldPill") { $0.foldPill } }
-    static var foldPillHover: NSColor { color("foldPillHover") { $0.foldPillHover } }
-    static var foldPillBorder: NSColor { color("foldPillBorder") { $0.foldPillBorder } }
-    static var foldWave: NSColor { color("foldWave") { $0.foldWave } }
-    static var foldBand: NSColor { foldPill }
+    /// The native shell's code sits on dark glass: its quiet surfaces are white veils over it, not
+    /// the palette's solid greys (made for a solid code background).
+    private static var onGlass: Bool { Design.shell == .native }
+    private static func glass(_ alpha: CGFloat) -> NSColor { NSColor.white.withAlphaComponent(alpha) }
+    static var foldLabel: NSColor { onGlass ? glass(0.55) : color("foldLabel") { $0.foldLabel } }
+    static var foldPill: NSColor { onGlass ? glass(0.07) : color("foldPill") { $0.foldPill } }
+    static var foldPillHover: NSColor { onGlass ? glass(0.13) : color("foldPillHover") { $0.foldPillHover } }
+    static var foldPillBorder: NSColor { onGlass ? glass(0.09) : color("foldPillBorder") { $0.foldPillBorder } }
+    static var foldWave: NSColor { onGlass ? glass(0.10) : color("foldWave") { $0.foldWave } }
+    static var foldBand: NSColor { onGlass ? glass(0.035) : foldPill }
     /// A change you've reviewed and folded away: a quiet green, so it reads apart from unchanged lines.
     static var reviewedBand: NSColor { solid(added, 0.09) }
     static var reviewedPill: NSColor { solid(added, 0.18) }
     static var text: NSColor { color("text") { $0.text } }
-    static var lineNumber: NSColor { color("lineNumber") { $0.lineNumber } }
-    static var lineNumberCurrent: NSColor { color("lineNumberCurrent") { $0.lineNumberCurrent } }
+    static var lineNumber: NSColor { onGlass ? glass(0.30) : color("lineNumber") { $0.lineNumber } }
+    static var lineNumberCurrent: NSColor { onGlass ? glass(0.75) : color("lineNumberCurrent") { $0.lineNumberCurrent } }
     static let border = NSColor.separatorColor
     static var selection: NSColor { color("selection") { $0.selection } }
-    static var inlayBackground: NSColor { color("inlayBackground") { $0.inlayBackground } }
+    static var inlayBackground: NSColor { onGlass ? glass(0.06) : color("inlayBackground") { $0.inlayBackground } }
     static var inlayText: NSColor { color("inlayText") { $0.inlayText } }
     static var lensText: NSColor { color("lensText") { $0.lensText } }
     static var searchMatch: NSColor { color("searchMatch") { $0.searchMatch } }
@@ -103,6 +107,14 @@ enum DiffTheme {
             case .deleted: return hex(0x261C1E)
             }
         }
+        // On glass: the change's own color as a tint, the glass showing through (as the mock).
+        if onGlass {
+            switch change {
+            case .inserted: return added.withAlphaComponent(0.22)
+            case .modified: return modified.withAlphaComponent(0.24)
+            case .deleted: return glass(0.07)
+            }
+        }
         switch change {
         case .inserted: return veil(color("inserted") { $0.inserted }, 0.85)
         case .modified: return veil(color("modified") { $0.modified }, 0.85)
@@ -115,8 +127,8 @@ enum DiffTheme {
     /// Unified layout: HEAD lines red, new lines green, so the two read apart in one column.
     static var unifiedRemoved: NSColor { block(.deleted) }
     static var unifiedAdded: NSColor { block(.inserted) }
-    static var unifiedRemovedWord: NSColor { dynamic(light: hex(0xC9CBD1), dark: hex(0x44464C)) }
-    static var unifiedAddedWord: NSColor { color("insertedWord") { $0.insertedWord } }
+    static var unifiedRemovedWord: NSColor { onGlass ? glass(0.16) : dynamic(light: hex(0xC9CBD1), dark: hex(0x44464C)) }
+    static var unifiedAddedWord: NSColor { onGlass ? added.withAlphaComponent(0.42) : color("insertedWord") { $0.insertedWord } }
 
     // Code text size: pinch a code pane, or ⌘+ / ⌘− / ⌘0. Rows are 1.5× the font size.
     static let defaultFontSize: CGFloat = 12
@@ -185,7 +197,10 @@ enum DiffTheme {
     /// `color` at `alpha` over the code background, as one opaque color (WebStorm uses one
     /// opaque color for a change's lines and its ribbon, so touching sections don't darken).
     static func solid(_ color: NSColor, _ alpha: CGFloat) -> NSColor {
-        NSColor(name: nil) { appearance in
+        // On glass the background is clear: blending onto it would come out invisible. A tint instead
+        // (a translucent color's own alpha scales with it).
+        if onGlass { return color.withAlphaComponent(color.alphaComponent * alpha) }
+        return NSColor(name: nil) { appearance in
             var out = NSColor.clear
             appearance.performAsCurrentDrawingAppearance {
                 let c = color.usingColorSpace(.sRGB) ?? color, b = background.usingColorSpace(.sRGB) ?? .black
@@ -206,7 +221,7 @@ enum DiffTheme {
         staged ? solid(base, 0.16) : base
     }
     /// Changed words inside a modified section: a brighter shade of it, so they stand out.
-    static var modifiedWord: NSColor { Design.direction == .monolith ? hex(0x2D4A78) : color("modifiedWord") { $0.modifiedWord } }
+    static var modifiedWord: NSColor { onGlass ? modified.withAlphaComponent(0.42) : Design.direction == .monolith ? hex(0x2D4A78) : color("modifiedWord") { $0.modifiedWord } }
     /// Changed words (faded once reviewed).
     static func word(_ base: NSColor, staged: Bool) -> NSColor { staged ? solid(base, 0.22) : base }
 
