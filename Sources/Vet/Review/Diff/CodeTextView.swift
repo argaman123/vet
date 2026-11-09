@@ -67,7 +67,7 @@ final class CodeTextView: NSTextView {
         // document starts at the top of the clip view.
         scroll.automaticallyAdjustsContentInsets = false
         scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-        scroll.drawsBackground = true
+        scroll.drawsBackground = Design.surface != .full && Design.shell != .native // glass: only the text paints its veil, once
         scroll.backgroundColor = DiffTheme.background
         let tv = CodeTextView(usingTextLayoutManager: true)
         tv.isEditable = false

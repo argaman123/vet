@@ -7,9 +7,47 @@ struct RootView: View {
 
     var body: some View {
         let ws = app.workspace, ui = app.ui
+        shell
+        .onChange(of: ui.search) { _, query in app.searchEverywhere.update(query) }
+        .tint(Color(nsColor: DiffTheme.accent)) // the theme's accent on every control
+        .focusEffectDisabled()
+        // Up under the title bar too, or the window frame's own grey shows there.
+        .background {
+            // All glass: the window itself is clear Liquid Glass, the desktop showing through.
+            if Design.shell == .native { EmptyView() }
+            else if Design.surface == .full { LiquidGlass(style: .clear, tint: NSColor.black.withAlphaComponent(0.28)).ignoresSafeArea() }
+            else if Design.frosted { BehindWindowBlur().ignoresSafeArea() }
+        }
+        .id(ui.themeID) // a new theme redraws everything with its colors
+        .background(WindowTint())
+        .task(id: app.projects.current) {
+            app.ui.reset()
+            app.find.reset()
+            ws.open(app.projects.current)
+        }
+        .onChange(of: ws.review.selectedPath) { _, path in
+            // Keep the main area on the selected change (selection can change from the menu or Claude).
+            if let path, ui.location != .diff(path: path), case .diff = ui.location ?? .diff(path: "") { ui.replace(.diff(path: path)) }
+        }
+        .sheet(isPresented: Bindable(ui).editingRules) { RulesDialog(model: ws.review, isPresented: Bindable(ui).editingRules) }
+        .sheet(isPresented: Bindable(ui).editingRunConfigs) { RunConfigEditor(run: ws.run, isPresented: Bindable(ui).editingRunConfigs) }
+        .sheet(isPresented: Binding(get: { ws.navResults != nil }, set: { if !$0 { ws.navResults = nil } })) {
+            if let results = ws.navResults {
+                LocationPicker(title: results.title, locations: results.locations, root: ws.root) { ws.open($0) } cancel: { ws.navResults = nil }
+            }
+        }
+    }
+
+    /// The native shell (one glass window), or the classic split view with its toolbar.
+    @ViewBuilder private var shell: some View {
+        let ui = app.ui
+        if Design.shell == .native {
+            NativeShell(app: app)
+        } else {
         NavigationSplitView {
             SidebarView(app: app)
                 .background(Self.sidebarFill)
+                .modifier(FloatingSidebar())
                 .navigationSplitViewColumnWidth(min: 230, ideal: 290, max: 460)
         } detail: {
             MainArea(app: app)
@@ -18,6 +56,7 @@ struct RootView: View {
                 // Studio: the work sits on an inset panel, floating on the window.
                 // (Only Studio clips: a clip would also cut the backdrop off at the top bar.)
                 .modifier(StudioClip())
+                .modifier(InsetPanel())
                 .overlay {
                     if Design.direction == .studio {
                         RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.07))
@@ -35,29 +74,6 @@ struct RootView: View {
                 .searchable(text: Bindable(ui).search, isPresented: Bindable(ui).focusSearch, placement: .toolbar, prompt: "Search Everywhere")
                 .searchSuggestions { SearchEverywhereSuggestions(app: app) }
         }
-        .onChange(of: ui.search) { _, query in app.searchEverywhere.update(query) }
-        .tint(Color(nsColor: DiffTheme.accent)) // the theme's accent on every control
-        .focusEffectDisabled()
-        // Up under the title bar too, or the window frame's own grey shows there.
-        .background { if Design.frosted { BehindWindowBlur().ignoresSafeArea() } }
-        .id(ui.themeID) // a new theme redraws everything with its colors
-        .background(WindowTint())
-        .task(id: app.projects.current) {
-            app.ui.reset()
-            app.find.reset()
-            ws.open(app.projects.current)
-        }
-        .onChange(of: ws.review.selectedPath) { _, path in
-            // Keep the main area on the selected change (selection can change from the menu or Claude).
-            if let path, ui.location != .diff(path: path), case .diff = ui.location ?? .diff(path: "") { ui.replace(.diff(path: path)) }
-        }
-        // ⌘K away from the diff: the commit form as a sheet.
-        .sheet(isPresented: Bindable(ui).editingRules) { RulesDialog(model: ws.review, isPresented: Bindable(ui).editingRules) }
-        .sheet(isPresented: Bindable(ui).editingRunConfigs) { RunConfigEditor(run: ws.run, isPresented: Bindable(ui).editingRunConfigs) }
-        .sheet(isPresented: Binding(get: { ws.navResults != nil }, set: { if !$0 { ws.navResults = nil } })) {
-            if let results = ws.navResults {
-                LocationPicker(title: results.title, locations: results.locations, root: ws.root) { ws.open($0) } cancel: { ws.navResults = nil }
-            }
         }
     }
 
@@ -188,6 +204,21 @@ private struct WindowTint: NSViewRepresentable {
         // Glass keeps a solid window (the sidebar's own glass frosts it); Frosted lets the desktop through.
         w.isOpaque = !Design.frosted
         w.backgroundColor = Design.frosted ? .clear : DiffTheme.window
+        if Design.shell == .native {
+            // One glass panel to the top edge: no title, a see-through title bar, and an empty
+            // toolbar so the window's buttons sit centered in a 52-pt row beside the project name.
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.titleVisibility = .hidden
+            w.titlebarAppearsTransparent = true
+            w.styleMask.insert(.fullSizeContentView)
+            if w.toolbar == nil {
+                let toolbar = NSToolbar(identifier: "vet.native")
+                toolbar.showsBaselineSeparator = false
+                w.toolbar = toolbar
+            }
+            w.toolbarStyle = .unified
+        }
     }
 }
 
@@ -200,9 +231,47 @@ private struct TopBarBackdrop: View {
                 if Design.chrome == .frame {
                     Rectangle().fill(.clear).glassEffect(.regular, in: Rectangle()).frame(height: max(g.safeAreaInsets.top, 52))
                 }
-                Color(nsColor: DiffTheme.background)
+                // Frame and Full: the code is its own inset panel, so the window's frost shows here.
+                if Design.surface == .standard || Design.surface == .float { Color(nsColor: DiffTheme.background) }
             }
             .ignoresSafeArea()
+        }
+    }
+}
+
+/// Frame and Full: the work is an inset rounded panel on the frosted window, under the top bar.
+private struct InsetPanel: ViewModifier {
+    func body(content: Content) -> some View {
+        if Design.surface == .full {
+            // All glass, as in the reference: the code sits in its own lighter frosted card, the
+            // desktop showing through it, on the frosted window.
+            content
+                .background { LiquidGlass(style: .regular, cornerRadius: 14, tint: NSColor.black.withAlphaComponent(0.42)) }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.12)) }
+                .padding(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 10))
+        } else if Design.surface == .frame {
+            content
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.08)) }
+                .shadow(color: .black.opacity(Design.surface == .frame ? 0.3 : 0.15), radius: 14, y: 4)
+                .padding(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 10))
+        } else {
+            content
+        }
+    }
+}
+
+/// Float: the sidebar is a Liquid Glass panel floating on the window.
+private struct FloatingSidebar: ViewModifier {
+    func body(content: Content) -> some View {
+        if Design.surface == .float {
+            content
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.clear).glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous)) }
+                .padding(8)
+        } else {
+            content
         }
     }
 }
@@ -225,10 +294,29 @@ private struct TopBarMaterial: ViewModifier {
 }
 
 /// The desktop, blurred, behind the whole window (Frosted).
-private struct BehindWindowBlur: NSViewRepresentable {
+/// macOS 26's Liquid Glass as a view (what a glass window and a glass card are made of).
+struct LiquidGlass: NSViewRepresentable {
+    var style: NSGlassEffectView.Style = .regular
+    var cornerRadius: CGFloat = 0
+    var tint: NSColor?
+    func makeNSView(context: Context) -> NSGlassEffectView {
+        let v = NSGlassEffectView()
+        update(v)
+        return v
+    }
+    func updateNSView(_ v: NSGlassEffectView, context: Context) { update(v) }
+    private func update(_ v: NSGlassEffectView) {
+        v.style = style
+        v.cornerRadius = cornerRadius
+        v.tintColor = tint
+    }
+}
+
+struct BehindWindowBlur: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .underWindowBackground
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()
-        v.material = .underWindowBackground
+        v.material = material
         v.blendingMode = .behindWindow
         v.state = .active
         return v

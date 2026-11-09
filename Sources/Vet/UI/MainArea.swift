@@ -72,7 +72,7 @@ private struct Placeholder: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Design.shell == .native ? Color.clear : Color(nsColor: .textBackgroundColor))
     }
 }
 
@@ -83,7 +83,21 @@ struct DiffScreen: View {
     @State private var top: CGFloat = 0
     @State private var bottom: CGFloat = 0
 
+    @Environment(\.headerInRow) private var inRow
+
     var body: some View {
+        let review = app.workspace.review
+        if inRow {
+            // The native shell: the header is the window's top row; only the action floats here.
+            RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial,
+                           overlay: NSEdgeInsets(top: 4, left: 0, bottom: bottom, right: 0))
+                .overlay(alignment: .bottom) { ReviewFooter(app: app, floating: true).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottom = $0 } }
+        } else {
+            classic
+        }
+    }
+
+    @ViewBuilder private var classic: some View {
         let review = app.workspace.review
         let glass = Design.direction == .glass
         let header = VStack(spacing: 0) {
@@ -143,24 +157,30 @@ struct DiffHeader: View {
                 Text("Edited").foregroundStyle(.secondary)
                 Button("Revert") { review.revertDiffEdits() }
                 Button("Save") { review.diffSave?() }.keyboardShortcut("s", modifiers: .command)
-            } else if let staging = doc.staging {
-                let total = staging.hunks.count
-                let staged = review.hunkStates.values.filter { $0 == .staged }.count
-                Text(total == 0 ? "" : "\(staged)/\(total)")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .help("\(staged) of \(total) changes reviewed")
             }
+            // The diff's own controls, where WebStorm keeps them: the count and change navigation,
+            // then the view.
+            RowGroup {
+                if !review.diffDirty, let staging = doc.staging, !staging.hunks.isEmpty {
+                    let total = staging.hunks.count
+                    let staged = review.hunkStates.values.filter { $0 == .staged }.count
+                    Text("\(staged)/\(total)")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .padding(.horizontal, 4)
+                        .help("\(staged) of \(total) changes reviewed")
+                }
+                Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up").frame(width: 24, height: 24).contentShape(Rectangle()) }
+                    .help("Previous Change (⌘↑)")
+                Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down").frame(width: 24, height: 24).contentShape(Rectangle()) }
+                    .help("Next Change (⌘↓)")
+            }
+            RowGroup {
             // The way back to the file, as the editor's header offers Show Changes (JetBrains' pencil
             // for Jump to Source).
-            Button { if let url = review.url(for: change.path) { app.showFile(url) } } label: { Image(systemName: "pencil") }
+            Button { if let url = review.url(for: change.path) { app.showFile(url) } } label: { Image(systemName: "pencil").frame(width: 24, height: 24).contentShape(Rectangle()) }
                 .help("Open in Editor")
                 .accessibilityLabel("Open in Editor")
-            // The diff's own controls, where WebStorm keeps them: change navigation and layout.
-            Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up") }
-                .help("Previous Change (⌘↑)")
-            Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down") }
-                .help("Next Change (⌘↓)")
             // Fold or open every unchanged region at once (its icon shows what it does).
             Button { review.setAllCollapsed(!review.allCollapsed) } label: {
                 Image(systemName: review.allCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
@@ -182,7 +202,8 @@ struct DiffHeader: View {
                     NSPasteboard.general.setString(change.path, forType: .string)
                 }
             } label: { Image(systemName: "ellipsis") }
-            .menuStyle(.button).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
+            }
         }
     }
 
@@ -196,10 +217,13 @@ struct DiffHeader: View {
 struct EditorScreen: View {
     let app: AppDelegate
     @State private var top: CGFloat = 0
+    @Environment(\.headerInRow) private var inRow
 
     var body: some View {
         let glass = Design.direction == .glass
-        if glass {
+        if inRow {
+            editor(overlayTop: 4) // the native shell: the header is the window's top row
+        } else if glass {
             // Glass: the header floats over the code, which scrolls under it.
             editor(overlayTop: top)
                 .overlay(alignment: .top) { EdgeFade(edge: .top, height: top) }
@@ -210,7 +234,17 @@ struct EditorScreen: View {
         }
     }
 
-    private var header: some View {
+    private var header: some View { EditorHeader(app: app) }
+
+    @ViewBuilder private func editor(overlayTop: CGFloat) -> some View {
+        EditorBody(app: app, overlayTop: overlayTop)
+    }
+}
+
+/// The editor's header: the open file, then save, reload and Show Changes.
+struct EditorHeader: View {
+    let app: AppDelegate
+    var body: some View {
         let files = app.workspace.files
         return HeaderBar {
                 if let url = files.openURL {
@@ -243,11 +277,15 @@ struct EditorScreen: View {
                         }
                     }
                 } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.button).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
             }
     }
+}
 
-    @ViewBuilder private func editor(overlayTop: CGFloat) -> some View {
+private struct EditorBody: View {
+    let app: AppDelegate
+    let overlayTop: CGFloat
+    var body: some View {
         let files = app.workspace.files
             if let message = files.message {
                 Text(message).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -288,8 +326,13 @@ struct HeaderBar<Content: View>: View {
     /// Rows under the controls, inside the same glass (the pinned declarations, say).
     var extra: AnyView? = nil
     @ViewBuilder let content: Content
+    @Environment(\.headerInRow) private var inRow
     var body: some View {
-        if Design.direction == .glass {
+        if inRow {
+            // The native shell's top row: the controls straight on the window's glass.
+            HStack(spacing: 8) { content }
+                .buttonStyle(.hand)
+        } else if Design.direction == .glass {
             // Glass: the file's controls float in a Liquid Glass bar over the code's edge.
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) { content }
@@ -376,23 +419,14 @@ struct OutputPane: View {
 /// The browser in the main area, with its address bar on top.
 struct BrowserScreen: View {
     let app: AppDelegate
-    @FocusState private var editing: Bool
+    @Environment(\.headerInRow) private var inRow
 
     var body: some View {
         let browser = app.workspace.browser
         // The address bar sits on the window's own grey, as the headers do over code, and the page
         // starts under it: a web page's colors under glass read as a grey box.
         VStack(spacing: 0) {
-            HeaderBar {
-                Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
-                Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
-                Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help(browser.isLoading ? "Stop Loading" : "Reload")
-                // Typed straight onto the glass: no box of its own.
-                TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
-                    .textFieldStyle(.plain)
-                    .focused($editing)
-                    .onSubmit { browser.go(browser.address); editing = false }
-            }
+            if !inRow { BrowserHeader(app: app) }
             WebViewHost(webView: browser.webView)
                 .overlay {
                     // Vet's grey and a word on what happened, not WebKit's blank white page.
@@ -400,6 +434,24 @@ struct BrowserScreen: View {
                 }
         }
         .background(Color(nsColor: DiffTheme.background))
+    }
+}
+
+/// The browser's address bar: history, reload and the address, typed straight onto the glass.
+struct BrowserHeader: View {
+    let app: AppDelegate
+    @FocusState private var editing: Bool
+    var body: some View {
+        let browser = app.workspace.browser
+        HeaderBar {
+            Button { browser.back() } label: { Image(systemName: "chevron.left") }.disabled(!browser.canGoBack).help("Back")
+            Button { browser.forward() } label: { Image(systemName: "chevron.right") }.disabled(!browser.canGoForward).help("Forward")
+            Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }.help(browser.isLoading ? "Stop Loading" : "Reload")
+            TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
+                .textFieldStyle(.plain)
+                .focused($editing)
+                .onSubmit { browser.go(browser.address); editing = false }
+        }
     }
 }
 

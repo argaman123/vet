@@ -56,7 +56,15 @@ enum DiffTheme {
     static var folder: NSColor { color("folder") { $0.folder } }
     static var sidebar: NSColor { color("sidebar") { $0.sidebar } }
     static var header: NSColor { veil(color("header") { $0.header }, 0.55) }
-    static var background: NSColor { veil(color("background") { $0.background }, 0.8) }
+    static var background: NSColor {
+        let c = color("background") { $0.background }
+        if Design.shell == .native { return c.withAlphaComponent(0) } // the card's dark glass shows instead
+        switch Design.surface {
+        case .standard: return veil(c, 0.8)
+        case .frame, .float: return c.withAlphaComponent(1) // a solid panel for the code
+        case .full: return c.withAlphaComponent(0.12) // glass: the card's frost is the code's ground
+        }
+    }
     /// Frosted: a surface becomes a veil over the desktop (its alpha), else stays solid.
     static func veil(_ c: NSColor, _ alpha: CGFloat) -> NSColor { Design.frosted ? c.withAlphaComponent(alpha) : c }
     static var gutter: NSColor { background }

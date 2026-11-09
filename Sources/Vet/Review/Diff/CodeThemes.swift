@@ -263,6 +263,14 @@ enum Design {
     enum Chrome: String { case material, frame, column }
     static var chrome: Chrome { Chrome(rawValue: UserDefaults.standard.string(forKey: "design.chrome") ?? "") ?? .column }
     static var frosted: Bool { UserDefaults.standard.object(forKey: "design.frosted") as? Bool ?? true }
+    /// The window's surfaces (study): as now (standard); a glass frame around a solid inset code
+    /// panel (frame); the code panel glass too (full); a floating glass sidebar over a solid window (float).
+    enum Surface: String { case standard, frame, full, float }
+    /// The window (study): one glass panel with the sidebar on it and the work in a card (native),
+    /// or the split view with its toolbar (classic).
+    enum Shell: String { case native, classic }
+    static var shell: Shell { Shell(rawValue: UserDefaults.standard.string(forKey: "design.shell") ?? "") ?? .native }
+    static var surface: Surface { Surface(rawValue: UserDefaults.standard.string(forKey: "design.surface") ?? "") ?? .standard }
     /// What joins the two sides of the diff.
     /// ribbon: the band narrows to a neck for the ring (the old look); flow: one smooth band, the
     /// ring on top of it; thread: a single thin curve between the two blocks; straight: straight edges.
