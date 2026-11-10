@@ -241,7 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             func send(_ type: NSEvent.EventType) {
                 if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                               windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) {
-                    w.sendEvent(e)
+                    NSApp.sendEvent(e) // through the app, as real clicks go (event monitors see it)
                 }
             }
             w.makeKey() // key within the app only: an inactive app's window stays where it is

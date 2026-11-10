@@ -204,14 +204,13 @@ struct DiffHeader: View {
             }
             .help(review.unified ? "Side by Side" : "Unified")
             .accessibilityLabel(review.unified ? "Side by Side" : "Unified")
-            Menu {
-                Button("Show in Finder") { if let url = review.url(for: change.path) { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
-                Button("Copy Path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(change.path, forType: .string)
-                }
-            } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle()) }
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
+            GlassMenuButton(app: app, trailing: true, items: {
+                [.item(title: "Show in Finder") { if let url = review.url(for: change.path) { NSWorkspace.shared.activateFileViewerSelecting([url]) } },
+                 .item(title: "Copy Path") {
+                     NSPasteboard.general.clearContents()
+                     NSPasteboard.general.setString(change.path, forType: .string)
+                 }]
+            }) { Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle()) }
             }
         }
     }
@@ -290,17 +289,15 @@ struct EditorHeader: View {
                         Button("Show Changes") { app.showDiff(path) }
                     }
                 }
-                Menu {
-                    if let url = files.openURL {
-                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                        Button("Reveal in Project") { app.ui.tool = .project; if let p = files.relativePath { files.expandAncestors(of: p) } }
-                        Button("Copy Path") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(files.relativePath ?? url.path, forType: .string)
-                        }
-                    }
-                } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle()) }
-                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
+                GlassMenuButton(app: app, trailing: true, items: {
+                    guard let url = files.openURL else { return [] }
+                    return [.item(title: "Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) },
+                            .item(title: "Reveal in Project") { app.ui.tool = .project; if let p = files.relativePath { files.expandAncestors(of: p) } },
+                            .item(title: "Copy Path") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(files.relativePath ?? url.path, forType: .string)
+                            }]
+                }) { Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle()) }
                 }
             }
     }

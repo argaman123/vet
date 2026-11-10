@@ -36,6 +36,8 @@ final class UIState {
     private(set) var forward: [Location] = []
     var search = ""
     var focusSearch = false
+    /// The glass menu that's open (the project's, Run's, a file's ⋯), if any.
+    var menu: OpenGlassMenu?
     var showCommit = false
     var editingRules = false
     var editingRunConfigs = false

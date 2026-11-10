@@ -4,7 +4,7 @@ import SwiftUI
 /// window's own tone over the system's glass, in rounded squares.
 enum Glass {
     /// The window's dark tone, laid over glass so light content behind never washes it out.
-    static let tint = Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.55)
+    static let tint = Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.68)
     /// Bars and small messages.
     static let barRadius: CGFloat = 10
     /// Panels: menus, notes.

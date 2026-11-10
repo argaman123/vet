@@ -54,6 +54,7 @@ struct NativeShell: View {
         .ignoresSafeArea() // up to the window's top edge: the rows sit beside the window buttons
         .background { NativeWindowGlass().ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        .overlay { GlassMenuOverlay(app: app) }
         .overlay { if app.ui.focusSearch { SearchOverlay(app: app) } }
         // The toolbar holds Search, at the right end of the row: it makes the title bar the 52-pt row
         // with the window's buttons centered in it, and (unlike a bare NSToolbar) SwiftUI's lets
@@ -175,7 +176,7 @@ private struct PlaceSwitcher: View {
 private struct ProjectTitle: View {
     let app: AppDelegate
     var body: some View {
-        Menu { ProjectMenu(app: app) } label: {
+        GlassMenuButton(app: app, items: { ProjectMenu.items(app) }) {
             HStack(spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(app.projects.current?.lastPathComponent ?? "Vet").font(.system(size: 14, weight: .semibold))
@@ -190,11 +191,6 @@ private struct ProjectTitle: View {
             .padding(.vertical, 8).padding(.horizontal, 4)
             .contentShape(Rectangle())
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .pointerStyle(.link)
     }
 }
 
@@ -274,19 +270,14 @@ private struct RunCapsule: View {
             }
             .buttonStyle(.hand)
             .help(run.isRunning ? "Stop (⌘.)" : run.selected.map { "Run ‘\($0.name)’ (⌘R)" } ?? "Run (⌘R)")
-            Menu {
-                ForEach(run.configs) { c in
-                    Button { run.selectedID = c.id } label: {
-                        if c.id == run.selected?.id { Label(c.name, systemImage: "checkmark") } else { Text(c.name) }
-                    }
-                }
-                if !run.configs.isEmpty { Divider() }
-                Button("Edit Configurations…") { ui.editingRunConfigs = true }
-            } label: {
+            GlassMenuButton(app: app, trailing: true, help: "Run Configurations", items: {
+                run.configs.map { c in .item(title: c.name, checked: c.id == run.selected?.id) { run.selectedID = c.id } }
+                    + (run.configs.isEmpty ? [] : [.divider])
+                    + [.item(title: "Edit Configurations…") { ui.editingRunConfigs = true }]
+            }) {
                 Text(run.selected?.name ?? "Run").lineLimit(1)
+                    .frame(height: 28).contentShape(Rectangle())
             }
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
-            .help("Run Configurations")
         }
         .padding(.leading, 6).padding(.trailing, 12)
         .frame(height: NativeShell.capsuleHeight)

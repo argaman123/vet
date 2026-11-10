@@ -134,6 +134,31 @@ struct ProjectMenu: View {
         }
     }
 
+    /// The same menu as rows of a glass menu (the native window's title).
+    @MainActor static func items(_ app: AppDelegate) -> [GlassMenuItem] {
+        let review = app.workspace.review
+        var items: [GlassMenuItem] = []
+        if review.isGitRepo {
+            let staged = review.changes.filter { review.stage(of: $0) == .staged }.count
+            items += [.item(title: staged > 0 ? "Ask Claude to Commit \(staged) Reviewed" : "Ask Claude to Commit") { review.askClaudeToCommit() }, .divider]
+        }
+        items.append(.label("Projects"))
+        items += app.projects.recent.map { url in
+            .item(title: url.lastPathComponent, checked: url.standardizedFileURL == app.projects.current?.standardizedFileURL) { app.projects.open(url) }
+        }
+        items.append(.item(title: "Open Folder…") { app.projects.showOpenPanel() })
+        func branch(_ b: GitBranch) -> GlassMenuItem {
+            .item(title: b.name, checked: b.isCurrent, disabled: review.gitBusy) { review.checkout(b.name) }
+        }
+        let local = review.branches.filter { !$0.isRemote }, remote = review.branches.filter(\.isRemote)
+        if !local.isEmpty {
+            items.append(.label("Branches"))
+            items += local.map(branch)
+            if !remote.isEmpty { items.append(.submenu(title: "Remote Branches", items: remote.map(branch))) }
+        }
+        return items
+    }
+
     private func branchButton(_ b: GitBranch) -> some View {
         Button { app.workspace.review.checkout(b.name) } label: {
             if b.isCurrent { Label(b.name, systemImage: "checkmark") } else { Text(b.name) }
