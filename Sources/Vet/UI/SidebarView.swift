@@ -21,7 +21,10 @@ struct SidebarView: View {
         // A quiet grey selection (names keep their colors on it), not the accent blue.
         .tint(Color(white: 0.32))
         // IDE trees want dense rows (Xcode's navigators use the small size too).
+        // Dense rows (the small size, as Xcode's navigators) with the regular 13-pt sidebar text:
+        // the small size's own text is too small to read comfortably.
         .environment(\.sidebarRowSize, Design.shell == .native ? .small : .medium)
+        .font(.system(size: 13))
     }
 }
 

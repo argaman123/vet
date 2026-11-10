@@ -23,9 +23,17 @@ private struct QuietRow: ViewModifier {
     @Environment(\.selectedRow) private var selected
     func body(content: Content) -> some View {
         content.listRowBackground(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(selected == path ? 0.09 : 0))
-                .padding(.horizontal, 10)
+            Group {
+                if selected != path {
+                    Color.clear
+                } else if Design.shell == .native {
+                    // The selected file: a piece of glass on the window's glass.
+                    Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 8))
+                } else {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.09))
+                }
+            }
+            .padding(.horizontal, 10)
         )
     }
 }

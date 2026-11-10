@@ -76,6 +76,7 @@ struct GlassMenuOverlay: View {
                 let top = anchor.maxY + 5
                 ZStack(alignment: menu.trailing ? .topTrailing : .topLeading) {
                     Color.clear.contentShape(Rectangle()).onTapGesture { close() }
+                        .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } }
                     GlassMenuPanel(items: menu.items, maxHeight: max(120, geo.size.height - top - 14), close: close)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { panel = $0 }
                         .offset(x: menu.trailing ? -max(8, geo.size.width - anchor.maxX) : max(8, min(anchor.minX - 6, geo.size.width - 330)),

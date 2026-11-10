@@ -16,11 +16,14 @@ struct NativeShell: View {
     @AppStorage("sidebarHidden") private var sidebarHidden = false
     @State private var dragStart: Double?
     @State private var windowWidth: CGFloat = 1200
+    /// Full screen: no window buttons, and no toolbar (there it becomes a bar of its own over the
+    /// top row, taking its clicks), so Search moves into the row.
+    @State private var fullScreen = false
 
     var body: some View {
         HStack(spacing: 0) {
             if !sidebarHidden {
-                NativeSidebar(app: app) { sidebarHidden = true }
+                NativeSidebar(app: app, fullScreen: fullScreen) { sidebarHidden = true }
                     .frame(width: sidebarWidth)
                     .overlay(alignment: .trailing) {
                         // Drag the gap between the sidebar and the card to resize.
@@ -37,7 +40,7 @@ struct NativeShell: View {
                     }
             }
             VStack(spacing: 0) {
-                NativeTopRow(app: app, sidebarHidden: sidebarHidden) { sidebarHidden = false }
+                NativeTopRow(app: app, sidebarHidden: sidebarHidden, fullScreen: fullScreen) { sidebarHidden = false }
                     .frame(height: NativeShell.rowHeight)
                     .zIndex(1)
                 MainArea(app: app)
@@ -65,6 +68,9 @@ struct NativeShell: View {
             ToolbarItem { SearchCapsule(app: app).padding(.trailing, 5) }.sharedBackgroundVisibility(.hidden)
         }
         .toolbar(removing: .title)
+        .toolbar(fullScreen ? .hidden : .visible, for: .windowToolbar)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in fullScreen = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in fullScreen = false }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
@@ -114,13 +120,14 @@ struct RowIcon: View {
 
 private struct NativeSidebar: View {
     let app: AppDelegate
+    let fullScreen: Bool
     let hide: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             // The title row: the window's buttons, the project and its branch, the sidebar toggle.
             HStack(spacing: 6) {
-                Color.clear.frame(width: NativeShell.buttonsWidth - 14)
+                Color.clear.frame(width: fullScreen ? 2 : NativeShell.buttonsWidth - 14)
                 ProjectTitle(app: app)
                 Spacer(minLength: 4)
                 RowIcon(symbol: "sidebar.left", help: "Hide Sidebar", action: hide)
@@ -145,14 +152,18 @@ private struct PlaceSwitcher: View {
     let app: AppDelegate
     /// In the top row (sidebar hidden): fixed-width segments, not the sidebar's full width.
     var compact = false
+    @Namespace private var thumb
     var body: some View {
+        // One piece of glass, the same as the top row's groups; the selection slides between the places.
         HStack(spacing: 2) {
             segment(.changes, "checklist", "Changes (⌘1)")
             segment(.files, "folder", "All Files (⌘2)")
             segment(.browser, "safari", "Browser (⌘3)")
         }
-        .padding(2)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.06)))
+        .padding(3)
+        .frame(height: NativeShell.capsuleHeight)
+        .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: app.place)
     }
 
     private func segment(_ place: AppDelegate.Place, _ symbol: String, _ help: String) -> some View {
@@ -160,9 +171,13 @@ private struct PlaceSwitcher: View {
         return Button { app.go(to: place) } label: {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
-                .frame(minWidth: compact ? 34 : nil, maxWidth: compact ? 34 : .infinity)
-                .frame(height: 26)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(on ? Color.white.opacity(0.14) : .clear))
+                .frame(minWidth: compact ? 36 : nil, maxWidth: compact ? 36 : .infinity, maxHeight: .infinity)
+                .background {
+                    if on {
+                        RoundedRectangle(cornerRadius: NativeShell.capsuleRadius - 3, style: .continuous).fill(Color.white.opacity(0.15))
+                            .matchedGeometryEffect(id: "thumb", in: thumb)
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.hand)
@@ -200,13 +215,14 @@ private struct ProjectTitle: View {
 private struct NativeTopRow: View {
     let app: AppDelegate
     let sidebarHidden: Bool
+    let fullScreen: Bool
     let showSidebar: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             if sidebarHidden {
                 // Everything the sidebar's rows held comes up here: the project, history, the places.
-                Color.clear.frame(width: NativeShell.buttonsWidth - 22)
+                Color.clear.frame(width: fullScreen ? 2 : NativeShell.buttonsWidth - 22)
                 ProjectTitle(app: app)
                 RowIcon(symbol: "sidebar.left", help: "Show Sidebar", action: showSidebar)
                 HStack(spacing: 0) {
@@ -223,7 +239,8 @@ private struct NativeTopRow: View {
             case nil: Spacer()
             }
             RunCapsule(app: app)
-            Color.clear.frame(width: NativeShell.searchWidth) // Search, in the toolbar
+            if fullScreen { SearchCapsule(app: app) }
+            else { Color.clear.frame(width: NativeShell.searchWidth) } // Search, in the toolbar
         }
         .environment(\.headerInRow, true)
         .font(.system(size: 13))
@@ -309,6 +326,7 @@ private struct SearchOverlay: View {
             Color.black.opacity(0.18)
                 .contentShape(Rectangle())
                 .onTapGesture { close() }
+                .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the I-beam of the code underneath
             SearchPanel(app: app)
                 .background(Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.55))
                 .glassEffect(.regular, in: .rect(cornerRadius: 16))
@@ -371,6 +389,7 @@ private struct SearchPanel: View {
                 }
                 // As tall as its rows, up to a limit (a scroll view alone always takes the limit).
                 .frame(height: min(380, CGFloat(items.count) * 29 + CGFloat(groups.count) * 26 + 12))
+                .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } }
             }
         }
         .frame(width: 560)

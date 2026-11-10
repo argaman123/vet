@@ -249,7 +249,7 @@ enum Design {
     /// the mark alone in the language's color (letters), a small colored dot (dot), or a thin grey
     /// symbol per kind of file (glyph).
     enum FileIcon: String { case badge, letters, dot, glyph }
-    static var fileIcon: FileIcon { FileIcon(rawValue: UserDefaults.standard.string(forKey: "design.fileIcon") ?? "") ?? .glyph }
+    static var fileIcon: FileIcon { FileIcon(rawValue: UserDefaults.standard.string(forKey: "design.fileIcon") ?? "") ?? .badge }
     static var jumpIcon: JumpIcon { JumpIcon(rawValue: UserDefaults.standard.string(forKey: "design.jumpIcon") ?? "") ?? .badge }
     /// The pinned declarations (study): a band under the header (band), a breadcrumb in the header
     /// (crumbs), a second row inside the header's glass (pill), or one quiet line (quiet).

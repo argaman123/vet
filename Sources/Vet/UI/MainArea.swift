@@ -499,11 +499,13 @@ struct OutputPane: View {
                     HStack(spacing: 2) {
                         if run.isRunning {
                             icon("stop.fill", "Stop (⌘.)", Color(nsColor: .systemRed)) { run.stop() }
+                            icon("trash", "Clear") { run.clearOutput() }
+                            icon(minimized ? "chevron.up" : "chevron.down", minimized ? "Show Output" : "Minimize") { minimized.toggle() }
                         } else {
+                            // Stopped: run again, or put the whole strip away.
                             icon("play.fill", "Run (⌘R)", Color(nsColor: DiffTheme.added)) { run.start() }
+                            icon("xmark", "Close (⇧⌘Y)") { run.outputVisible = false; minimized = false }
                         }
-                        icon("trash", "Clear") { run.clearOutput() }
-                        icon(minimized ? "chevron.up" : "chevron.down", minimized ? "Show Output" : "Minimize") { minimized.toggle() }
                     }
                 }
                 .padding(.leading, 14).padding(.trailing, 8)
