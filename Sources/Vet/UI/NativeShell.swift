@@ -339,7 +339,12 @@ private struct SearchPanel: View {
 
     var body: some View {
         let model = app.searchEverywhere
-        let items = SearchEverywhereModel.order.flatMap { kind in model.items.filter { $0.kind == kind } }
+        // Before you type: the files you opened last. Then the results, grouped by kind.
+        let typing = !app.ui.search.trimmingCharacters(in: .whitespaces).isEmpty
+        let groups: [(title: String, items: [SearchItem])] = typing
+            ? SearchEverywhereModel.order.map { kind in (SearchEverywhereModel.title(kind), model.items.filter { $0.kind == kind }) }.filter { !$0.items.isEmpty }
+            : [("Recent", model.recentItems)].filter { !$0.items.isEmpty }
+        let items = groups.flatMap(\.items)
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -358,17 +363,14 @@ private struct SearchPanel: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
-                            ForEach(SearchEverywhereModel.order, id: \.self) { kind in
-                                let group = model.items.filter { $0.kind == kind }
-                                if !group.isEmpty {
-                                    Text(SearchEverywhereModel.title(kind)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                        .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 2)
-                                    ForEach(group) { item in
-                                        let index = items.firstIndex(where: { $0.id == item.id }) ?? 0
-                                        SearchRow(app: app, item: item, selected: index == selected)
-                                            .id(item.id)
-                                            .onTapGesture { model.choose(item) }
-                                    }
+                            ForEach(groups, id: \.title) { group in
+                                Text(group.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 2)
+                                ForEach(group.items) { item in
+                                    let index = items.firstIndex(where: { $0.id == item.id }) ?? 0
+                                    SearchRow(app: app, item: item, selected: index == selected)
+                                        .id(item.id)
+                                        .onTapGesture { model.choose(item) }
                                 }
                             }
                         }
@@ -376,7 +378,8 @@ private struct SearchPanel: View {
                     }
                     .onChange(of: selected) { _, i in if items.indices.contains(i) { proxy.scrollTo(items[i].id) } }
                 }
-                .frame(maxHeight: 380)
+                // As tall as its rows, up to a limit (a scroll view alone always takes the limit).
+                .frame(height: min(380, CGFloat(items.count) * 29 + CGFloat(groups.count) * 26 + 12))
             }
         }
         .frame(width: 560)

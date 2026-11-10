@@ -27,6 +27,8 @@ final class RunModel {
     var outputVisible = false
     /// Called once per run with the first local URL the app prints (opens it in the Browser tab).
     var onLocalURL: ((URL) -> Void)?
+    /// The address the running app printed (its first local URL), while it runs.
+    private(set) var localURL: URL?
 
     private var root: URL?
     private var pid: pid_t = 0
@@ -49,6 +51,7 @@ final class RunModel {
         selectedID = nil
         output = ""
         crashed = false
+        localURL = nil
         guard let folder else { return }
         root = folder
         if let data = try? Data(contentsOf: storeURL(folder)), let stored = try? JSONDecoder().decode(Stored.self, from: data) {
@@ -75,6 +78,7 @@ final class RunModel {
         guard !isRunning, let root, let config = selected else { return }
         crashed = false
         sawURL = false
+        localURL = nil
         stopping = false
         isRunning = true // Stop shows right away; `pid` stays 0 until the process exists
         output = "$ \(config.command)\n"
@@ -225,6 +229,7 @@ final class RunModel {
         outputVersion += 1
         if !sawURL, let url = Self.localURL(in: text) {
             sawURL = true
+            localURL = url
             onLocalURL?(url)
         }
     }

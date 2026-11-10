@@ -131,7 +131,7 @@ struct ModPromptBar: View {
             .font(.system(size: DiffTheme.fontSize, design: .monospaced))
             .padding(.horizontal, 18)
             .frame(width: 460, height: 36)
-            .glassEffect(.regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)), in: .capsule)
+            .glassPanel(radius: 11)
             .padding(.bottom, 22)
             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
             .onAppear { focused = true }

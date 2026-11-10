@@ -45,12 +45,60 @@ final class SearchEverywhereModel {
         }
     }
 
+    // MARK: Recent files
+
+    private struct Recent: Codable, Equatable { var path: String; var diff: Bool }
+    /// What you opened last in this project, newest first (shown before you type).
+    private var recent: [Recent] = []
+    @ObservationIgnored private var recentRoot: URL?
+
+    private func loadRecent() {
+        guard let app, app.workspace.root != recentRoot else { return }
+        recentRoot = app.workspace.root
+        recent = recentRoot.flatMap { try? Data(contentsOf: ProjectFolder.url($0, "recent.json")) }
+            .flatMap { try? JSONDecoder().decode([Recent].self, from: $0) } ?? []
+    }
+
+    /// A file (or a file's changes) was opened: it goes to the top of the recent list.
+    func noteOpened(_ path: String, diff: Bool) {
+        loadRecent()
+        guard recent.first != Recent(path: path, diff: diff) else { return }
+        recent.removeAll { $0.path == path }
+        recent.insert(Recent(path: path, diff: diff), at: 0)
+        recent = Array(recent.prefix(12))
+        // Tests leave no files behind.
+        if !SnapshotHook.isTesting, let root = recentRoot, let data = try? JSONEncoder().encode(recent) {
+            try? data.write(to: ProjectFolder.url(root, "recent.json"))
+        }
+    }
+
+    /// The recent files as rows, without the one that's open now: Return goes to the one before.
+    var recentItems: [SearchItem] {
+        loadRecent()
+        guard let app, let root = app.workspace.root else { return [] }
+        let open: String? = switch app.ui.location {
+        case .diff(let path)?: path
+        case .file?: app.workspace.files.relativePath
+        default: nil
+        }
+        return recent.filter { $0.path != open && FileManager.default.fileExists(atPath: root.appendingPathComponent($0.path).path) }.map { r in
+            SearchItem(id: "recent:\(r.diff ? "diff" : "file"):\(r.path)", kind: .file, title: (r.path as NSString).lastPathComponent,
+                       detail: (r.path as NSString).deletingLastPathComponent, matched: [], target: .file(path: r.path, line: nil))
+        }
+    }
+
     func choose(_ item: SearchItem) {
         guard let app else { return }
         task?.cancel()
         items = []
         app.ui.search = ""
         app.ui.focusSearch = false
+        // A recent file whose changes you were reading opens as its changes again (while it has any).
+        if item.id.hasPrefix("recent:diff:"), case .file(let path, _) = item.target,
+           app.workspace.review.changes.contains(where: { $0.path == path }) {
+            app.showDiff(path)
+            return
+        }
         switch item.target {
         case .file(let path, let line):
             if let root = app.workspace.root { app.showFile(root.appendingPathComponent(path), line: line ?? 0) }

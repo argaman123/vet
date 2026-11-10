@@ -14,8 +14,9 @@ final class NoteCardView: NSView, NSTextViewDelegate {
     init(title label: String, text value: String, editing: Bool, sent: Bool, fromClaude: Bool = false) {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.borderWidth = 1
+        layer?.cornerRadius = DiffTheme.onGlass ? 10 : 8
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = DiffTheme.onGlass ? 0 : 1 // on glass: a fill, no ring
         layer?.borderColor = DiffTheme.border.cgColor
         layer?.backgroundColor = DiffTheme.foldBand.cgColor
         title.stringValue = sent ? "\(label) · sent" : label

@@ -89,8 +89,8 @@ struct ClaudeBanner: View {
                     .buttonStyle(.hand).foregroundStyle(.tertiary).help("Dismiss")
             }
             .font(.callout)
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .glassEffect(.regular, in: .capsule)
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .glassPanel(radius: 12)
             .frame(maxWidth: 620)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }

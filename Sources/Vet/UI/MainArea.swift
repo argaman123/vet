@@ -439,8 +439,8 @@ private struct Toast: View {
             }
         }
         .font(.callout)
-        .padding(.horizontal, 16).padding(.vertical, 9)
-        .glassEffect(.regular, in: .capsule)
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .glassPanel(radius: 11)
         .padding(.bottom, 18)
         .opacity(ws.link.toast == nil ? 0 : 1)
         .animation(.easeOut(duration: 0.2), value: ws.link.toast == nil)
@@ -454,6 +454,12 @@ struct OutputPane: View {
     @Binding var minimized: Bool
     @Environment(\.headerInRow) private var inRow
     static let stripHeight: CGFloat = 34
+
+    /// "localhost:4200" (and the path, when there is one) of a local address.
+    static func short(_ url: URL) -> String {
+        let host = (url.host ?? "") + (url.port.map { ":\($0)" } ?? "")
+        return url.path.count > 1 ? host + url.path : host
+    }
 
     private func icon(_ symbol: String, _ help: String, _ color: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -472,7 +478,27 @@ struct OutputPane: View {
                     Circle().fill(run.isRunning ? Color(nsColor: DiffTheme.added) : (run.crashed ? Color(nsColor: .systemRed) : Color.white.opacity(0.3))).frame(width: 7, height: 7)
                     Text(run.selected?.name ?? "Output").font(.system(size: 12.5, weight: .semibold))
                     Text(run.isRunning ? "Running" : run.crashed ? "Crashed" : "Stopped").font(.system(size: 12)).foregroundStyle(.secondary)
-                    Spacer()
+                        .fixedSize()
+                    // The app's address: a click opens it in the Browser.
+                    if run.isRunning, let url = run.localURL {
+                        Button {
+                            app.workspace.browser.load(url)
+                            app.showBrowser()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Text(Self.short(url)).font(.system(size: 11, design: .monospaced)).lineLimit(1).truncationMode(.tail)
+                                Image(systemName: "arrow.up.right").font(.system(size: 8.5, weight: .bold)).foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 8)
+                            .frame(height: 22)
+                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.07)))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.hand).foregroundStyle(.primary)
+                        .help("Open \(url.absoluteString) in the Browser")
+                        .layoutPriority(-1)
+                    }
+                    Spacer(minLength: 4)
                     HStack(spacing: 2) {
                         if run.isRunning {
                             icon("stop.fill", "Stop (⌘.)", Color(nsColor: .systemRed)) { run.stop() }

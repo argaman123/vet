@@ -103,6 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         SnapshotHook.on("search") { [weak self] args in self?.ui.focusSearch = true; self?.ui.search = args.joined(separator: " ") }
         SnapshotHook.on("rules") { [weak self] _ in self?.ui.editingRules = true }
+        SnapshotHook.on("run") { [weak self] _ in self?.workspace.run.start(); self?.workspace.run.outputVisible = true }
+        SnapshotHook.on("stop") { [weak self] _ in self?.workspace.run.stop() }
+        SnapshotHook.on("toast") { [weak self] args in self?.workspace.link.flash(args.joined(separator: " ")) }
         SnapshotHook.on("output") { [weak self] _ in self?.workspace.run.outputVisible.toggle() }
         SnapshotHook.on("views") { _ in
             // views: the main window's view tree (class, frame, effect material) to VET_SNAPSHOT_DIR/views.txt
@@ -376,6 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showDiff(_ path: String) {
         guard workspace.review.select(path) else { return }
         ui.show(.diff(path: path))
+        searchEverywhere.noteOpened(path, diff: true)
         ModHost.shared.emit("fileOpened", ["path": path, "pane": "diff"])
     }
 
@@ -384,6 +388,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspace.files.show(url, line: line, character: character)
         if workspace.files.openURL == url {
             ui.show(.file(url: url, line: line))
+            if let path = workspace.files.relativePath { searchEverywhere.noteOpened(path, diff: false) }
             ModHost.shared.emit("fileOpened", ["path": workspace.files.relativePath ?? url.path, "pane": "editor"])
         }
     }

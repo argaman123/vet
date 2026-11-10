@@ -66,50 +66,56 @@ struct ChangesVariant: View {
             if let path, review.changes.contains(where: { $0.path == path }) { app.showDiff(path) }
         })) {
             if !planPaths.isEmpty {
-                Section { if open("#order").wrappedValue {
+                VariantHeader(title: "Review Order", count: planPaths.count, open: open("#order")).headerRow()
+                if open("#order").wrappedValue {
                     ForEach(Array(planPaths.enumerated()), id: \.element) { i, path in
                         if let node = FileTreeNode.find(path, in: review.tree) {
                             VariantFileRow(app: app, node: node, index: i + 1, detail: nil).tag(path).quietRow(path)
                         }
                     }
-                } } header: { VariantHeader(title: "Review Order", count: planPaths.count, open: open("#order")) }
+                }
             }
             switch style {
             case .tree, .current:
                 if !important.isEmpty {
-                    Section { if open("#changes").wrappedValue {
+                    VariantHeader(title: planPaths.isEmpty ? "Changes" : "Other Changes", count: important.count, open: open("#changes")).headerRow()
+                    if open("#changes").wrappedValue {
                         ForEach(CompactChange.compact(FileTreeNode.build(important))) { VariantTreeRow(app: app, item: $0) }
-                    } } header: { VariantHeader(title: planPaths.isEmpty ? "Changes" : "Other Changes", count: important.count, open: open("#changes")) }
+                    }
                 }
             case .list:
                 let toReview = important.filter { review.stage(of: $0) != .staged }
                 let reviewed = important.filter { review.stage(of: $0) == .staged }
                 if !toReview.isEmpty {
-                    Section { if open("#toreview").wrappedValue { flat(toReview) } } header: { VariantHeader(title: "To Review", count: toReview.count, open: open("#toreview")) }
+                    VariantHeader(title: "To Review", count: toReview.count, open: open("#toreview")).headerRow()
+                    if open("#toreview").wrappedValue { flat(toReview) }
                 }
                 if !reviewed.isEmpty {
-                    Section { if open("#reviewed").wrappedValue { flat(reviewed) } } header: { VariantHeader(title: "Reviewed", count: reviewed.count, open: open("#reviewed")) }
+                    VariantHeader(title: "Reviewed", count: reviewed.count, open: open("#reviewed")).headerRow()
+                    if open("#reviewed").wrappedValue { flat(reviewed) }
                 }
             case .groups:
                 let byFolder = Dictionary(grouping: important) { ($0.path as NSString).deletingLastPathComponent }
                 ForEach(byFolder.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }, id: \.self) { folder in
-                    Section { if open(folder).wrappedValue {
+                    VariantHeader(title: folder.isEmpty ? "Project" : folder, count: nil, path: true, open: open(folder)).headerRow()
+                    if open(folder).wrappedValue {
                         ForEach(byFolder[folder]!.sorted { $0.path < $1.path }, id: \.path) { c in
                             if let node = FileTreeNode.find(c.path, in: review.tree) {
                                 VariantFileRow(app: app, node: node, index: nil, detail: nil).tag(c.path).quietRow(c.path)
                             }
                         }
-                    } } header: { VariantHeader(title: folder.isEmpty ? "Project" : folder, count: nil, path: true, open: open(folder)) }
+                    }
                 }
             }
             if !unimportant.isEmpty {
-                Section { if open("#unimportant").wrappedValue {
+                VariantHeader(title: "Unimportant", count: unimportant.count, open: open("#unimportant")).headerRow()
+                if open("#unimportant").wrappedValue {
                     if style == .tree {
                         ForEach(CompactChange.compact(FileTreeNode.build(unimportant))) { VariantTreeRow(app: app, item: $0) }
                     } else {
                         flat(unimportant)
                     }
-                } } header: { VariantHeader(title: "Unimportant", count: unimportant.count, open: open("#unimportant")) }
+                }
             }
             ListEndSpace()
         }
@@ -173,6 +179,14 @@ private struct VariantHeader: View {
         .onTapGesture { open?.wrappedValue.toggle() }
         .pointerStyle(open == nil ? nil : .link)
         .help(open.map { $0.wrappedValue ? "Fold \(title)" : "Unfold \(title)" } ?? "")
+    }
+
+    /// The header as a row of the list, not a section's header: the list's own sections put a
+    /// wide gap above each one, and a row keeps the groups as close as the files in them.
+    func headerRow() -> some View {
+        padding(.top, 2)
+            .listRowBackground(Color.clear)
+            .selectionDisabled()
     }
 }
 
@@ -285,8 +299,8 @@ private struct FilterBar: View {
         .buttonStyle(.hand)
         .foregroundStyle(.secondary)
         .padding(.leading, 10).padding(.trailing, 4)
-        .frame(height: 28)
-        .glassEffect(in: Capsule())
+        .frame(height: 30)
+        .glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: Glass.barRadius))
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
     }

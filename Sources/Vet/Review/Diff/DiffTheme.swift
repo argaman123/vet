@@ -70,7 +70,7 @@ enum DiffTheme {
     static var gutter: NSColor { background }
     /// The native shell's code sits on dark glass: its quiet surfaces are white veils over it, not
     /// the palette's solid greys (made for a solid code background).
-    private static var onGlass: Bool { Design.shell == .native }
+    static var onGlass: Bool { Design.shell == .native }
     private static func glass(_ alpha: CGFloat) -> NSColor { NSColor.white.withAlphaComponent(alpha) }
     static var foldLabel: NSColor { onGlass ? glass(0.55) : color("foldLabel") { $0.foldLabel } }
     static var foldPill: NSColor { onGlass ? glass(0.07) : color("foldPill") { $0.foldPill } }

@@ -23,6 +23,7 @@ final class NotePopover {
         let p = NSPopover()
         p.behavior = .transient
         p.animates = true
+        p.appearance = NSAppearance(named: .darkAqua)
         let content = NoteList(notes: notes, line: line, close: { [weak p] in p?.close() }, actions: actions)
         p.contentViewController = NSHostingController(rootView: content)
         p.show(relativeTo: rect, of: view, preferredEdge: view.isFlipped ? .maxY : .minY) // under the line (above near the bottom): the arrow on an edge, not wedged in a corner
@@ -62,6 +63,8 @@ private struct NoteList: View {
         }
         .padding(14)
         .frame(width: 320)
+        // The window's dark tone over the popover's glass, out to its edges and arrow.
+        .background(Glass.tint.padding(-60))
     }
 }
 
@@ -100,7 +103,7 @@ private struct NoteItem: View {
                     .focused($focused)
                     .padding(.horizontal, 4).padding(.vertical, 6)
                     .frame(height: 84)
-                    .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 8))
+                    .background(Color.white.opacity(0.07), in: .rect(cornerRadius: 9))
             } else {
                 Text(note?.text ?? "")
                     .font(.body)
@@ -131,7 +134,7 @@ private struct NoteItem: View {
                     // ⌘↩ saves the note and hands it to Claude to fix.
                     Button("Send") { actions.send(note?.id, text); close() }
                         .keyboardShortcut(.return, modifiers: .command)
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(PanelButtonStyle(prominent: true))
                         .disabled(empty)
                         .help("Save and send to Claude to fix (⌘↩)")
                 } else {
@@ -140,11 +143,11 @@ private struct NoteItem: View {
                     Button("Edit") { text = note?.text ?? ""; editing = true; focused = true }
                     Button(note?.sent == true ? "Send Again" : "Send") { if let note { actions.send(note.id, nil) }; close() }
                         .keyboardShortcut(.return, modifiers: .command)
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(PanelButtonStyle(prominent: true))
                         .help("Send to Claude to fix (⌘↩)")
                 }
             }
-            .controlSize(.small)
+            .buttonStyle(PanelButtonStyle())
         }
         .onAppear { if editing { text = note?.text ?? ""; focused = true } }
     }
