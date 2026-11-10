@@ -22,7 +22,16 @@ final class UIState {
     /// The theme and code font (menus read these; DiffTheme holds the colors).
     var themeID = DiffTheme.palette.id
     var codeFont = DiffTheme.codeFont
-    private(set) var location: Location?
+    /// The sidebar follows what's open: a diff belongs to Changes, a file to the project's files.
+    private(set) var location: Location? {
+        didSet {
+            switch location {
+            case .diff?: tool = .changes
+            case .file?: tool = .project
+            case .browser?, nil: break
+            }
+        }
+    }
     private(set) var back: [Location] = []
     private(set) var forward: [Location] = []
     var search = ""
@@ -56,6 +65,23 @@ final class UIState {
         guard let target = forward.popLast() else { return nil }
         if let location { back.append(location) }
         location = target
+        return target
+    }
+
+    /// Leaves the browser for the last diff or file in history that suits `tool` (or nothing).
+    func leaveBrowser(for wanted: Tool) -> Location? {
+        guard case .browser? = location else { return location }
+        let target = back.last { loc in
+            switch loc {
+            case .diff: wanted == .changes
+            case .file: wanted == .project
+            case .browser: false
+            }
+        }
+        back.append(.browser)
+        forward = []
+        location = target
+        tool = wanted
         return target
     }
 

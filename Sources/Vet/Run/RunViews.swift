@@ -76,7 +76,8 @@ struct RunConfigEditor: View {
                 Button("Save") { run.setConfigs(draft); isPresented = false }.keyboardShortcut(.defaultAction).buttonStyle(.glassProminent)
             }
         }
-        .textFieldStyle(.roundedBorder)
+        .textFieldStyle(.vet)
+        .focusEffectDisabled()
         .padding(20)
         .frame(width: 640)
         .onAppear { draft = run.configs.isEmpty ? [RunConfig(name: "", command: "")] : run.configs }

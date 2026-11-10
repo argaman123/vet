@@ -101,6 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHook.on("center") { _ in
             for w in NSApp.windows where w.isVisible && w.frame.width > 400 { w.setFrame(NSRect(x: 218, y: 92, width: 1440, height: 900), display: true) }
         }
+        SnapshotHook.on("search") { [weak self] args in self?.ui.focusSearch = true; self?.ui.search = args.joined(separator: " ") }
+        SnapshotHook.on("rules") { [weak self] _ in self?.ui.editingRules = true }
+        SnapshotHook.on("output") { [weak self] _ in self?.workspace.run.outputVisible.toggle() }
         SnapshotHook.on("views") { _ in
             // views: the main window's view tree (class, frame, effect material) to VET_SNAPSHOT_DIR/views.txt
             guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"],
@@ -479,12 +482,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .changes:
             ui.tool = .changes
             if let p = workspace.review.selectedPath { showDiff(p) }
+            leaveBrowser(for: .changes)
         case .files:
             ui.tool = .project
             if case .browser? = ui.location, let url = workspace.files.openURL { showFile(url) }
+            leaveBrowser(for: .project)
         case .browser:
             showBrowser()
         }
+    }
+    /// Still on the browser (nothing was selected or open to show): back to the last diff or file, or nothing.
+    private func leaveBrowser(for tool: UIState.Tool) {
+        guard case .browser? = ui.location else { return }
+        if let target = ui.leaveBrowser(for: tool) { apply(target) }
     }
 
     func showFindInFiles() { FindPresenter.shared.show(app: self) }
@@ -567,7 +577,6 @@ struct VetCommands: Commands {
             Divider()
             Button(app.workspace.run.outputVisible ? "Hide Run Output" : "Show Run Output") { app.run("app.output.toggle") }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
-            Button(app.workspace.review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { app.run("app.fold.toggle") }
             // As in Xcode: fold or open every unchanged region.
             Button("Collapse All") { app.run("app.collapseAll") }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])

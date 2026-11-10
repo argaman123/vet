@@ -8,6 +8,7 @@ struct MainArea: View {
 
     @AppStorage("outputHeight") private var outputHeight = 220.0
     @State private var dragStart: Double?
+    @State private var outputMinimized = false
 
     var body: some View {
         let run = app.workspace.run
@@ -43,11 +44,12 @@ struct MainArea: View {
                                     }
                                     .onEnded { _ in dragStart = nil })
                         }
-                    OutputPane(app: app)
-                        .frame(height: min(outputHeight, max(100, geo.size.height - 160)))
+                    OutputPane(app: app, minimized: $outputMinimized)
+                        .frame(height: outputMinimized ? OutputPane.stripHeight : min(outputHeight, max(100, geo.size.height - 160)))
                 }
             }
         }
+        .onChange(of: run.isRunning) { _, on in if on { outputMinimized = false } } // a new run opens the output again
     }
 
     @ViewBuilder private var content: some View {
@@ -68,7 +70,7 @@ private struct Placeholder: View {
                 Text("Open a project to start").font(.title3)
                 Button("Open Folder…") { app.projects.showOpenPanel() }.buttonStyle(.glassProminent).padding(.top, 6)
             } else {
-                Text("Select a change to review").font(.title3).foregroundStyle(.secondary)
+                Text(app.ui.tool == .project ? "Select a file to open" : "Select a change to review").font(.title3).foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -203,8 +205,6 @@ struct DiffHeader: View {
             .help(review.unified ? "Side by Side" : "Unified")
             .accessibilityLabel(review.unified ? "Side by Side" : "Unified")
             Menu {
-                Button(review.folding ? "Show Unchanged Lines" : "Fold Unchanged Lines") { review.folding.toggle() }
-                Divider()
                 Button("Show in Finder") { if let url = review.url(for: change.path) { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
                 Button("Copy Path") {
                     NSPasteboard.general.clearContents()
@@ -311,6 +311,17 @@ struct RowTitle: View {
     let name: String
     let detail: String
     var body: some View {
+        // The folders as a path leading to the name (design.title = plain: icon, name, folder).
+        if UserDefaults.standard.string(forKey: "design.title") != "plain" {
+            HStack(spacing: 6) {
+                ForEach(Array(detail.split(separator: "/").enumerated()), id: \.offset) { _, part in
+                    Text(String(part)).foregroundStyle(.secondary).lineLimit(1)
+                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.tertiary)
+                }
+                Text(name).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(.primary).lineLimit(1)
+            }
+            .padding(.leading, 8)
+        } else {
         HStack(spacing: 0) {
             Image(nsImage: FileIcons.icon(for: name)).resizable().frame(width: 14, height: 14)
                 .opacity(0.75).padding(.trailing, 7)
@@ -318,6 +329,7 @@ struct RowTitle: View {
             Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head).padding(.leading, 7)
         }
         .padding(.leading, 6)
+        }
     }
 }
 
@@ -438,9 +450,45 @@ private struct Toast: View {
 /// Run's output, in a pane under the content.
 struct OutputPane: View {
     let app: AppDelegate
+    /// Minimized: only the strip stays, at the card's bottom edge.
+    @Binding var minimized: Bool
+    @Environment(\.headerInRow) private var inRow
+    static let stripHeight: CGFloat = 34
+
+    private func icon(_ symbol: String, _ help: String, _ color: Color? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 11.5, weight: .medium))
+                .frame(width: 26, height: 26).contentShape(Rectangle())
+        }
+        .buttonStyle(.hand).foregroundStyle(color ?? Color.secondary).help(help).accessibilityLabel(help)
+    }
+
     var body: some View {
         let run = app.workspace.run
         VStack(spacing: 0) {
+            if inRow {
+                // The card's own strip: what's running and its state, then rerun or stop, clear, minimize.
+                HStack(spacing: 8) {
+                    Circle().fill(run.isRunning ? Color(nsColor: DiffTheme.added) : (run.crashed ? Color(nsColor: .systemRed) : Color.white.opacity(0.3))).frame(width: 7, height: 7)
+                    Text(run.selected?.name ?? "Output").font(.system(size: 12.5, weight: .semibold))
+                    Text(run.isRunning ? "Running" : run.crashed ? "Crashed" : "Stopped").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 2) {
+                        if run.isRunning {
+                            icon("stop.fill", "Stop (⌘.)", Color(nsColor: .systemRed)) { run.stop() }
+                        } else {
+                            icon("play.fill", "Run (⌘R)", Color(nsColor: DiffTheme.added)) { run.start() }
+                        }
+                        icon("trash", "Clear") { run.clearOutput() }
+                        icon(minimized ? "chevron.up" : "chevron.down", minimized ? "Show Output" : "Minimize") { minimized.toggle() }
+                    }
+                }
+                .padding(.leading, 14).padding(.trailing, 8)
+                .frame(height: OutputPane.stripHeight)
+                .background(Color.white.opacity(0.04))
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { minimized.toggle() }
+            } else {
             HeaderBar {
                 Circle().fill(run.isRunning ? Color.green : (run.crashed ? Color.red : Color.secondary)).frame(width: 7, height: 7)
                 Text(run.selected?.name ?? "Output")
@@ -448,8 +496,11 @@ struct OutputPane: View {
                 Button("Clear") { run.clearOutput() }
                 Button { run.outputVisible = false } label: { Image(systemName: "xmark") }.help("Hide Output (⇧⌘Y)")
             }
-            OutputText(text: run.output, version: run.outputVersion, epoch: run.outputEpoch)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            if !minimized {
+                OutputText(text: run.output, version: run.outputVersion, epoch: run.outputEpoch)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -543,7 +594,26 @@ struct ReviewFooter: View {
         }
         .font(.callout)
         .buttonStyle(.hand)
-        if floating {
+        if floating, Design.shell == .native {
+            // One of the window's glass controls, in white: the same shape as the row's groups.
+            HStack {
+                Spacer()
+                Button { review.approveAndNext() } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(nsColor: DiffTheme.added))
+                        Text("Approve and Next").font(.system(size: 13, weight: .medium)).foregroundStyle(.primary)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: NativeShell.capsuleHeight)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: NativeShell.capsuleRadius))
+                .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
+            }
+            .padding(12)
+        } else if floating {
             HStack {
                 Spacer()
                 buttons

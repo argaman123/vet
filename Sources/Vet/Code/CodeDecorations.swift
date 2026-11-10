@@ -296,6 +296,17 @@ extension CodeTextView {
         if caretStyle != .bar { updateCaretOverlay() }
     }
 
+    // ⌘-scroll changes the code text size, as pinching does.
+    override func scrollWheel(with event: NSEvent) {
+        guard event.modifierFlags.contains(.command) else { return super.scrollWheel(with: event) }
+        guard event.momentumPhase == [] else { return } // a flick's coasting doesn't keep zooming
+        pinch += event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.012 : 0.12)
+        if abs(pinch) >= 0.12 {
+            DiffTheme.setFontSize(DiffTheme.fontSize + (pinch > 0 ? 1 : -1))
+            pinch = 0
+        }
+    }
+
     // Pinch to change the code text size (every pane follows).
     override func magnify(with event: NSEvent) {
         pinch += event.magnification

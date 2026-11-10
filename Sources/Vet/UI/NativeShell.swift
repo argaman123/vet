@@ -43,7 +43,7 @@ struct NativeShell: View {
                 MainArea(app: app)
                     .environment(\.headerInRow, true)
                     // The card: dark glass over the window's glass, the wallpaper faint through it.
-                    .background(Color.black.opacity(0.34))
+                    .background(Color.black.opacity(0.42))
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.10)) }
                     .padding(.leading, sidebarHidden ? 10 : 0)
@@ -54,12 +54,14 @@ struct NativeShell: View {
         .ignoresSafeArea() // up to the window's top edge: the rows sit beside the window buttons
         .background { NativeWindowGlass().ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        .overlay { if app.ui.focusSearch { SearchOverlay(app: app) } }
         // The toolbar holds Search, at the right end of the row: it makes the title bar the 52-pt row
         // with the window's buttons centered in it, and (unlike a bare NSToolbar) SwiftUI's lets
         // clicks through to the rows under it everywhere else.
         .toolbar {
             ToolbarSpacer(.flexible)
-            ToolbarItem { SearchCapsule(app: app) }.sharedBackgroundVisibility(.hidden) // its own glass, like the row's
+            // Its own glass, like the row's; the padding lines it up with the card's edge.
+            ToolbarItem { SearchCapsule(app: app).padding(.trailing, 5) }.sharedBackgroundVisibility(.hidden)
         }
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -70,7 +72,7 @@ struct NativeShell: View {
     /// Room the window's buttons take at the row's start.
     static let buttonsWidth: CGFloat = 86
     /// Room Search takes at the row's end (it lives in the toolbar).
-    static let searchWidth: CGFloat = 28
+    static let searchWidth: CGFloat = 32
     /// The row's control groups: rounded squares of glass (the mock's), Search's too.
     static let capsuleHeight: CGFloat = 34
     static let capsuleRadius: CGFloat = 11
@@ -81,7 +83,7 @@ struct NativeWindowGlass: View {
     var body: some View {
         ZStack {
             BehindWindowBlur(material: .hudWindow)
-            Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.30)
+            Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.72) // dark enough that a white window behind never washes it out
         }
     }
 }
@@ -117,7 +119,7 @@ private struct NativeSidebar: View {
         VStack(spacing: 0) {
             // The title row: the window's buttons, the project and its branch, the sidebar toggle.
             HStack(spacing: 6) {
-                Color.clear.frame(width: NativeShell.buttonsWidth - 10)
+                Color.clear.frame(width: NativeShell.buttonsWidth - 14)
                 ProjectTitle(app: app)
                 Spacer(minLength: 4)
                 RowIcon(symbol: "sidebar.left", help: "Hide Sidebar", action: hide)
@@ -140,6 +142,8 @@ private struct NativeSidebar: View {
 /// Where you work: the changes, all files, the browser, as one segmented row filling the sidebar.
 private struct PlaceSwitcher: View {
     let app: AppDelegate
+    /// In the top row (sidebar hidden): fixed-width segments, not the sidebar's full width.
+    var compact = false
     var body: some View {
         HStack(spacing: 2) {
             segment(.changes, "checklist", "Changes (⌘1)")
@@ -155,7 +159,7 @@ private struct PlaceSwitcher: View {
         return Button { app.go(to: place) } label: {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
-                .frame(maxWidth: .infinity)
+                .frame(minWidth: compact ? 34 : nil, maxWidth: compact ? 34 : .infinity)
                 .frame(height: 26)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(on ? Color.white.opacity(0.14) : .clear))
                 .contentShape(Rectangle())
@@ -172,13 +176,19 @@ private struct ProjectTitle: View {
     let app: AppDelegate
     var body: some View {
         Menu { ProjectMenu(app: app) } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(app.projects.current?.lastPathComponent ?? "Vet").font(.system(size: 14, weight: .semibold))
-                if let branch = app.workspace.review.branch {
-                    Text(branch).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 5) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(app.projects.current?.lastPathComponent ?? "Vet").font(.system(size: 14, weight: .semibold))
+                    if let branch = app.workspace.review.branch {
+                        Text(branch).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.down").font(.system(size: 8.5, weight: .bold)).foregroundStyle(.secondary)
+                    .offset(y: 1)
             }
+            // The whole title takes the click, gaps too (they'd drag the window otherwise).
+            .padding(.vertical, 8).padding(.horizontal, 4)
+            .contentShape(Rectangle())
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -199,8 +209,15 @@ private struct NativeTopRow: View {
     var body: some View {
         HStack(spacing: 8) {
             if sidebarHidden {
-                Color.clear.frame(width: NativeShell.buttonsWidth - 8)
+                // Everything the sidebar's rows held comes up here: the project, history, the places.
+                Color.clear.frame(width: NativeShell.buttonsWidth - 22)
+                ProjectTitle(app: app)
                 RowIcon(symbol: "sidebar.left", help: "Show Sidebar", action: showSidebar)
+                HStack(spacing: 0) {
+                    RowIcon(symbol: "chevron.left", help: "Back (⌘[)", disabled: !app.ui.canGoBack) { app.goBack() }
+                    RowIcon(symbol: "chevron.right", help: "Forward (⌘])", disabled: !app.ui.canGoForward) { app.goForward() }
+                }
+                PlaceSwitcher(app: app, compact: true).fixedSize()
             }
             switch app.ui.location {
             case .diff?:
@@ -251,7 +268,7 @@ private struct RunCapsule: View {
             } label: {
                 Image(systemName: run.isRunning ? "stop.fill" : "play.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(run.isRunning ? Color.secondary : Color(nsColor: DiffTheme.added))
+                    .foregroundStyle(run.isRunning ? Color(nsColor: .systemRed) : Color(nsColor: DiffTheme.added))
                     .frame(width: 22, height: 28)
                     .contentShape(Rectangle())
             }
@@ -289,8 +306,29 @@ private struct SearchCapsule: View {
         .foregroundStyle(.secondary)
         .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
         .help("Search Everywhere (⇧⇧)")
-        .popover(isPresented: Bindable(app.ui).focusSearch, arrowEdge: .bottom) { SearchPanel(app: app) }
     }
+}
+
+/// Search Everywhere, as Spotlight sits: a glass panel in the middle of the window, near the top.
+/// A click outside it or Esc closes it.
+private struct SearchOverlay: View {
+    let app: AppDelegate
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.black.opacity(0.18)
+                .contentShape(Rectangle())
+                .onTapGesture { close() }
+            SearchPanel(app: app)
+                .background(Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.55))
+                .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: .black.opacity(0.45), radius: 30, y: 12)
+                .padding(.top, 120)
+                .onExitCommand { close() }
+        }
+        .ignoresSafeArea()
+    }
+    private func close() { app.ui.focusSearch = false; app.ui.search = "" }
 }
 
 /// The search panel: the field, then files, symbols, actions and text, grouped as they arrive.

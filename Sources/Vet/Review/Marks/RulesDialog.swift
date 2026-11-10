@@ -15,7 +15,7 @@ struct RulesDialog: View {
                 VStack(spacing: 6) {
                     ForEach(lines.indices, id: \.self) { i in
                         HStack {
-                            TextField("pattern or path", text: $lines[i]).textFieldStyle(.roundedBorder)
+                            TextField("pattern or path", text: $lines[i]).textFieldStyle(.vet)
                             Button { lines.remove(at: i) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.borderless).help("Remove")
                         }
                     }
@@ -36,6 +36,7 @@ struct RulesDialog: View {
                 .keyboardShortcut(.defaultAction).buttonStyle(.glassProminent)
             }
         }
+        .focusEffectDisabled()
         .padding(20)
         .frame(width: 520)
         .onAppear { lines = model.markRules.marks + model.markRules.rules }
