@@ -106,6 +106,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHook.on("run") { [weak self] _ in self?.workspace.run.start(); self?.workspace.run.outputVisible = true }
         SnapshotHook.on("stop") { [weak self] _ in self?.workspace.run.stop() }
         SnapshotHook.on("toast") { [weak self] args in self?.workspace.link.flash(args.joined(separator: " ")) }
+        SnapshotHook.on("fullscreen") { _ in NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 })?.toggleFullScreen(nil) }
+        SnapshotHook.on("winat") { args in
+            // winat <x> <y>: which window the window server finds at a point (from the main window's top-left) → winat.txt
+            guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"], args.count == 2, let x = Double(args[0]), let y = Double(args[1]),
+                  let w = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 && $0.toolbar != nil }) else { return }
+            let p = NSPoint(x: w.frame.minX + x, y: w.frame.maxY - y)
+            let n = NSWindow.windowNumber(at: p, belowWindowWithWindowNumber: 0)
+            let hit = NSApp.windows.first { $0.windowNumber == n }
+            let line = "(\(x), \(y)) -> \(hit.map { "\(type(of: $0)) ignoresMouse=\($0.ignoresMouseEvents) alpha=\($0.alphaValue)" } ?? "another app's window \(n)")\n"
+            if let h = FileHandle(forWritingAtPath: dir + "/winat.txt") { h.seekToEndOfFile(); h.write(Data(line.utf8)); h.closeFile() }
+            else { try? line.write(toFile: dir + "/winat.txt", atomically: true, encoding: .utf8) }
+        }
+        SnapshotHook.on("tbhide") { _ in NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 && $0.toolbar != nil })?.toolbar?.isVisible = false }
+        SnapshotHook.on("fswin") { _ in
+            for w in NSApp.windows where "\(type(of: w))".contains("ToolbarFullScreen") { w.alphaValue = 0; w.ignoresMouseEvents = true }
+        }
         SnapshotHook.on("output") { [weak self] _ in self?.workspace.run.outputVisible.toggle() }
         SnapshotHook.on("views") { _ in
             // views: the main window's view tree (class, frame, effect material) to VET_SNAPSHOT_DIR/views.txt

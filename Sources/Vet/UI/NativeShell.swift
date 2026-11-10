@@ -68,9 +68,23 @@ struct NativeShell: View {
             ToolbarItem { SearchCapsule(app: app).padding(.trailing, 5) }.sharedBackgroundVisibility(.hidden)
         }
         .toolbar(removing: .title)
-        .toolbar(fullScreen ? .hidden : .visible, for: .windowToolbar)
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in fullScreen = true }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in fullScreen = false }
+        // AppKit's own switch: SwiftUI's hidden toolbar still leaves the full-screen bar in place.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
+            guard let w = note.object as? NSWindow, w.toolbar != nil else { return }
+            fullScreen = true
+            w.toolbar?.isVisible = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
+            guard let w = note.object as? NSWindow, w.toolbar != nil else { return }
+            fullScreen = false
+            w.toolbar?.isVisible = true
+        }
+        // Again once the window is back: during the way out the switch doesn't always take.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            guard let w = note.object as? NSWindow, w.toolbar != nil else { return }
+            fullScreen = false
+            w.toolbar?.isVisible = true
+        }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
