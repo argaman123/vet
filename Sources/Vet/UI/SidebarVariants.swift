@@ -170,9 +170,9 @@ private struct VariantHeader: View {
                     .frame(width: 10)
             }
             Text(title).lineLimit(1).truncationMode(.head)
-                .font(path ? .caption.weight(.medium) : .subheadline.weight(.semibold))
+                .font(.system(size: 12, weight: path ? .medium : .semibold))
                 .foregroundStyle(.secondary)
-            if let count { Text("\(count)").font(.subheadline).foregroundStyle(.tertiary).monospacedDigit() }
+            if let count { Text("\(count)").font(.system(size: 12)).foregroundStyle(.tertiary).monospacedDigit() }
             Spacer(minLength: 4)
         }
         .contentShape(Rectangle())
@@ -228,7 +228,7 @@ private struct VariantFileRow: View {
                 .padding(.leading, inTree ? TreeMetrics.iconLead : 0)
             ChangeName(name: node.name, kind: change.kind).layoutPriority(1)
             if let detail {
-                Text(detail).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
+                Text(detail).font(.system(size: 11.5)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
             }
             Spacer(minLength: 4)
             VariantMark(app: app, node: node, hovering: hovering)

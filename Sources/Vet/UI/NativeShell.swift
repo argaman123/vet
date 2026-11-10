@@ -195,6 +195,7 @@ private struct PlaceSwitcher: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.hand)
+        .environment(\.hoverRadius, NativeShell.capsuleRadius - 3)
         .foregroundStyle(on ? .primary : .secondary)
         .help(help)
         .accessibilityLabel(help)
@@ -325,6 +326,7 @@ private struct SearchCapsule: View {
                 .frame(width: NativeShell.capsuleHeight, height: NativeShell.capsuleHeight).contentShape(Rectangle())
         }
         .buttonStyle(.hand)
+        .environment(\.hoverRadius, NativeShell.capsuleRadius)
         .foregroundStyle(.secondary)
         .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
         .help("Search Everywhere (⇧⇧)")
@@ -416,6 +418,7 @@ private struct SearchRow: View {
     let app: AppDelegate
     let item: SearchItem
     let selected: Bool
+    @State private var hovering = false
     var body: some View {
         HStack(spacing: 8) {
             Group {
@@ -435,7 +438,8 @@ private struct SearchRow: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Color.primary.opacity(0.12) : .clear))
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(selected ? 0.12 : hovering ? 0.07 : 0)))
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }

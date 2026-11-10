@@ -27,11 +27,14 @@ struct GlassMenuButton<Label: View>: View {
     let items: () -> [GlassMenuItem]
     @ViewBuilder let label: Label
     @State private var frame: CGRect = .zero
+    @State private var hovering = false
 
     var body: some View {
         if Design.shell == .native {
             Button { app.ui.menu = OpenGlassMenu(anchor: frame, trailing: trailing, items: items()) } label: { label }
                 .buttonStyle(.plain)
+                .background(HoverFill(on: hovering || app.ui.menu?.anchor == frame).padding(.horizontal, -4))
+                .onHover { hovering = $0 }
                 .pointerStyle(.link)
                 .fixedSize()
                 .help(help)

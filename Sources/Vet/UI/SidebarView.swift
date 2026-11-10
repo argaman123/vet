@@ -24,7 +24,7 @@ struct SidebarView: View {
         // Dense rows (the small size, as Xcode's navigators) with the regular 13-pt sidebar text:
         // the small size's own text is too small to read comfortably.
         .environment(\.sidebarRowSize, Design.shell == .native ? .small : .medium)
-        .font(.system(size: 13))
+        .font(.system(size: 14))
     }
 }
 
@@ -456,11 +456,11 @@ enum FileIcons {
                     t.draw(at: NSPoint(x: rect.midX - ts.width / 2, y: rect.midY - ts.height / 2 + 0.3), withAttributes: attrs)
                     return true
                 }
-            case .glyph:
-                // One thin grey symbol per kind of file, as Finder and Xcode keep it.
+            case .glyph, .tint:
+                // One thin symbol per kind of file, as Finder and Xcode keep it: grey, or (tint) in the language's color.
                 let symbol = style.mark == nil ? (style.symbol ?? "doc") : ["{}": "curlybraces", "#": "number", "M": "doc.plaintext", "<>": "chevron.left.forwardslash.chevron.right"][style.mark!] ?? "doc.text"
                 if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(.init(pointSize: 11, weight: .regular).applying(.init(paletteColors: [NSColor.secondaryLabelColor]))) {
+                    .withSymbolConfiguration(.init(pointSize: 11, weight: .regular).applying(.init(paletteColors: [variant == .tint ? color : NSColor.secondaryLabelColor]))) {
                     let s = image.size
                     image.draw(in: NSRect(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2, width: s.width, height: s.height))
                 }
