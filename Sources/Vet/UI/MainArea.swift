@@ -305,6 +305,14 @@ struct EditorHeader: View {
 }
 
 /// Approve and Next's surface: glass, except where it is the solid accent.
+/// An error message's surface: the sidebar's sheet under a red tint (float), or red system glass.
+private struct ErrorSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if Design.look == .float { content.glassPanel(radius: 12) }
+        else { content.glassEffect(.regular.tint(.red.opacity(0.25)), in: .rect(cornerRadius: 12)) }
+    }
+}
+
 private struct ApproveSurface: ViewModifier {
     func body(content: Content) -> some View {
         if Design.look == .quiet { content }
@@ -436,7 +444,8 @@ private struct Banner: View {
                 .font(.callout)
                 .lineLimit(3)
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .glassEffect(.regular.tint(.red.opacity(0.25)), in: .rect(cornerRadius: 12))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.red.opacity(Design.look == .float ? 0.2 : 0)))
+                .modifier(ErrorSurface())
                 .padding(.top, 44)
                 .onTapGesture { review.dismissError() }
                 .help("Click to dismiss")

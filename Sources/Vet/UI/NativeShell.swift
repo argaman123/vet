@@ -378,6 +378,14 @@ private struct HiddenSidebarBar: ViewModifier {
     }
 }
 
+/// The search panel's surface: the sidebar's sheet (float), or dark system glass.
+private struct SearchPanelSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if Design.look == .float { content.glassPanel(radius: 14) }
+        else { content.background(Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.55)).glassEffect(.regular, in: .rect(cornerRadius: 14)) }
+    }
+}
+
 private struct SearchSurface: ViewModifier {
     let bare: Bool
     func body(content: Content) -> some View {
@@ -426,8 +434,7 @@ private struct SearchOverlay: View {
                 .onTapGesture { close() }
                 .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the I-beam of the code underneath
             SearchPanel(app: app)
-                .background(Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.55))
-                .glassEffect(.regular, in: .rect(cornerRadius: 14))
+                .modifier(SearchPanelSurface())
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: .black.opacity(0.45), radius: 30, y: 12)
                 .padding(.top, 120)

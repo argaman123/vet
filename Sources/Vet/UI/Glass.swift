@@ -5,6 +5,8 @@ import SwiftUI
 enum Glass {
     /// The window's dark tone, laid over glass so light content behind never washes it out.
     static let tint = Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.68)
+    /// The sidebar's sheet as one flat tone, for where the system draws the shape (a popover).
+    static let sheet = Color(red: 0.095, green: 0.095, blue: 0.105).opacity(0.95)
     /// Bars and small messages.
     static let barRadius: CGFloat = 8
     /// Panels: menus, notes.
@@ -56,9 +58,14 @@ extension View {
         }
     }
 
-    /// A floating panel of dark glass (menus, messages).
-    func glassPanel(radius: CGFloat = Glass.panelRadius) -> some View {
-        glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: radius))
+    /// A floating panel (menus, messages, search). Float: the same sheet as the sidebar and the
+    /// row's groups, backed so the code under it doesn't show. Elsewhere: dark system glass.
+    @ViewBuilder func glassPanel(radius: CGFloat = Glass.panelRadius) -> some View {
+        if Design.look == .float {
+            windowGlassOverCode(radius: radius)
+        } else {
+            glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: radius))
+        }
     }
 }
 
@@ -107,11 +114,14 @@ extension View {
         }
     }
 
-    /// The same sheet floating over code (Approve and Next): backed by the surface's tone, so the
+    /// The same sheet floating over code (Approve and Next, menus, messages): backed by the surface's tone, so the
     /// code under it doesn't show through.
     func windowGlassOverCode(radius: CGFloat) -> some View {
+        // Under the sheet: the surface's tone over a blur of what's behind, so text there is only
+        // a faint blur, never readable through the panel.
         windowGlass(radius: radius, lift: 5)
-            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color(red: 0.07, green: 0.07, blue: 0.08).opacity(0.94)))
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color(red: 0.07, green: 0.07, blue: 0.08).opacity(0.86)))
+            .background(Color.clear.glassEffect(.regular, in: .rect(cornerRadius: radius)))
     }
 
     /// The bar under a list in the sidebar (Filter). Float: a sheet of the same glass as everything
