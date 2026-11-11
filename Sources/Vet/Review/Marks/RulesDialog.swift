@@ -9,13 +9,12 @@ struct RulesDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Unimportant rules").font(.title3)
-            Text(verbatim: "Matching files stage themselves. *.html matches at any depth; src/generated/** a folder and everything in it; **/generated/** such folders anywhere; ? one character. Case-sensitive.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 VStack(spacing: 6) {
                     ForEach(lines.indices, id: \.self) { i in
                         HStack {
                             TextField("pattern or path", text: $lines[i]).textFieldStyle(.vet)
+                                .help(Text(verbatim: "Matching files stage themselves. *.html matches at any depth; src/generated/** a folder and everything in it; **/generated/** such folders anywhere; ? one character. Case-sensitive."))
                             Button { lines.remove(at: i) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.borderless).help("Remove")
                         }
                     }

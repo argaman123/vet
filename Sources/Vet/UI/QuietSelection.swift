@@ -12,6 +12,31 @@ extension View {
 
     /// The row's background: the grey selection when it is the selected one.
     func quietRow(_ path: String) -> some View { modifier(QuietRow(path: path)) }
+
+    /// A folder's row: the same background, with the pointer watched on its label only (`rowPointer`).
+    /// Watched on the whole folder, the pointer over any file inside would light the folder too.
+    func quietFolderRow(_ path: String) -> some View { modifier(QuietRow(path: path, watchesPointer: false)) }
+
+    /// The part of a row that answers the pointer (a folder's label), full width.
+    func rowPointer(_ path: String) -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onHover { PointerState.shared.setRow(path, $0) }
+    }
+}
+
+/// Where the pointer is, for the highlights under it. One place holds it, so only one row can
+/// ever be lit (a row's own flag stays set when the list reuses or moves it under a still pointer).
+@MainActor @Observable final class PointerState {
+    static let shared = PointerState()
+    /// The file row under the pointer.
+    private(set) var row: String?
+    /// A menu or the search panel is open over the window: nothing under it lights up.
+    var blocked = false { didSet { if blocked { row = nil } } }
+
+    func setRow(_ path: String, _ inside: Bool) {
+        if inside { row = path } else if row == path { row = nil }
+    }
 }
 
 extension EnvironmentValues {
@@ -20,16 +45,16 @@ extension EnvironmentValues {
 
 private struct QuietRow: ViewModifier {
     let path: String
+    var watchesPointer = true
     @Environment(\.selectedRow) private var selected
-    @State private var hovering = false
     func body(content: Content) -> some View {
-        content
+        let pointer = PointerState.shared
+        let hovering = pointer.row == path && !pointer.blocked
+        Group {
+            if watchesPointer { content.rowPointer(path) } else { content }
+        }
             // Set on the row itself: the list replaces a font set around it with its own size.
             .font(.system(size: SidebarMetrics.text))
-            // The whole row answers the pointer, not only its text.
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onHover { hovering = $0 }
             .listRowBackground(
             Group {
                 if selected != path {

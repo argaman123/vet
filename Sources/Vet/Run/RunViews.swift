@@ -53,8 +53,6 @@ struct RunConfigEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Run Configurations").font(.title3)
-            Text("A shell command run in the project folder, e.g. npm run start, python3 app.py, ./gradlew run.")
-                .font(.callout).foregroundStyle(.secondary)
             ScrollView {
                 VStack(spacing: 10) {
                     ForEach($draft) { $c in

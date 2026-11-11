@@ -33,7 +33,7 @@ struct GlassMenuButton<Label: View>: View {
         if Design.shell == .native {
             Button { app.ui.menu = OpenGlassMenu(anchor: frame, trailing: trailing, items: items()) } label: { label }
                 .buttonStyle(.plain)
-                .background(HoverFill(on: hovering || app.ui.menu?.anchor == frame).padding(.horizontal, -4))
+                .background(HoverFill(on: (hovering && !PointerState.shared.blocked) || app.ui.menu?.anchor == frame, gated: false).padding(.horizontal, -4))
                 .onHover { hovering = $0 }
                 .pointerStyle(.link)
                 .fixedSize()

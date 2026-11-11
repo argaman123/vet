@@ -177,6 +177,8 @@ private struct VariantHeader: View {
             Spacer(minLength: 4)
         }
         .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .background(HoverFill(on: hovering && open != nil, radius: 6).padding(.horizontal, -4).padding(.vertical, -3))
         .onHover { hovering = $0 }
         .onTapGesture { open?.wrappedValue.toggle() }
@@ -268,9 +270,10 @@ private struct VariantTreeRow: View {
                 .frame(minHeight: SidebarMetrics.row)
                 .opacity(node.fileChanges.allSatisfy { review.isMarked($0.path) } ? 0.45 : 1)
                 .onHover { hovering = $0 }
+                .rowPointer(node.path)
             }
             .tag(node.path)
-            .quietRow(node.path)
+            .quietFolderRow(node.path)
         } else {
             VariantFileRow(app: app, node: node, index: nil, detail: nil, inTree: true).tag(node.path).quietRow(node.path)
         }

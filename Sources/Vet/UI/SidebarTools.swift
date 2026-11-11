@@ -113,9 +113,10 @@ struct ProjectNodeRow: View {
                 }
                 .frame(minHeight: SidebarMetrics.row)
                 .opacity(app.workspace.review.isMarked(node.path) ? 0.45 : 1)
+                .rowPointer(node.path)
             }
             .tag(node.path)
-            .quietRow(node.path)
+            .quietFolderRow(node.path)
             .contextMenu { menu }
         } else {
             HStack(spacing: 6) {
@@ -152,5 +153,5 @@ struct ProjectNodeRow: View {
 /// The file trees' spacing.
 enum TreeMetrics {
     /// Between a folder's disclosure chevron and its icon (files at the same level move with it).
-    static let iconLead: CGFloat = 8
+    static let iconLead: CGFloat = 3 // WebStorm keeps the icon right after the chevron
 }

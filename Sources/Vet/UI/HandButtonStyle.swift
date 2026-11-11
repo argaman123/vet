@@ -27,6 +27,8 @@ private struct HandButton: View {
             .buttonStyle(.borderless)
             .pointerStyle(.link)
             .background(HoverFill(on: hovering && enabled, radius: radius))
+            // A button that can't be used now reads as off, not only without its highlight.
+            .opacity(enabled ? 1 : 0.38)
             .onHover { hovering = $0 }
     }
 }
@@ -41,9 +43,11 @@ private struct HandButton: View {
 struct HoverFill: View {
     let on: Bool
     var radius: CGFloat = 7
+    /// Off while a menu or the search panel is open (the menu's own button keeps its highlight).
+    var gated = true
     var body: some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(Color.white.opacity(on || HoverDebug.shared.forced ? 0.12 : 0))
+            .fill(Color.white.opacity((on && !(gated && PointerState.shared.blocked)) || HoverDebug.shared.forced ? 0.12 : 0))
             .animation(.easeOut(duration: 0.12), value: on)
     }
 }

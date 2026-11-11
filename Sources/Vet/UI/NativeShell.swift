@@ -58,6 +58,7 @@ struct NativeShell: View {
         .background { NativeWindowGlass().ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .overlay { GlassMenuOverlay(app: app) }
+        .onChange(of: app.ui.menu != nil || app.ui.focusSearch) { _, open in PointerState.shared.blocked = open }
         .overlay { if app.ui.focusSearch { SearchOverlay(app: app) } }
         // The toolbar holds Search, at the right end of the row: it makes the title bar the 52-pt row
         // with the window's buttons centered in it, and (unlike a bare NSToolbar) SwiftUI's lets
@@ -237,7 +238,8 @@ private struct NativeTopRow: View {
         HStack(spacing: 8) {
             if sidebarHidden {
                 // Everything the sidebar's rows held comes up here: the project, history, the places.
-                Color.clear.frame(width: fullScreen ? 2 : NativeShell.buttonsWidth - 22)
+                // The same place the sidebar's row gives the title, so it stays put when the sidebar goes.
+                Color.clear.frame(width: fullScreen ? 0 : NativeShell.buttonsWidth - 16)
                 ProjectTitle(app: app)
                 RowIcon(symbol: "sidebar.left", help: "Show Sidebar", action: showSidebar)
                 HStack(spacing: 0) {
