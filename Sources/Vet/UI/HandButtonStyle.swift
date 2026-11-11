@@ -13,7 +13,7 @@ extension PrimitiveButtonStyle where Self == HandButtonStyle {
 
 extension EnvironmentValues {
     /// The corner radius of the highlight under the pointer (buttons that fill a rounder shape set it).
-    @Entry var hoverRadius: CGFloat = 7
+    @Entry var hoverRadius: CGFloat = 6
 }
 
 private struct HandButton: View {

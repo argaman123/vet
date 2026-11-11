@@ -6,9 +6,14 @@ enum Glass {
     /// The window's dark tone, laid over glass so light content behind never washes it out.
     static let tint = Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.68)
     /// Bars and small messages.
-    static let barRadius: CGFloat = 10
+    static let barRadius: CGFloat = 8
     /// Panels: menus, notes.
-    static let panelRadius: CGFloat = 13
+    static let panelRadius: CGFloat = 12
+    /// The window's corners (measured: 16 pt). Everything nested in it takes its radius from this,
+    /// less its distance from the window's edge, so the corners stay concentric (never rounder
+    /// inside than out), down to a floor for the smallest pieces.
+    static let windowRadius: CGFloat = 16
+    static func nested(inset: CGFloat, floor: CGFloat = 6) -> CGFloat { max(floor, windowRadius - inset) }
     /// A dark filled tile with a hairline edge (the tiles look's control groups).
     static func tile(_ radius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.black.opacity(0.34))
@@ -103,18 +108,33 @@ struct SurfaceWithHoles: Shape {
 extension View {
     /// This view's bounds as a piece of the window's glass: clear of the dark surface, with a
     /// faint sheen and a lit rim.
-    func windowGlass(radius: CGFloat) -> some View {
-        background {
-            RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.white.opacity(0.035))
-                .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+    /// `lift`: how far it floats over the surface (its shadow's spread).
+    func windowGlass(radius: CGFloat, lift: CGFloat = 4) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        return background {
+            ZStack {
+                // A shadow on the surface around it: the glass lies on the surface, not in a hole in it.
+                shape.fill(Color.black.opacity(0.5)).blur(radius: lift * 1.6).offset(y: lift * 0.4)
+                    .mask { Rectangle().padding(-lift * 6).overlay(shape.blendMode(.destinationOut)).compositingGroup() }
+                // The surface seen through the glass, thinner than beside it, and the glass's own sheen.
+                shape.fill(Color(red: 0.045, green: 0.045, blue: 0.06).opacity(0.36))
+                shape.fill(Color.white.opacity(0.055))
+                shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.24), Color.white.opacity(0.07)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            }
         }
         .anchorPreference(key: GlassHolesKey.self, value: .bounds) { [GlassHole(anchor: $0, radius: radius)] }
     }
 
     /// A bar floating over a list in the sidebar (Filter): glass that blurs the rows under it,
     /// darker where it sits on the sidebar's own glass, so it reads as set into it like the tabs.
-    func sidebarBar() -> some View {
-        glassEffect(.regular.tint(Design.look == .float ? Color.black.opacity(0.62) : Glass.tint), in: .rect(cornerRadius: Glass.barRadius))
+    @ViewBuilder func sidebarBar() -> some View {
+        if Design.look == .float {
+            // On the sidebar's glass there is nothing in the window for a glass effect to show (it
+            // came out black): a solid well in the tabs' tone, which still covers the rows under it.
+            let shape = RoundedRectangle(cornerRadius: Glass.barRadius, style: .continuous)
+            background(shape.fill(Color(red: 0.115, green: 0.115, blue: 0.135).opacity(0.97)).overlay(shape.strokeBorder(Color.white.opacity(0.07))))
+        } else {
+            glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: Glass.barRadius))
+        }
     }
 }

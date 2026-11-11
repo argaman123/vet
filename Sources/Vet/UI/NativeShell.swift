@@ -30,9 +30,9 @@ struct NativeShell: View {
         HStack(spacing: 0) {
             if !sidebarHidden {
                 NativeSidebar(app: app, fullScreen: fullScreen, float: float) { self.sidebarHidden = true }
-                    .frame(width: sidebarWidth - (float ? 8 : 0))
+                    .frame(width: sidebarWidth - (float ? NativeShell.panelGap : 0))
                     .modifier(SidebarPanel())
-                    .padding(float ? 8 : 0)
+                    .padding(float ? NativeShell.panelGap : 0)
                     .overlay(alignment: .trailing) {
                         // Drag the gap between the sidebar and the card to resize.
                         Color.clear.frame(width: 8).contentShape(Rectangle())
@@ -67,7 +67,7 @@ struct NativeShell: View {
         .backgroundPreferenceValue(GlassHolesKey.self) { holes in
             GeometryReader { geo in
                 SurfaceWithHoles(holes: holes.map { geo[$0.anchor] }, radii: holes.map(\.radius))
-                    .fill(Color(red: 0.045, green: 0.045, blue: 0.06).opacity(full ? 0.66 : 0.5), style: FillStyle(eoFill: true))
+                    .fill(Color(red: 0.045, green: 0.045, blue: 0.06).opacity(full ? 0.68 : 0.52), style: FillStyle(eoFill: true))
             }
         }
         .background { NativeWindowGlass().ignoresSafeArea() }
@@ -112,7 +112,10 @@ struct NativeShell: View {
     static let searchWidth: CGFloat = 32
     /// The row's control groups: rounded squares of glass (the mock's), Search's too.
     static let capsuleHeight: CGFloat = 34
-    static let capsuleRadius: CGFloat = 11
+    static let capsuleRadius: CGFloat = 8
+    /// Float: the gap around the sidebar's panel, and its radius (concentric with the window's).
+    static let panelGap: CGFloat = 6
+    static var panelRadius: CGFloat { Glass.nested(inset: panelGap) }
     /// The work surface's color where it fills the window (what the edge fade ends in).
     static let surface = Color(red: 0.055, green: 0.055, blue: 0.065)
 }
@@ -122,7 +125,7 @@ struct NativeWindowGlass: View {
     var body: some View {
         ZStack {
             BehindWindowBlur(material: .hudWindow)
-            Color(red: 0.09, green: 0.09, blue: 0.11).opacity(0.42) // the glass itself; the work surface darkens it further (NativeShell)
+            Color(red: 0.09, green: 0.09, blue: 0.11).opacity(0.56) // the glass itself; the work surface darkens it further (NativeShell)
         }
     }
 }
@@ -160,14 +163,14 @@ private struct NativeSidebar: View {
         VStack(spacing: 0) {
             // The title row: the window's buttons, the project and its branch, the sidebar toggle.
             HStack(spacing: 6) {
-                Color.clear.frame(width: fullScreen ? 2 : NativeShell.buttonsWidth - (float ? 22 : 14))
+                Color.clear.frame(width: fullScreen ? 2 : NativeShell.buttonsWidth - (float ? 14 + NativeShell.panelGap : 14))
                 ProjectTitle(app: app)
                 Spacer(minLength: 4)
                 RowIcon(symbol: "sidebar.left", help: "Hide Sidebar", action: hide)
             }
             .padding(.horizontal, 10)
-            .frame(height: NativeShell.rowHeight - (float ? 16 : 0)) // the panel starts 8 pt down: the row still centers on the window's buttons
-            .padding(.bottom, float ? 8 : 0)
+            .frame(height: NativeShell.rowHeight - (float ? NativeShell.panelGap * 2 : 0)) // the panel starts a gap down: the row still centers on the window's buttons
+            .padding(.bottom, float ? NativeShell.panelGap : 0)
             // History, and where you work: the changes, all files, the browser.
             HStack(spacing: 2) {
                 RowIcon(symbol: "chevron.left", help: "Back (⌘[)", disabled: !app.ui.canGoBack) { app.goBack() }
@@ -262,7 +265,7 @@ private struct NativeTopRow: View {
                 // Float: as one bar of the sidebar's glass, the window's buttons on it.
                 HStack(spacing: 8) {
                     // The same place the sidebar's row gives the title, so it stays put when the sidebar goes.
-                    Color.clear.frame(width: fullScreen ? 0 : NativeShell.buttonsWidth - (float ? 14 : 16))
+                    Color.clear.frame(width: fullScreen ? 0 : NativeShell.buttonsWidth - (float ? 12 : 16))
                     ProjectTitle(app: app)
                     RowIcon(symbol: "sidebar.left", help: "Show Sidebar", action: showSidebar)
                     HStack(spacing: 0) {
@@ -299,7 +302,7 @@ private struct NativeTopRow: View {
         }
         .environment(\.headerInRow, true)
         .font(.system(size: 13))
-        .padding(.leading, sidebarHidden ? (float ? 8 : 10) : (bar ? 0 : 4))
+        .padding(.leading, sidebarHidden ? (float ? NativeShell.panelGap : 10) : (bar ? 0 : 4))
         .padding(.trailing, bar ? 10 : float ? 9 : 12)
     }
 }
@@ -360,7 +363,7 @@ private struct RunCapsule: View {
 /// The floating sidebar's panel: the window's own glass (float), or a glass effect (islands).
 private struct SidebarPanel: ViewModifier {
     func body(content: Content) -> some View {
-        if Design.look == .float { content.windowGlass(radius: 18) }
+        if Design.look == .float { content.windowGlass(radius: NativeShell.panelRadius, lift: 9) }
         else if Design.look == .islands {
             content.background { Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 18)).shadow(color: .black.opacity(0.35), radius: 14, y: 4) }
         }
@@ -371,7 +374,7 @@ private struct SidebarPanel: ViewModifier {
 /// With the sidebar hidden, what it held sits in one bar of the same glass (float).
 private struct HiddenSidebarBar: ViewModifier {
     func body(content: Content) -> some View {
-        if Design.look == .float { content.windowGlass(radius: 14) } else { content }
+        if Design.look == .float { content.windowGlass(radius: NativeShell.panelRadius, lift: 6) } else { content }
     }
 }
 
@@ -387,7 +390,7 @@ private struct TabsTrack: ViewModifier {
     func body(content: Content) -> some View {
         if Design.look == .quiet { content }
         // On the sidebar's glass: a darker well set into it, not more glass on glass.
-        else if Design.look == .float { content.background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black.opacity(0.28))) }
+        else if Design.look == .float { content.background(RoundedRectangle(cornerRadius: NativeShell.capsuleRadius, style: .continuous).fill(Color.black.opacity(0.28))) }
         else if Design.look == .tiles { content.background(Glass.tile(NativeShell.capsuleRadius)) }
         else { content.glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius)) }
     }
@@ -423,8 +426,8 @@ private struct SearchOverlay: View {
                 .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the I-beam of the code underneath
             SearchPanel(app: app)
                 .background(Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.55))
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .glassEffect(.regular, in: .rect(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: .black.opacity(0.45), radius: 30, y: 12)
                 .padding(.top, 120)
                 .onExitCommand { close() }

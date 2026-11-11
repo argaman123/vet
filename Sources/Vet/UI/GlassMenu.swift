@@ -195,7 +195,7 @@ private struct GlassMenuRow: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 9)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(hovering && !disabled ? 0.11 : 0)))
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(hovering && !disabled ? 0.11 : 0)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

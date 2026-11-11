@@ -58,10 +58,10 @@ private struct QuietRow: ViewModifier {
             .listRowBackground(
             Group {
                 if selected != path {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(hovering || HoverDebug.shared.forced ? 0.07 : 0))
+                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(hovering || HoverDebug.shared.forced ? 0.07 : 0))
                 } else if Design.shell == .native, Design.look == .float {
                     // On the sidebar's glass: a lighter fill, not more glass on glass.
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.11))
+                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.11))
                 } else if Design.shell == .native, Design.look == .tiles {
                     // Tiles: the selected file is a lighter tile, raised a little.
                     RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.11))
