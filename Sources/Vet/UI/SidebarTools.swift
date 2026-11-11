@@ -67,7 +67,7 @@ struct ProjectTool: View {
         }
         .frame(maxHeight: .infinity)
         // The tree's tools in glass over the list, as in the changes list.
-        .overlay(alignment: .bottom) {
+        .sidebarFooter {
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease").foregroundStyle(.tertiary)
                 TextField("Filter", text: $filter).textFieldStyle(.plain)
@@ -84,8 +84,7 @@ struct ProjectTool: View {
             .padding(.leading, 10).padding(.trailing, 4)
             .frame(height: 30)
             .sidebarBar()
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+            .sidebarBarPadding()
         }
     }
 }

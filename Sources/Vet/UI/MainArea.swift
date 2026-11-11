@@ -660,7 +660,7 @@ struct ReviewFooter: View {
                 .modifier(ApproveSurface())
                 .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
             }
-            .padding(12)
+            .padding(Design.look == .float ? NativeShell.gap : 12)
         } else if floating {
             HStack {
                 Spacer()

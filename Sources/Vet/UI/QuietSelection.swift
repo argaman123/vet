@@ -73,7 +73,7 @@ private struct QuietRow: ViewModifier {
                     RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.09))
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, Design.look == .float ? NativeShell.gap : 10)
         )
     }
 }

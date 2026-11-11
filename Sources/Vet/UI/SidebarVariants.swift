@@ -38,7 +38,7 @@ struct ChangesVariant: View {
         }
         .frame(maxHeight: .infinity)
         // Glass over the list: the rows pass under the bar.
-        .overlay(alignment: .bottom) { FilterBar(app: app, filter: $filter, tree: style == .tree) }
+        .sidebarFooter { FilterBar(app: app, filter: $filter, tree: style == .tree) }
         .quickLookPreview($quickLook)
     }
 
@@ -309,8 +309,7 @@ private struct FilterBar: View {
         .padding(.leading, 10).padding(.trailing, 4)
         .frame(height: 30)
         .sidebarBar()
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .sidebarBarPadding()
     }
 }
 
@@ -319,7 +318,7 @@ private struct FilterBar: View {
 struct ListEndSpace: View {
     var body: some View {
         Color.clear
-            .frame(height: 56)
+            .frame(height: Design.look == .float ? 2 : 56) // float: the bar is under the list, not over it
             .listRowBackground(Color.clear)
             .selectionDisabled()
             .accessibilityHidden(true)
