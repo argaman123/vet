@@ -117,6 +117,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                               windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) { NSApp.sendEvent(e) }
             }
         }
+        SnapshotHook.on("allspaces") { _ in
+            // allspaces: the test window on every Space, under all other windows, so a capture can
+            // composite it over the wallpaper wherever you are without it ever coming into view.
+            for w in NSApp.windows where w.isVisible && w.frame.width > 400 {
+                w.level = NSWindow.Level(rawValue: -1)
+                w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            }
+        }
+        SnapshotHook.on("sidebar") { args in DesignState.shared.sidebarHidden = args.first == "hide" ? true : args.first == "show" ? false : nil }
         SnapshotHook.on("look") { args in DesignState.shared.look = args.first }
         SnapshotHook.on("title") { args in DesignState.shared.title = args.first }
         SnapshotHook.on("forcehover") { args in HoverDebug.shared.forced = args.first != "off" }

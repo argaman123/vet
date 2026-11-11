@@ -36,7 +36,9 @@ extension View {
     /// A control group's surface in the top row and the sidebar: its own glass, or (the quiet and
     /// bar looks) nothing, the controls sitting on what's behind them.
     @ViewBuilder func groupGlass(interactive: Bool = false) -> some View {
-        if Design.groupGlass {
+        if Design.look == .float {
+            windowGlass(radius: NativeShell.capsuleRadius)
+        } else if Design.groupGlass {
             glassEffect(interactive ? .regular.interactive() : .regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
         } else if Design.look == .tiles {
             background(Glass.tile(NativeShell.capsuleRadius))
@@ -67,5 +69,52 @@ struct PanelButtonStyle: ButtonStyle {
             .opacity(enabled ? (configuration.isPressed && prominent ? 0.8 : 1) : 0.4)
             .contentShape(Rectangle())
             .pointerStyle(.link)
+    }
+}
+
+// MARK: The window's own glass, in shapes
+
+/// A shape left clear of the dark work surface, so the window's glass (the desktop behind it,
+/// blurred) shows there: the floating sidebar, the top row's groups. A glass effect laid on the
+/// dark surface can only show that surface, which reads as grey; this is the real thing.
+struct GlassHole {
+    let anchor: Anchor<CGRect>
+    let radius: CGFloat
+}
+
+struct GlassHolesKey: PreferenceKey {
+    static var defaultValue: [GlassHole] { [] }
+    static func reduce(value: inout [GlassHole], nextValue: () -> [GlassHole]) { value += nextValue() }
+}
+
+/// The dark surface: everything but the holes.
+struct SurfaceWithHoles: Shape {
+    let holes: [CGRect]
+    let radii: [CGFloat]
+    func path(in rect: CGRect) -> Path {
+        var p = Path(rect.insetBy(dx: -800, dy: -800)) // past the window's edges, title bar included
+        for (hole, radius) in zip(holes, radii) {
+            p.addRoundedRect(in: hole, cornerSize: CGSize(width: radius, height: radius), style: .continuous)
+        }
+        return p
+    }
+}
+
+extension View {
+    /// This view's bounds as a piece of the window's glass: clear of the dark surface, with a
+    /// faint sheen and a lit rim.
+    func windowGlass(radius: CGFloat) -> some View {
+        background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.white.opacity(0.035))
+                .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+        }
+        .anchorPreference(key: GlassHolesKey.self, value: .bounds) { [GlassHole(anchor: $0, radius: radius)] }
+    }
+
+    /// A bar floating over a list in the sidebar (Filter): glass that blurs the rows under it,
+    /// darker where it sits on the sidebar's own glass, so it reads as set into it like the tabs.
+    func sidebarBar() -> some View {
+        glassEffect(.regular.tint(Design.look == .float ? Color.black.opacity(0.62) : Glass.tint), in: .rect(cornerRadius: Glass.barRadius))
     }
 }

@@ -324,4 +324,5 @@ enum CodeFont: String, CaseIterable, Sendable {
     static let shared = DesignState()
     var look: String?
     var title: String?
+    var sidebarHidden: Bool?
 }

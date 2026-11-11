@@ -252,6 +252,16 @@ final class FilesModel {
 
     func noteLine(_ line: Int) { currentLine = line }
 
+    /// Every folder that holds a file (repo-relative), for Expand All.
+    func allFolders() -> Set<String> {
+        var out: Set<String> = []
+        for path in paths {
+            var p = (path as NSString).deletingLastPathComponent
+            while !p.isEmpty, out.insert(p).inserted { p = (p as NSString).deletingLastPathComponent }
+        }
+        return out
+    }
+
     func expandAncestors(of path: String) {
         var p = (path as NSString).deletingLastPathComponent
         while !p.isEmpty {

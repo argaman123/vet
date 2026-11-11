@@ -8,14 +8,40 @@ struct ProjectTool: View {
     let app: AppDelegate
     @State private var quickLook: URL?
     @State private var row: String?
+    /// Typed in the bar: the files whose names contain it, as a flat list.
+    @State private var filter = ""
 
     var body: some View {
         let files = app.workspace.files
+        let query = filter.trimmingCharacters(in: .whitespaces).lowercased()
         VStack(spacing: 0) {
             if app.projects.current == nil {
                 EmptyToolState(title: "No Project", message: "Open a project folder.") {
                     Button("Open Folder…") { app.projects.showOpenPanel() }
                 }
+            } else if !query.isEmpty {
+                let matches = Array(files.paths.lazy.filter { ($0 as NSString).lastPathComponent.lowercased().contains(query) }.prefix(300))
+                List(selection: Binding(get: { row ?? files.relativePath }, set: { path in
+                    row = path
+                    if let path, let url = files.url(for: path) { app.showFile(url) }
+                })) {
+                    ForEach(matches, id: \.self) { path in
+                        let name = (path as NSString).lastPathComponent, folder = (path as NSString).deletingLastPathComponent
+                        HStack(spacing: 6) {
+                            Image(nsImage: FileIcons.icon(for: name)).resizable().frame(width: SidebarMetrics.icon, height: SidebarMetrics.icon)
+                            ChangeName(name: name, kind: app.workspace.review.changes.first(where: { $0.path == path })?.kind).layoutPriority(1)
+                            Text(folder).font(.system(size: 11.5)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
+                        }
+                        .frame(minHeight: SidebarMetrics.row)
+                        .tag(path)
+                        .quietRow(path)
+                    }
+                    ListEndSpace()
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .transaction { $0.disablesAnimations = true; $0.animation = nil }
+                .quietSelection(row ?? files.relativePath)
             } else {
                 List(selection: Binding(get: { row ?? files.relativePath }, set: { path in
                     row = path
@@ -43,17 +69,21 @@ struct ProjectTool: View {
         // The tree's tools in glass over the list, as in the changes list.
         .overlay(alignment: .bottom) {
             HStack(spacing: 4) {
-                Text("All Files").foregroundStyle(.secondary).lineLimit(1)
-                Spacer()
-                ToolButton("scope", "Reveal the Open File") { if let p = files.relativePath { files.expandAncestors(of: p) } }
-                ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { files.expanded = [] }
+                Image(systemName: "line.3.horizontal.decrease").foregroundStyle(.tertiary)
+                TextField("Filter", text: $filter).textFieldStyle(.plain)
+                // One button that flips between folding everything and opening everything.
+                if files.expanded.isEmpty {
+                    ToolButton("arrow.up.left.and.arrow.down.right", "Expand All") { files.expanded = files.allFolders() }
+                } else {
+                    ToolButton("arrow.down.right.and.arrow.up.left", "Collapse All") { files.expanded = [] }
+                }
             }
             .font(.callout)
             .buttonStyle(.hand)
             .foregroundStyle(.secondary)
-            .padding(.leading, 12).padding(.trailing, 4)
+            .padding(.leading, 10).padding(.trailing, 4)
             .frame(height: 30)
-            .glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: Glass.barRadius))
+            .sidebarBar()
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
         }

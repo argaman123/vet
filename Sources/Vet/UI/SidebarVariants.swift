@@ -308,7 +308,7 @@ private struct FilterBar: View {
         .foregroundStyle(.secondary)
         .padding(.leading, 10).padding(.trailing, 4)
         .frame(height: 30)
-        .glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: Glass.barRadius))
+        .sidebarBar()
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
     }
