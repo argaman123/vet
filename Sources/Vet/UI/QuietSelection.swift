@@ -76,10 +76,11 @@ private struct NoSystemHighlight: NSViewRepresentable {
     }
 }
 
-/// The file lists' text and rows: larger than the system's dense sidebar size, in rows between
-/// its small and medium ones.
+/// The file lists' text and rows, as WebStorm and VS Code size their trees (read from their own
+/// theme files): 13-pt text, 16-pt icons, rows 24 pt apart (WebStorm 24, VS Code 22).
 enum SidebarMetrics {
-    static let text: CGFloat = 15
-    /// A row's content height (the list adds its own padding around it).
-    static let row: CGFloat = 20
+    static let text: CGFloat = 13
+    /// A row's content height; the list's small rows add their padding around it (24 pt in all).
+    static let row: CGFloat = 16
+    static let icon: CGFloat = 16
 }

@@ -107,7 +107,7 @@ struct ProjectNodeRow: View {
             } label: {
                 // Folders recede: a thin outline and a quiet name, so the files carry the color.
                 HStack(spacing: 6) {
-                    Image(systemName: "folder").font(.system(size: 13.5)).foregroundStyle(.tertiary).frame(width: 18)
+                    Image(systemName: "folder").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: SidebarMetrics.icon)
                         .padding(.leading, TreeMetrics.iconLead) // air after the disclosure chevron
                     Text(item.name).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -119,7 +119,7 @@ struct ProjectNodeRow: View {
             .contextMenu { menu }
         } else {
             HStack(spacing: 6) {
-                Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 18, height: 18)
+                Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: SidebarMetrics.icon, height: SidebarMetrics.icon)
                     .padding(.leading, TreeMetrics.iconLead) // in line with the folders' icons
                 let change = app.workspace.review.changes.first(where: { $0.path == node.path })
                 ChangeName(name: node.name, kind: change?.kind, selected: app.workspace.files.relativePath == node.path)
