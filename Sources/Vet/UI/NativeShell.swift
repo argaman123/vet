@@ -21,10 +21,19 @@ struct NativeShell: View {
     @State private var fullScreen = false
 
     var body: some View {
+        // Float: the sidebar is a glass panel of its own, over a work surface that fills the window.
+        let float = Design.look == .float
         HStack(spacing: 0) {
             if !sidebarHidden {
-                NativeSidebar(app: app, fullScreen: fullScreen) { sidebarHidden = true }
-                    .frame(width: sidebarWidth)
+                NativeSidebar(app: app, fullScreen: fullScreen, float: float) { sidebarHidden = true }
+                    .frame(width: sidebarWidth - (float ? 8 : 0))
+                    .background {
+                        if float {
+                            Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 18))
+                                .shadow(color: .black.opacity(0.35), radius: 14, y: 4)
+                        }
+                    }
+                    .padding(float ? 8 : 0)
                     .overlay(alignment: .trailing) {
                         // Drag the gap between the sidebar and the card to resize.
                         Color.clear.frame(width: 8).contentShape(Rectangle())
@@ -46,16 +55,16 @@ struct NativeShell: View {
                 MainArea(app: app)
                     .environment(\.headerInRow, true)
                     // The card: dark glass over the window's glass, the wallpaper faint through it.
-                    .background(Color.black.opacity(0.42))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.10)) }
-                    .padding(.leading, sidebarHidden ? 10 : 0)
-                    .padding([.trailing, .bottom], 10)
+                    .background(Color.black.opacity(float ? 0 : 0.42))
+                    .clipShape(RoundedRectangle(cornerRadius: float ? 0 : 14, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(float ? 0 : 0.10)) }
+                    .padding(.leading, sidebarHidden && !float ? 10 : 0)
+                    .padding([.trailing, .bottom], float ? 0 : 10)
             }
         }
         .animation(.easeOut(duration: 0.2), value: sidebarHidden)
         .ignoresSafeArea() // up to the window's top edge: the rows sit beside the window buttons
-        .background { NativeWindowGlass().ignoresSafeArea() }
+        .background { ZStack { NativeWindowGlass(); if float { Color.black.opacity(0.42) } }.ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .overlay { GlassMenuOverlay(app: app) }
         .onChange(of: app.ui.menu != nil || app.ui.focusSearch) { _, open in PointerState.shared.blocked = open }
@@ -136,19 +145,21 @@ struct RowIcon: View {
 private struct NativeSidebar: View {
     let app: AppDelegate
     let fullScreen: Bool
+    var float = false
     let hide: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             // The title row: the window's buttons, the project and its branch, the sidebar toggle.
             HStack(spacing: 6) {
-                Color.clear.frame(width: fullScreen ? 2 : NativeShell.buttonsWidth - 14)
+                Color.clear.frame(width: fullScreen ? 2 : NativeShell.buttonsWidth - (float ? 22 : 14))
                 ProjectTitle(app: app)
                 Spacer(minLength: 4)
                 RowIcon(symbol: "sidebar.left", help: "Hide Sidebar", action: hide)
             }
             .padding(.horizontal, 10)
-            .frame(height: NativeShell.rowHeight)
+            .frame(height: NativeShell.rowHeight - (float ? 16 : 0)) // the panel starts 8 pt down: the row still centers on the window's buttons
+            .padding(.bottom, float ? 8 : 0)
             // History, and where you work: the changes, all files, the browser.
             HStack(spacing: 2) {
                 RowIcon(symbol: "chevron.left", help: "Back (⌘[)", disabled: !app.ui.canGoBack) { app.goBack() }
@@ -175,9 +186,9 @@ private struct PlaceSwitcher: View {
             segment(.files, "folder", "All Files (⌘2)")
             segment(.browser, "safari", "Browser (⌘3)")
         }
-        .padding(3)
+        .padding(Design.groupGlass || Design.look == .bar ? 3 : 0)
         .frame(height: NativeShell.capsuleHeight)
-        .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
+        .modifier(TabsTrack())
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: app.place)
     }
 
@@ -235,6 +246,7 @@ private struct NativeTopRow: View {
     let showSidebar: () -> Void
 
     var body: some View {
+        let bar = Design.look == .bar
         HStack(spacing: 8) {
             if sidebarHidden {
                 // Everything the sidebar's rows held comes up here: the project, history, the places.
@@ -248,21 +260,27 @@ private struct NativeTopRow: View {
                 }
                 PlaceSwitcher(app: app, compact: true).fixedSize()
             }
-            switch app.ui.location {
-            case .diff?:
-                if let doc = app.workspace.review.diff { DiffHeader(app: app, doc: doc) } else { Spacer() }
-            case .file?: EditorHeader(app: app)
-            case .browser?: BrowserHeader(app: app)
-            case nil: Spacer()
+            HStack(spacing: 8) {
+                switch app.ui.location {
+                case .diff?:
+                    if let doc = app.workspace.review.diff { DiffHeader(app: app, doc: doc) } else { Spacer() }
+                case .file?: EditorHeader(app: app)
+                case .browser?: BrowserHeader(app: app)
+                case nil: Spacer()
+                }
+                RunCapsule(app: app)
+                if fullScreen { SearchCapsule(app: app) }
+                else { Color.clear.frame(width: NativeShell.searchWidth) } // Search, in the toolbar
             }
-            RunCapsule(app: app)
-            if fullScreen { SearchCapsule(app: app) }
-            else { Color.clear.frame(width: NativeShell.searchWidth) } // Search, in the toolbar
+            // Bar: the file, its controls, Run and Search share one piece of glass.
+            .padding(.leading, bar ? 8 : 0).padding(.trailing, bar ? 4 : 0)
+            .frame(height: bar ? 40 : nil)
+            .background { if bar { Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 14)) } }
         }
         .environment(\.headerInRow, true)
         .font(.system(size: 13))
-        .padding(.leading, sidebarHidden ? 10 : 4)
-        .padding(.trailing, 12)
+        .padding(.leading, sidebarHidden ? 10 : (bar ? 0 : 4))
+        .padding(.trailing, bar ? 10 : 12)
     }
 }
 
@@ -276,9 +294,9 @@ struct RowGroup<Content: View>: View {
             HStack(spacing: 2) { content }
                 .foregroundStyle(.secondary)
                 .tint(.secondary)
-                .padding(.horizontal, 5)
+                .padding(.horizontal, Design.groupGlass ? 5 : 0)
                 .frame(height: NativeShell.capsuleHeight)
-                .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
+                .groupGlass()
         } else {
             content
         }
@@ -313,9 +331,17 @@ private struct RunCapsule: View {
                     .frame(height: 28).contentShape(Rectangle())
             }
         }
-        .padding(.leading, 6).padding(.trailing, 12)
+        .padding(.leading, 6).padding(.trailing, Design.groupGlass ? 12 : 4)
         .frame(height: NativeShell.capsuleHeight)
-        .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
+        .groupGlass()
+    }
+}
+
+/// The place tabs' track: glass, or (quiet) nothing: only the selected tab is filled.
+private struct TabsTrack: ViewModifier {
+    func body(content: Content) -> some View {
+        if Design.look == .quiet { content }
+        else { content.glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius)) }
     }
 }
 
@@ -330,7 +356,7 @@ private struct SearchCapsule: View {
         .buttonStyle(.hand)
         .environment(\.hoverRadius, NativeShell.capsuleRadius)
         .foregroundStyle(.secondary)
-        .glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
+        .groupGlass()
         .help("Search Everywhere (⇧⇧)")
     }
 }

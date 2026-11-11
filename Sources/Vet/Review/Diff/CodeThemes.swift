@@ -269,6 +269,17 @@ enum Design {
     /// The window (study): one glass panel with the sidebar on it and the work in a card (native),
     /// or the split view with its toolbar (classic).
     enum Shell: String { case native, classic }
+    /// The native window's surfaces (study): every control group its own glass (glass); controls
+    /// straight on the window, glass kept for what floats (quiet); the top row as one glass bar (bar);
+    /// the sidebar a floating glass panel over a full-window work surface (float).
+    enum Look: String { case glass, quiet, bar, float }
+    static var look: Look { Look(rawValue: DesignState.shared.look ?? UserDefaults.standard.string(forKey: "design.look") ?? "") ?? .glass }
+    /// Whether the top row's and sidebar's control groups are each a piece of glass.
+    static var groupGlass: Bool { look == .glass || look == .float }
+    /// The open file's title (study): the folders leading to the name (path), the name alone (name),
+    /// the last folder and the name (short), or icon, name, folder (plain).
+    enum Title: String { case path, name, short, plain }
+    static var title: Title { Title(rawValue: DesignState.shared.title ?? UserDefaults.standard.string(forKey: "design.title") ?? "") ?? .path }
     static var shell: Shell { Shell(rawValue: UserDefaults.standard.string(forKey: "design.shell") ?? "") ?? .native }
     static var surface: Surface { Surface(rawValue: UserDefaults.standard.string(forKey: "design.surface") ?? "") ?? .standard }
     /// What joins the two sides of the diff.
@@ -300,4 +311,11 @@ enum CodeFont: String, CaseIterable, Sendable {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
     }
+}
+
+/// Design studies switched while the app runs (tests set them; views that read `Design.look` follow).
+@Observable final class DesignState: @unchecked Sendable {
+    static let shared = DesignState()
+    var look: String?
+    var title: String?
 }

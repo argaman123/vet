@@ -117,6 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                               windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) { NSApp.sendEvent(e) }
             }
         }
+        SnapshotHook.on("look") { args in DesignState.shared.look = args.first }
+        SnapshotHook.on("title") { args in DesignState.shared.title = args.first }
         SnapshotHook.on("forcehover") { args in HoverDebug.shared.forced = args.first != "off" }
         SnapshotHook.on("winat") { args in
             // winat <x> <y>: which window the window server finds at a point (from the main window's top-left) → winat.txt

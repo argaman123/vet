@@ -59,7 +59,7 @@ private struct QuietRow: ViewModifier {
             Group {
                 if selected != path {
                     RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(hovering || HoverDebug.shared.forced ? 0.07 : 0))
-                } else if Design.shell == .native {
+                } else if Design.shell == .native, Design.look != .quiet {
                     // The selected file: a piece of glass on the window's glass.
                     Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 8))
                 } else {

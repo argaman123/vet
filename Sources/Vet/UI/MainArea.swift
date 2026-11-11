@@ -303,21 +303,33 @@ struct EditorHeader: View {
     }
 }
 
+/// Approve and Next's surface: glass, except where it is the solid accent.
+private struct ApproveSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if Design.look == .quiet { content }
+        else { content.glassEffect(.regular.interactive(), in: .rect(cornerRadius: NativeShell.capsuleRadius)) }
+    }
+}
+
 /// The open file as the window's title, in the row above the card: a quiet glyph, the name, the folder.
 struct RowTitle: View {
     let name: String
     let detail: String
     var body: some View {
         // The folders as a path leading to the name (design.title = plain: icon, name, folder).
-        if UserDefaults.standard.string(forKey: "design.title") != "plain" {
+        if Design.title != .plain {
+            // Path: every folder. Short: only the last one. Name: none (the path is the tooltip).
+            let folders = detail.split(separator: "/")
+            let shown = Design.title == .name ? [] : Design.title == .short ? Array(folders.suffix(1)) : Array(folders)
             HStack(spacing: 6) {
-                ForEach(Array(detail.split(separator: "/").enumerated()), id: \.offset) { _, part in
+                ForEach(Array(shown.enumerated()), id: \.offset) { _, part in
                     Text(String(part)).foregroundStyle(.secondary).lineLimit(1)
                     Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.tertiary)
                 }
                 Text(name).font(.system(size: 13.5, weight: .semibold)).foregroundStyle(.primary).lineLimit(1)
             }
             .padding(.leading, 8)
+            .help(detail.isEmpty ? name : detail + "/" + name)
         } else {
         HStack(spacing: 0) {
             Image(nsImage: FileIcons.icon(for: name)).resizable().frame(width: 14, height: 14)
@@ -624,18 +636,21 @@ struct ReviewFooter: View {
             HStack {
                 Spacer()
                 Button { review.approveAndNext() } label: {
+                    // Quiet: the window's one accent, with dark text. Otherwise a piece of glass.
+                    let solid = Design.look == .quiet
                     HStack(spacing: 7) {
-                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(nsColor: DiffTheme.added))
-                        Text("Approve and Next").font(.system(size: 13, weight: .medium)).foregroundStyle(.primary)
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(solid ? Color.black.opacity(0.85) : Color(nsColor: DiffTheme.added))
+                        Text("Approve and Next").font(.system(size: 13, weight: solid ? .semibold : .medium)).foregroundStyle(solid ? Color.black.opacity(0.85) : Color.primary)
                     }
                     .padding(.horizontal, 14)
                     .frame(height: NativeShell.capsuleHeight)
+                    .background { if solid { RoundedRectangle(cornerRadius: NativeShell.capsuleRadius, style: .continuous).fill(Color.accentColor) } }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.hand)
                 .foregroundStyle(.primary)
                 .environment(\.hoverRadius, NativeShell.capsuleRadius)
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: NativeShell.capsuleRadius))
+                .modifier(ApproveSurface())
                 .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
             }
             .padding(12)

@@ -12,6 +12,16 @@ enum Glass {
 }
 
 extension View {
+    /// A control group's surface in the top row and the sidebar: its own glass, or (the quiet and
+    /// bar looks) nothing, the controls sitting on what's behind them.
+    @ViewBuilder func groupGlass(interactive: Bool = false) -> some View {
+        if Design.groupGlass {
+            glassEffect(interactive ? .regular.interactive() : .regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
+        } else {
+            self
+        }
+    }
+
     /// A floating panel of dark glass (menus, messages).
     func glassPanel(radius: CGFloat = Glass.panelRadius) -> some View {
         glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: radius))
