@@ -121,9 +121,9 @@ private struct GlassMenuPanel: View {
     private static func height(_ items: [GlassMenuItem]) -> CGFloat {
         items.reduce(0) { sum, item in
             switch item {
-            case .label: sum + 27
+            case .label: sum + 25
             case .divider: sum + 10
-            case .item, .submenu: sum + 31
+            case .item, .submenu: sum + 29
             }
         }
     }
@@ -156,8 +156,8 @@ private struct GlassMenuPanel: View {
     @ViewBuilder private func row(_ item: GlassMenuItem, checks: Bool, index: Int?) -> some View {
         switch item {
         case .label(let title):
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.tertiary)
-                .padding(.horizontal, 9).frame(height: 26, alignment: .bottomLeading)
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
+                .padding(.horizontal, 9).frame(height: 24, alignment: .bottomLeading)
         case .divider:
             Rectangle().fill(Color.white.opacity(0.09)).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
         case .item(let title, let checked, let disabled, let action):
@@ -191,10 +191,10 @@ private struct GlassMenuRow: View {
                 Spacer(minLength: 12)
                 if let chevron { Image(systemName: chevron).font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary) }
             }
-            .font(.system(size: 14))
+            .font(.system(size: 13))
             .foregroundStyle(.primary)
             .padding(.horizontal, 9)
-            .frame(height: 30)
+            .frame(height: 28)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(hovering && !disabled ? 0.11 : 0)))
             .contentShape(Rectangle())
         }

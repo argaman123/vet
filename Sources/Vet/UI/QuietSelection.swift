@@ -24,6 +24,8 @@ private struct QuietRow: ViewModifier {
     @State private var hovering = false
     func body(content: Content) -> some View {
         content
+            // Set on the row itself: the list replaces a font set around it with its own size.
+            .font(.system(size: SidebarMetrics.text))
             // The whole row answers the pointer, not only its text.
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -72,4 +74,12 @@ private struct NoSystemHighlight: NSViewRepresentable {
             return v.subviews.flatMap(outlines)
         }
     }
+}
+
+/// The file lists' text and rows: larger than the system's dense sidebar size, in rows between
+/// its small and medium ones.
+enum SidebarMetrics {
+    static let text: CGFloat = 15
+    /// A row's content height (the list adds its own padding around it).
+    static let row: CGFloat = 20
 }

@@ -171,9 +171,9 @@ private struct VariantHeader: View {
                     .frame(width: 10)
             }
             Text(title).lineLimit(1).truncationMode(.head)
-                .font(.system(size: 12, weight: path ? .medium : .semibold))
+                .font(.system(size: 13, weight: path ? .medium : .semibold))
                 .foregroundStyle(.secondary)
-            if let count { Text("\(count)").font(.system(size: 12)).foregroundStyle(.tertiary).monospacedDigit() }
+            if let count { Text("\(count)").font(.system(size: 13)).foregroundStyle(.tertiary).monospacedDigit() }
             Spacer(minLength: 4)
         }
         .contentShape(Rectangle())
@@ -227,15 +227,16 @@ private struct VariantFileRow: View {
             if let index {
                 Text("\(index)").font(.callout.monospacedDigit()).foregroundStyle(.tertiary).frame(minWidth: 12, alignment: .trailing)
             }
-            Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 16, height: 16)
+            Image(nsImage: FileIcons.icon(for: node.name)).resizable().frame(width: 18, height: 18)
                 .padding(.leading, inTree ? TreeMetrics.iconLead : 0)
             ChangeName(name: node.name, kind: change.kind).layoutPriority(1)
             if let detail {
-                Text(detail).font(.system(size: 11.5)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
+                Text(detail).font(.system(size: 12.5)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
             }
             Spacer(minLength: 4)
             VariantMark(app: app, node: node, hovering: hovering)
         }
+        .frame(minHeight: SidebarMetrics.row)
         .opacity(quiet ? 0.45 : reviewed && review.selectedPath != node.path ? 0.6 : 1)
         .onHover { hovering = $0 }
         .simultaneousGesture(TapGesture().onEnded { app.showDiff(node.path) })
@@ -258,12 +259,13 @@ private struct VariantTreeRow: View {
                 ForEach(item.children) { VariantTreeRow(app: app, item: $0) }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "folder").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: 16)
+                    Image(systemName: "folder").font(.system(size: 13.5)).foregroundStyle(.tertiary).frame(width: 18)
                         .padding(.leading, TreeMetrics.iconLead) // air after the disclosure chevron
                     Text(item.name).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 4)
                     VariantMark(app: app, node: node, hovering: hovering)
                 }
+                .frame(minHeight: SidebarMetrics.row)
                 .opacity(node.fileChanges.allSatisfy { review.isMarked($0.path) } ? 0.45 : 1)
                 .onHover { hovering = $0 }
             }

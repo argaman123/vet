@@ -24,7 +24,6 @@ struct SidebarView: View {
         // Dense rows (the small size, as Xcode's navigators) with the regular 13-pt sidebar text:
         // the small size's own text is too small to read comfortably.
         .environment(\.sidebarRowSize, Design.shell == .native ? .small : .medium)
-        .font(.system(size: 14))
     }
 }
 
