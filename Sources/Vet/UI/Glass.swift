@@ -15,6 +15,9 @@ enum Glass {
     static let windowRadius: CGFloat = 16
     /// How light a sheet of glass is over the work surface (float).
     static let wash: Double = 0.07
+    /// The sidebar's panel: a large sheet at the groups' strength reads as a flat grey slab, so it
+    /// is only a touch lighter than the surface; its rim and shadow make it a sheet.
+    static let panelWash: Double = 0.025
     static func nested(inset: CGFloat, floor: CGFloat = 6) -> CGFloat { max(floor, windowRadius - inset) }
     /// A dark filled tile with a hairline edge (the tiles look's control groups).
     static func tile(_ radius: CGFloat) -> some View {
@@ -88,9 +91,9 @@ extension View {
     /// with a shadow on the surface around it. Never by showing more of what's behind the window,
     /// which reads as a hole cut through the surface.
     /// `lift`: how far it floats over the surface (its shadow's spread).
-    func windowGlass(radius: CGFloat, lift: CGFloat = 4) -> some View {
+    func windowGlass(radius: CGFloat, lift: CGFloat = 4, panel: Bool = false) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        let wash = DesignState.shared.wash ?? Glass.wash
+        let wash = panel ? DesignState.shared.panelWash ?? Glass.panelWash : DesignState.shared.wash ?? Glass.wash
         return background {
             ZStack {
                 shape.fill(Color.black.opacity(0.55)).blur(radius: lift * 1.6).offset(y: lift * 0.4)

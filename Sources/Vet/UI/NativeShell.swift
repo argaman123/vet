@@ -211,7 +211,7 @@ private struct PlaceSwitcher: View {
                 .frame(minWidth: compact ? 36 : nil, maxWidth: compact ? 36 : .infinity, maxHeight: .infinity)
                 .background {
                     if on {
-                        RoundedRectangle(cornerRadius: NativeShell.capsuleRadius - 3, style: .continuous).fill(Color.white.opacity(0.15))
+                        RoundedRectangle(cornerRadius: NativeShell.capsuleRadius - 3, style: .continuous).fill(Color.white.opacity(Design.look == .float ? 0.11 : 0.15))
                             .matchedGeometryEffect(id: "thumb", in: thumb)
                     }
                 }
@@ -363,7 +363,7 @@ private struct RunCapsule: View {
 /// The floating sidebar's panel: the window's own glass (float), or a glass effect (islands).
 private struct SidebarPanel: ViewModifier {
     func body(content: Content) -> some View {
-        if Design.look == .float { content.windowGlass(radius: NativeShell.panelRadius, lift: 9) }
+        if Design.look == .float { content.windowGlass(radius: NativeShell.panelRadius, lift: 9, panel: true) }
         else if Design.look == .islands {
             content.background { Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 18)).shadow(color: .black.opacity(0.35), radius: 14, y: 4) }
         }
