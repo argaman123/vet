@@ -327,6 +327,5 @@ enum CodeFont: String, CaseIterable, Sendable {
     var sidebarHidden: Bool?
     /// Float: how light the glass pieces are (tests compare strengths).
     var wash: Double?
-    var panelWash: Double?
     var glassKind: String?
 }

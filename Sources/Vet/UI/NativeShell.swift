@@ -363,7 +363,7 @@ private struct RunCapsule: View {
 /// The floating sidebar's panel: the window's own glass (float), or a glass effect (islands).
 private struct SidebarPanel: ViewModifier {
     func body(content: Content) -> some View {
-        if Design.look == .float { content.windowGlass(radius: NativeShell.panelRadius, lift: 9, panel: true) }
+        if Design.look == .float { content.windowGlass(radius: NativeShell.panelRadius, lift: 9) }
         else if Design.look == .islands {
             content.background { Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 18)).shadow(color: .black.opacity(0.35), radius: 14, y: 4) }
         }
@@ -390,8 +390,8 @@ private struct TabsTrack: ViewModifier {
     var radius = NativeShell.capsuleRadius
     func body(content: Content) -> some View {
         if Design.look == .quiet { content }
-        // On the sidebar's glass: a darker well set into it, not more glass on glass.
-        else if Design.look == .float { content.glassWell(radius: radius) }
+        // On the sidebar's glass: a sheet of the same glass, lying on it.
+        else if Design.look == .float { content.windowGlass(radius: radius, lift: 2) }
         else if Design.look == .tiles { content.background(Glass.tile(NativeShell.capsuleRadius)) }
         else { content.glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius)) }
     }

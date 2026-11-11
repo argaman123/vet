@@ -308,6 +308,7 @@ struct EditorHeader: View {
 private struct ApproveSurface: ViewModifier {
     func body(content: Content) -> some View {
         if Design.look == .quiet { content }
+        else if Design.look == .float { content.windowGlassOverCode(radius: NativeShell.capsuleRadius) }
         else if Design.look == .tiles {
             content.background(RoundedRectangle(cornerRadius: NativeShell.capsuleRadius, style: .continuous).fill(Color(white: 0.2))
                 .shadow(color: .black.opacity(0.45), radius: 10, y: 4))

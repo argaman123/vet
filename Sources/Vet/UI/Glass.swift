@@ -13,11 +13,10 @@ enum Glass {
     /// less its distance from the window's edge, so the corners stay concentric (never rounder
     /// inside than out), down to a floor for the smallest pieces.
     static let windowRadius: CGFloat = 16
-    /// How light a sheet of glass is over the work surface (float).
-    static let wash: Double = 0.07
-    /// The sidebar's panel: a large sheet at the groups' strength reads as a flat grey slab, so it
-    /// is only a touch lighter than the surface; its rim and shadow make it a sheet.
-    static let panelWash: Double = 0.025
+    /// How light a sheet of glass is over what it lies on (float): only a touch, its rim and shadow
+    /// make it a sheet. One strength for every piece: the sidebar, the row's groups, and the tabs
+    /// and Filter bar lying on the sidebar (a sheet on a sheet, a touch lighter again).
+    static let wash: Double = 0.025
     static func nested(inset: CGFloat, floor: CGFloat = 6) -> CGFloat { max(floor, windowRadius - inset) }
     /// A dark filled tile with a hairline edge (the tiles look's control groups).
     static func tile(_ radius: CGFloat) -> some View {
@@ -91,9 +90,9 @@ extension View {
     /// with a shadow on the surface around it. Never by showing more of what's behind the window,
     /// which reads as a hole cut through the surface.
     /// `lift`: how far it floats over the surface (its shadow's spread).
-    func windowGlass(radius: CGFloat, lift: CGFloat = 4, panel: Bool = false) -> some View {
+    func windowGlass(radius: CGFloat, lift: CGFloat = 4) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        let wash = panel ? DesignState.shared.panelWash ?? Glass.panelWash : DesignState.shared.wash ?? Glass.wash
+        let wash = DesignState.shared.wash ?? Glass.wash
         return background {
             ZStack {
                 shape.fill(Color.black.opacity(0.55)).blur(radius: lift * 1.6).offset(y: lift * 0.4)
@@ -108,17 +107,18 @@ extension View {
         }
     }
 
-    /// A well set into the sidebar's glass (float: the place tabs, the Filter bar): darker than
-    /// the sheet around it.
-    func glassWell(radius: CGFloat = NativeShell.capsuleRadius) -> some View {
-        background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.black.opacity(0.28)))
+    /// The same sheet floating over code (Approve and Next): backed by the surface's tone, so the
+    /// code under it doesn't show through.
+    func windowGlassOverCode(radius: CGFloat) -> some View {
+        windowGlass(radius: radius, lift: 5)
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color(red: 0.07, green: 0.07, blue: 0.08).opacity(0.94)))
     }
 
-    /// The bar under a list in the sidebar (Filter). Float: a well like the place tabs', below the
-    /// list. Elsewhere: glass floating over the list's last rows.
+    /// The bar under a list in the sidebar (Filter). Float: a sheet of the same glass as everything
+    /// else, lying on the sidebar below the list. Elsewhere: glass floating over the list's last rows.
     @ViewBuilder func sidebarBar() -> some View {
         if Design.look == .float {
-            glassWell()
+            windowGlass(radius: NativeShell.capsuleRadius, lift: 2)
         } else {
             glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: Glass.barRadius))
         }
