@@ -58,13 +58,6 @@ struct NativeShell: View {
                     .environment(\.headerInRow, true)
                     // The card: dark glass over the window's glass, the wallpaper faint through it.
                     .background(Color.black.opacity(full ? 0 : 0.36))
-                    // Full window: long lines fade out before the window's edge, not cut by it.
-                    .overlay(alignment: .trailing) {
-                        if full {
-                            LinearGradient(colors: [NativeShell.surface.opacity(0), NativeShell.surface], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 44).allowsHitTesting(false)
-                        }
-                    }
                     .clipShape(RoundedRectangle(cornerRadius: full ? 0 : 14, style: .continuous))
                     .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(full ? 0 : 0.10)) }
                     .padding(.leading, sidebarHidden && !full ? 10 : 0)

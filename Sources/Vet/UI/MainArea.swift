@@ -93,6 +93,7 @@ struct DiffScreen: View {
             // The native shell: the header is the window's top row; only the action floats here.
             RibbonDiffView(model: review, version: review.diffVersion, jumpSerial: review.jump.serial, approveSerial: review.approveSerial,
                            overlay: NSEdgeInsets(top: 4, left: 0, bottom: bottom, right: 0))
+                .fadesAtWindowEdge()
                 .overlay(alignment: .bottom) { ReviewFooter(app: app, floating: true).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bottom = $0 } }
         } else {
             classic
@@ -361,6 +362,7 @@ private struct EditorBody: View {
                 }, readingAids: { view, url in
                     app.workspace.loadReadingAids(editor: view, url: url)
                 }, overlayTop: overlayTop)
+                .fadesAtWindowEdge()
             }
     }
 }
@@ -541,6 +543,7 @@ struct OutputPane: View {
             if !minimized {
                 OutputText(text: run.output, version: run.outputVersion, epoch: run.outputEpoch)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .fadesAtWindowEdge()
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)

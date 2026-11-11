@@ -17,6 +17,22 @@ enum Glass {
 }
 
 extension View {
+    /// Where the work fills the window (float): the code itself fades to nothing before the
+    /// window's edge, so long lines aren't cut by it. Only the text thins out: nothing is laid
+    /// over it, so the surface and whatever floats on it stay as they are.
+    @ViewBuilder func fadesAtWindowEdge() -> some View {
+        if Design.look == .float {
+            mask {
+                HStack(spacing: 0) {
+                    Color.black
+                    LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing).frame(width: 56)
+                }
+            }
+        } else {
+            self
+        }
+    }
+
     /// A control group's surface in the top row and the sidebar: its own glass, or (the quiet and
     /// bar looks) nothing, the controls sitting on what's behind them.
     @ViewBuilder func groupGlass(interactive: Bool = false) -> some View {
