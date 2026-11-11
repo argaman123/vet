@@ -21,11 +21,17 @@ extension EnvironmentValues {
 private struct QuietRow: ViewModifier {
     let path: String
     @Environment(\.selectedRow) private var selected
+    @State private var hovering = false
     func body(content: Content) -> some View {
-        content.listRowBackground(
+        content
+            // The whole row answers the pointer, not only its text.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .listRowBackground(
             Group {
                 if selected != path {
-                    Color.clear
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(hovering || HoverDebug.shared.forced ? 0.07 : 0))
                 } else if Design.shell == .native {
                     // The selected file: a piece of glass on the window's glass.
                     Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 8))

@@ -31,13 +31,19 @@ private struct HandButton: View {
     }
 }
 
+/// Tests: every highlight shown at once, to look at them without a pointer.
+@MainActor @Observable final class HoverDebug {
+    static let shared = HoverDebug()
+    var forced = false
+}
+
 /// The highlight under the pointer.
 struct HoverFill: View {
     let on: Bool
     var radius: CGFloat = 7
     var body: some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(Color.white.opacity(on ? 0.09 : 0))
+            .fill(Color.white.opacity(on || HoverDebug.shared.forced ? 0.12 : 0))
             .animation(.easeOut(duration: 0.12), value: on)
     }
 }

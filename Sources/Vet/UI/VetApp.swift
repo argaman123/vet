@@ -107,6 +107,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHook.on("stop") { [weak self] _ in self?.workspace.run.stop() }
         SnapshotHook.on("toast") { [weak self] args in self?.workspace.link.flash(args.joined(separator: " ")) }
         SnapshotHook.on("fullscreen") { _ in NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 })?.toggleFullScreen(nil) }
+        SnapshotHook.on("hover") { args in
+            // hover <x> <y>: the pointer moving to a point of the window (points from its top-left), no real pointer.
+            guard args.count == 2, let x = Double(args[0]), let y = Double(args[1]),
+                  let w = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 && $0.toolbar != nil }) else { return }
+            w.makeKey()
+            for dx in [-3.0, 0.0] {
+                if let e = NSEvent.mouseEvent(with: .mouseMoved, location: NSPoint(x: x + dx, y: w.frame.height - y), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) { NSApp.sendEvent(e) }
+            }
+        }
+        SnapshotHook.on("forcehover") { args in HoverDebug.shared.forced = args.first != "off" }
         SnapshotHook.on("winat") { args in
             // winat <x> <y>: which window the window server finds at a point (from the main window's top-left) → winat.txt
             guard let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"], args.count == 2, let x = Double(args[0]), let y = Double(args[1]),

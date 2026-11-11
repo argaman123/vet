@@ -158,6 +158,7 @@ private struct VariantHeader: View {
     /// Clicking the header folds or unfolds its section (a folder you've finished, say). The rows
     /// come and go with it, so the system's own hover chevron doesn't appear beside this one.
     var open: Binding<Bool>? = nil
+    @State private var hovering = false
     var body: some View {
         HStack(spacing: 5) {
             // Leading, like a folder's disclosure: never under the list's scroller.
@@ -176,6 +177,8 @@ private struct VariantHeader: View {
             Spacer(minLength: 4)
         }
         .contentShape(Rectangle())
+        .background(HoverFill(on: hovering && open != nil, radius: 6).padding(.horizontal, -4).padding(.vertical, -3))
+        .onHover { hovering = $0 }
         .onTapGesture { open?.wrappedValue.toggle() }
         .pointerStyle(open == nil ? nil : .link)
         .help(open.map { $0.wrappedValue ? "Fold \(title)" : "Unfold \(title)" } ?? "")

@@ -632,8 +632,9 @@ struct ReviewFooter: View {
                     .frame(height: NativeShell.capsuleHeight)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .pointerStyle(.link)
+                .buttonStyle(.hand)
+                .foregroundStyle(.primary)
+                .environment(\.hoverRadius, NativeShell.capsuleRadius)
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: NativeShell.capsuleRadius))
                 .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
             }
