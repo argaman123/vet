@@ -22,7 +22,9 @@ struct NativeShell: View {
 
     var body: some View {
         // Float: the sidebar is a glass panel of its own, over a work surface that fills the window.
-        let float = Design.look == .float
+        let float = Design.floatingSidebar
+        // The work fills the window (float), or stays a card beside the sidebar's panel (islands).
+        let full = Design.look == .float
         HStack(spacing: 0) {
             if !sidebarHidden {
                 NativeSidebar(app: app, fullScreen: fullScreen, float: float) { sidebarHidden = true }
@@ -55,16 +57,23 @@ struct NativeShell: View {
                 MainArea(app: app)
                     .environment(\.headerInRow, true)
                     // The card: dark glass over the window's glass, the wallpaper faint through it.
-                    .background(Color.black.opacity(float ? 0 : 0.42))
-                    .clipShape(RoundedRectangle(cornerRadius: float ? 0 : 14, style: .continuous))
-                    .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(float ? 0 : 0.10)) }
-                    .padding(.leading, sidebarHidden && !float ? 10 : 0)
-                    .padding([.trailing, .bottom], float ? 0 : 10)
+                    .background(Color.black.opacity(full ? 0 : 0.36))
+                    // Full window: long lines fade out before the window's edge, not cut by it.
+                    .overlay(alignment: .trailing) {
+                        if full {
+                            LinearGradient(colors: [NativeShell.surface.opacity(0), NativeShell.surface], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: 44).allowsHitTesting(false)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: full ? 0 : 14, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(full ? 0 : 0.10)) }
+                    .padding(.leading, sidebarHidden && !full ? 10 : 0)
+                    .padding([.trailing, .bottom], full ? 0 : float ? 8 : 10)
             }
         }
         .animation(.easeOut(duration: 0.2), value: sidebarHidden)
         .ignoresSafeArea() // up to the window's top edge: the rows sit beside the window buttons
-        .background { ZStack { NativeWindowGlass(); if float { Color.black.opacity(0.42) } }.ignoresSafeArea() }
+        .background { ZStack { NativeWindowGlass(); if full { Color.black.opacity(0.36) } }.ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .overlay { GlassMenuOverlay(app: app) }
         .onChange(of: app.ui.menu != nil || app.ui.focusSearch) { _, open in PointerState.shared.blocked = open }
@@ -107,6 +116,8 @@ struct NativeShell: View {
     /// The row's control groups: rounded squares of glass (the mock's), Search's too.
     static let capsuleHeight: CGFloat = 34
     static let capsuleRadius: CGFloat = 11
+    /// The work surface's color where it fills the window (what the edge fade ends in).
+    static let surface = Color(red: 0.055, green: 0.055, blue: 0.065)
 }
 
 /// The window's own glass: one material behind everything, the same from top to bottom.
@@ -114,7 +125,7 @@ struct NativeWindowGlass: View {
     var body: some View {
         ZStack {
             BehindWindowBlur(material: .hudWindow)
-            Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.72) // dark enough that a white window behind never washes it out
+            Color(red: 0.055, green: 0.055, blue: 0.07).opacity(0.78) // dark glass: never grey, and a white window behind can't wash it out
         }
     }
 }
@@ -186,7 +197,7 @@ private struct PlaceSwitcher: View {
             segment(.files, "folder", "All Files (⌘2)")
             segment(.browser, "safari", "Browser (⌘3)")
         }
-        .padding(Design.groupGlass || Design.look == .bar ? 3 : 0)
+        .padding(Design.groupBoxed || Design.look == .bar ? 3 : 0)
         .frame(height: NativeShell.capsuleHeight)
         .modifier(TabsTrack())
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: app.place)
@@ -294,7 +305,7 @@ struct RowGroup<Content: View>: View {
             HStack(spacing: 2) { content }
                 .foregroundStyle(.secondary)
                 .tint(.secondary)
-                .padding(.horizontal, Design.groupGlass ? 5 : 0)
+                .padding(.horizontal, Design.groupBoxed ? 5 : 0)
                 .frame(height: NativeShell.capsuleHeight)
                 .groupGlass()
         } else {
@@ -331,7 +342,7 @@ private struct RunCapsule: View {
                     .frame(height: 28).contentShape(Rectangle())
             }
         }
-        .padding(.leading, 6).padding(.trailing, Design.groupGlass ? 12 : 4)
+        .padding(.leading, 6).padding(.trailing, Design.groupBoxed ? 12 : 4)
         .frame(height: NativeShell.capsuleHeight)
         .groupGlass()
     }
@@ -341,6 +352,7 @@ private struct RunCapsule: View {
 private struct TabsTrack: ViewModifier {
     func body(content: Content) -> some View {
         if Design.look == .quiet { content }
+        else if Design.look == .tiles { content.background(Glass.tile(NativeShell.capsuleRadius)) }
         else { content.glassEffect(.regular, in: .rect(cornerRadius: NativeShell.capsuleRadius)) }
     }
 }

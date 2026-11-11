@@ -272,10 +272,16 @@ enum Design {
     /// The native window's surfaces (study): every control group its own glass (glass); controls
     /// straight on the window, glass kept for what floats (quiet); the top row as one glass bar (bar);
     /// the sidebar a floating glass panel over a full-window work surface (float).
-    enum Look: String { case glass, quiet, bar, float }
+    /// Also: control groups as dark filled tiles (tiles); the sidebar and the work each a panel of
+    /// their own on the window (islands).
+    enum Look: String { case glass, quiet, bar, float, tiles, islands }
     static var look: Look { Look(rawValue: DesignState.shared.look ?? UserDefaults.standard.string(forKey: "design.look") ?? "") ?? .glass }
     /// Whether the top row's and sidebar's control groups are each a piece of glass.
-    static var groupGlass: Bool { look == .glass || look == .float }
+    static var groupGlass: Bool { look == .glass || look == .float || look == .islands }
+    /// Whether they have a surface of their own at all (glass or a dark tile).
+    static var groupBoxed: Bool { groupGlass || look == .tiles }
+    /// The sidebar as a floating glass panel.
+    static var floatingSidebar: Bool { look == .float || look == .islands }
     /// The open file's title (study): the folders leading to the name (path), the name alone (name),
     /// the last folder and the name (short), or icon, name, folder (plain).
     enum Title: String { case path, name, short, plain }

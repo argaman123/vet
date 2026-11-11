@@ -9,6 +9,11 @@ enum Glass {
     static let barRadius: CGFloat = 10
     /// Panels: menus, notes.
     static let panelRadius: CGFloat = 13
+    /// A dark filled tile with a hairline edge (the tiles look's control groups).
+    static func tile(_ radius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.black.opacity(0.34))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Color.white.opacity(0.07)))
+    }
 }
 
 extension View {
@@ -17,6 +22,8 @@ extension View {
     @ViewBuilder func groupGlass(interactive: Bool = false) -> some View {
         if Design.groupGlass {
             glassEffect(interactive ? .regular.interactive() : .regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
+        } else if Design.look == .tiles {
+            background(Glass.tile(NativeShell.capsuleRadius))
         } else {
             self
         }
