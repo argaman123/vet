@@ -304,27 +304,6 @@ struct EditorHeader: View {
     }
 }
 
-/// Approve and Next's surface: glass, except where it is the solid accent.
-/// An error message's surface: the sidebar's sheet under a red tint (float), or red system glass.
-private struct ErrorSurface: ViewModifier {
-    func body(content: Content) -> some View {
-        if Design.look == .float { content.glassPanel(radius: 12) }
-        else { content.glassEffect(.regular.tint(.red.opacity(0.25)), in: .rect(cornerRadius: 12)) }
-    }
-}
-
-private struct ApproveSurface: ViewModifier {
-    func body(content: Content) -> some View {
-        if Design.look == .quiet { content }
-        else if Design.look == .float { content.windowGlassOverCode(radius: NativeShell.capsuleRadius) }
-        else if Design.look == .tiles {
-            content.background(RoundedRectangle(cornerRadius: NativeShell.capsuleRadius, style: .continuous).fill(Color(white: 0.2))
-                .shadow(color: .black.opacity(0.45), radius: 10, y: 4))
-        }
-        else { content.glassEffect(.regular.interactive(), in: .rect(cornerRadius: NativeShell.capsuleRadius)) }
-    }
-}
-
 /// The open file as the window's title, in the row above the card: a quiet glyph, the name, the folder.
 struct RowTitle: View {
     let name: String
@@ -444,8 +423,9 @@ private struct Banner: View {
                 .font(.callout)
                 .lineLimit(3)
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.red.opacity(Design.look == .float ? 0.2 : 0)))
-                .modifier(ErrorSurface())
+                // The sidebar's sheet, under a red tint.
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.red.opacity(0.2)))
+                .glassPanel(radius: 12)
                 .padding(.top, 44)
                 .onTapGesture { review.dismissError() }
                 .help("Click to dismiss")
@@ -653,24 +633,21 @@ struct ReviewFooter: View {
             HStack {
                 Spacer()
                 Button { review.approveAndNext() } label: {
-                    // Quiet: the window's one accent, with dark text. Otherwise a piece of glass.
-                    let solid = Design.look == .quiet
                     HStack(spacing: 7) {
-                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(solid ? Color.black.opacity(0.85) : Color(nsColor: DiffTheme.added))
-                        Text("Approve and Next").font(.system(size: 13, weight: solid ? .semibold : .medium)).foregroundStyle(solid ? Color.black.opacity(0.85) : Color.primary)
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(nsColor: DiffTheme.added))
+                        Text("Approve and Next").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.primary)
                     }
                     .padding(.horizontal, 14)
                     .frame(height: NativeShell.capsuleHeight)
-                    .background { if solid { RoundedRectangle(cornerRadius: NativeShell.capsuleRadius, style: .continuous).fill(Color.accentColor) } }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.hand)
                 .foregroundStyle(.primary)
                 .environment(\.hoverRadius, NativeShell.capsuleRadius)
-                .modifier(ApproveSurface())
+                .windowGlassOverCode(radius: NativeShell.capsuleRadius)
                 .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
             }
-            .padding(Design.look == .float ? NativeShell.gap : 12)
+            .padding(NativeShell.gap)
         } else if floating {
             HStack {
                 Spacer()

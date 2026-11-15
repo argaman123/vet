@@ -1,72 +1,41 @@
 import SwiftUI
 
-/// The dark glass of Vet's floating pieces (bars over lists, notes, messages, menus): the
-/// window's own tone over the system's glass, in rounded squares.
+/// Vet's glass: one sheet for every piece (the sidebar, the top row's groups, the tabs, bars,
+/// menus, messages), in rounded squares.
 enum Glass {
-    /// The window's dark tone, laid over glass so light content behind never washes it out.
-    static let tint = Color(red: 0.11, green: 0.11, blue: 0.13).opacity(0.68)
     /// The sidebar's sheet as one flat tone, for where the system draws the shape (a popover).
     static let sheet = Color(red: 0.095, green: 0.095, blue: 0.105).opacity(0.95)
-    /// Bars and small messages.
-    static let barRadius: CGFloat = 8
     /// Panels: menus, notes.
     static let panelRadius: CGFloat = 12
     /// The window's corners (measured: 16 pt). Everything nested in it takes its radius from this,
     /// less its distance from the window's edge, so the corners stay concentric (never rounder
     /// inside than out), down to a floor for the smallest pieces.
     static let windowRadius: CGFloat = 16
-    /// How light a sheet of glass is over what it lies on (float): only a touch, its rim and shadow
+    /// How light a sheet of glass is over what it lies on: only a touch, its rim and shadow
     /// make it a sheet. One strength for every piece: the sidebar, the row's groups, and the tabs
     /// and Filter bar lying on the sidebar (a sheet on a sheet, a touch lighter again).
     static let wash: Double = 0.025
-    static func nested(inset: CGFloat, floor: CGFloat = 6) -> CGFloat { max(floor, windowRadius - inset) }
-    /// A dark filled tile with a hairline edge (the tiles look's control groups).
-    static func tile(_ radius: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.black.opacity(0.34))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Color.white.opacity(0.07)))
-    }
 }
 
 extension View {
-    /// Where the work fills the window (float): the code itself fades to nothing before the
-    /// window's edge, so long lines aren't cut by it. Only the text thins out: nothing is laid
-    /// over it, so the surface and whatever floats on it stay as they are.
-    @ViewBuilder func fadesAtWindowEdge() -> some View {
-        if Design.look == .float {
-            mask {
-                HStack(spacing: 0) {
-                    Color.black
-                    LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing).frame(width: 56)
-                }
+    /// The code itself fades to nothing before the window's edge, so long lines aren't cut by
+    /// it. Only the text thins out: nothing is laid over it, so the surface and whatever floats
+    /// on it stay as they are.
+    func fadesAtWindowEdge() -> some View {
+        mask {
+            HStack(spacing: 0) {
+                Color.black
+                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing).frame(width: 56)
             }
-        } else {
-            self
         }
     }
 
-    /// A control group's surface in the top row and the sidebar: its own glass, or (the quiet and
-    /// bar looks) nothing, the controls sitting on what's behind them.
-    @ViewBuilder func groupGlass(interactive: Bool = false) -> some View {
-        if Design.look == .float {
-            windowGlass(radius: NativeShell.capsuleRadius)
-        } else if Design.groupGlass {
-            glassEffect(interactive ? .regular.interactive() : .regular, in: .rect(cornerRadius: NativeShell.capsuleRadius))
-        } else if Design.look == .tiles {
-            background(Glass.tile(NativeShell.capsuleRadius))
-        } else {
-            self
-        }
-    }
+    /// A control group's surface in the top row: a sheet of the window's glass.
+    func groupGlass() -> some View { windowGlass(radius: NativeShell.capsuleRadius) }
 
-    /// A floating panel (menus, messages, search). Float: the same sheet as the sidebar and the
-    /// row's groups, backed so the code under it doesn't show. Elsewhere: dark system glass.
-    @ViewBuilder func glassPanel(radius: CGFloat = Glass.panelRadius) -> some View {
-        if Design.look == .float {
-            windowGlassOverCode(radius: radius)
-        } else {
-            glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: radius))
-        }
-    }
+    /// A floating panel (menus, messages, search): the same sheet as the sidebar and the row's
+    /// groups, backed so the code under it doesn't show.
+    func glassPanel(radius: CGFloat = Glass.panelRadius) -> some View { windowGlassOverCode(radius: radius) }
 }
 
 /// Buttons in a glass panel (a note's Save, Send…): small rounded squares, filled. The main one
@@ -91,7 +60,7 @@ struct PanelButtonStyle: ButtonStyle {
 // MARK: Glass lying on the work surface
 
 extension View {
-    /// This view's bounds as a sheet of glass lying on the work surface (float: the sidebar, the
+    /// This view's bounds as a sheet of glass lying on the work surface (the sidebar, the
     /// top row's groups). The surface runs on under it unchanged, exactly as beside it: the sheet
     /// is lighter only by its own light (a white wash, brighter toward the top, and a lit rim),
     /// with a shadow on the surface around it. Never by showing more of what's behind the window,
@@ -99,16 +68,11 @@ extension View {
     /// `lift`: how far it floats over the surface (its shadow's spread).
     func windowGlass(radius: CGFloat, lift: CGFloat = 4) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        let wash = DesignState.shared.wash ?? Glass.wash
         return background {
             ZStack {
                 shape.fill(Color.black.opacity(0.55)).blur(radius: lift * 1.6).offset(y: lift * 0.4)
                     .mask { Rectangle().padding(-lift * 6).overlay(shape.blendMode(.destinationOut)).compositingGroup() }
-                if DesignState.shared.glassKind == "clear" {
-                    Color.clear.glassEffect(.clear, in: shape)
-                } else {
-                    shape.fill(LinearGradient(colors: [Color.white.opacity(wash * 1.3), Color.white.opacity(wash)], startPoint: .top, endPoint: .bottom))
-                }
+                shape.fill(LinearGradient(colors: [Color.white.opacity(Glass.wash * 1.3), Color.white.opacity(Glass.wash)], startPoint: .top, endPoint: .bottom))
                 shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
             }
         }
@@ -124,32 +88,18 @@ extension View {
             .background(Color.clear.glassEffect(.regular, in: .rect(cornerRadius: radius)))
     }
 
-    /// The bar under a list in the sidebar (Filter). Float: a sheet of the same glass as everything
-    /// else, lying on the sidebar below the list. Elsewhere: glass floating over the list's last rows.
-    @ViewBuilder func sidebarBar() -> some View {
-        if Design.look == .float {
-            windowGlass(radius: NativeShell.capsuleRadius, lift: 2)
-        } else {
-            glassEffect(.regular.tint(Glass.tint), in: .rect(cornerRadius: Glass.barRadius))
-        }
-    }
+    /// The bar under a list in the sidebar (Filter): a sheet of the same glass, lying on the
+    /// sidebar below the list.
+    func sidebarBar() -> some View { windowGlass(radius: NativeShell.capsuleRadius, lift: 2) }
 
-    /// Puts `bar` at the bottom of a sidebar list. Float: under the list, which ends above it
-    /// (rows would show through a bar on the panel's glass). Elsewhere: floating over the list.
-    @ViewBuilder func sidebarFooter<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
-        if Design.look == .float {
-            VStack(spacing: 0) { self; bar() }
-        } else {
-            overlay(alignment: .bottom) { bar() }
-        }
+    /// Puts `bar` under a sidebar list, which ends above it (rows would show through a bar laid
+    /// over them on the panel's glass).
+    func sidebarFooter<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+        VStack(spacing: 0) { self; bar() }
     }
 
     /// The Filter bar's place in the sidebar: the panel's own padding around it.
-    @ViewBuilder func sidebarBarPadding() -> some View {
-        if Design.look == .float {
-            padding(.horizontal, NativeShell.gap).padding(.top, 6).padding(.bottom, NativeShell.gap)
-        } else {
-            padding(10)
-        }
+    func sidebarBarPadding() -> some View {
+        padding(.horizontal, NativeShell.gap).padding(.top, 6).padding(.bottom, NativeShell.gap)
     }
 }

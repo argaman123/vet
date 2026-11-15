@@ -160,7 +160,7 @@ struct ModPanels: View {
                 }
                 .padding(14)
                 .frame(width: 300, alignment: .leading)
-                .modifier(ModPanelSurface())
+                .glassPanel(radius: 12)
             }
         }
         .padding(.top, 56).padding(.trailing, 14)
@@ -224,12 +224,4 @@ final class JSBox: @unchecked Sendable {
     private let call: @MainActor (JSValue) -> Void
     init(_ value: JSValue?, _ call: @escaping @MainActor (JSValue) -> Void) { self.value = value; self.call = call }
     @MainActor func run() { if let value { call(value) } }
-}
-
-/// A mod's panel: the sidebar's sheet (float), or tinted system glass.
-private struct ModPanelSurface: ViewModifier {
-    func body(content: Content) -> some View {
-        if Design.look == .float { content.glassPanel(radius: 12) }
-        else { content.glassEffect(.regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)), in: .rect(cornerRadius: 16)) }
-    }
 }

@@ -59,21 +59,14 @@ private struct QuietRow: ViewModifier {
             Group {
                 if selected != path {
                     RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(hovering || HoverDebug.shared.forced ? 0.07 : 0))
-                } else if Design.shell == .native, Design.look == .float {
+                } else if Design.shell == .native {
                     // On the sidebar's glass: a lighter fill, not more glass on glass.
                     RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.085))
-                } else if Design.shell == .native, Design.look == .tiles {
-                    // Tiles: the selected file is a lighter tile, raised a little.
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.11))
-                        .shadow(color: .black.opacity(0.35), radius: 5, y: 2)
-                } else if Design.shell == .native, Design.look != .quiet {
-                    // The selected file: a piece of glass on the window's glass.
-                    Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 8))
                 } else {
                     RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.09))
                 }
             }
-            .padding(.horizontal, Design.look == .float ? NativeShell.gap : 10)
+            .padding(.horizontal, NativeShell.gap)
         )
     }
 }

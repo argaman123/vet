@@ -318,7 +318,7 @@ private struct FilterBar: View {
 struct ListEndSpace: View {
     var body: some View {
         Color.clear
-            .frame(height: Design.look == .float ? 2 : 56) // float: the bar is under the list, not over it
+            .frame(height: 2) // the bar is under the list, not over it
             .listRowBackground(Color.clear)
             .selectionDisabled()
             .accessibilityHidden(true)

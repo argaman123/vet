@@ -126,8 +126,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         SnapshotHook.on("sidebar") { args in DesignState.shared.sidebarHidden = args.first == "hide" ? true : args.first == "show" ? false : nil }
-        SnapshotHook.on("look") { args in DesignState.shared.look = args.first }
-        SnapshotHook.on("wash") { args in DesignState.shared.wash = args.first.flatMap(Double.init); DesignState.shared.glassKind = args.dropFirst().first }
         SnapshotHook.on("title") { args in DesignState.shared.title = args.first }
         SnapshotHook.on("forcehover") { args in HoverDebug.shared.forced = args.first != "off" }
         SnapshotHook.on("winat") { args in

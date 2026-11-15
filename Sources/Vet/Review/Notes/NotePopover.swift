@@ -64,7 +64,7 @@ private struct NoteList: View {
         .padding(14)
         .frame(width: 320)
         // The window's dark tone over the popover's glass, out to its edges and arrow.
-        .background((Design.look == .float ? Glass.sheet : Glass.tint).padding(-60))
+        .background(Glass.sheet.padding(-60))
     }
 }
 
