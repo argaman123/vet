@@ -83,7 +83,7 @@ Requires macOS 26 or later on Apple silicon.
 Needs Xcode 26 (or its Command Line Tools plus Xcode for the SwiftUI macros).
 
 ```bash
-git clone https://github.com/OWNER/vet.git
+git clone https://github.com/argaman123/vet.git
 cd vet
 scripts/install.sh
 ```
