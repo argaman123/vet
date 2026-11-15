@@ -18,7 +18,7 @@ func render(_ mark: () -> Void) -> NSImage {
 func poly(_ pts: [NSPoint]) -> NSBezierPath { let p = NSBezierPath(); p.move(to: pts[0]); pts.dropFirst().forEach { p.line(to: $0) }; p.close(); return p }
 func fill(_ p: NSBezierPath, _ a: UInt32, _ b: UInt32, _ angle: CGFloat = -90) { NSGradient(starting: hex(a), ending: hex(b))!.draw(in: p, angle: angle) }
 
-// 1: folded V — two planes, the green one folding over the blue (VS Code's language)
+// 1: folded V — two planes, the green one folding over the blue
 let m1 = render {
     let left = poly([NSPoint(x: 250, y: 740), NSPoint(x: 400, y: 740), NSPoint(x: 560, y: 360), NSPoint(x: 470, y: 270)])
     fill(left, 0x5A9BFF, 0x2D5FD0)
@@ -28,12 +28,12 @@ let m1 = render {
     let right = poly([NSPoint(x: 470, y: 270), NSPoint(x: 580, y: 270), NSPoint(x: 780, y: 740), NSPoint(x: 630, y: 740)])
     fill(right, 0x7BE3A0, 0x2FA963)
 }
-// 2: one bold V with a blue→green gradient (Gemini's language)
+// 2: one bold V with a blue→green gradient
 let m2 = render {
     let v = poly([NSPoint(x: 240, y: 750), NSPoint(x: 405, y: 750), NSPoint(x: 512, y: 470), NSPoint(x: 619, y: 750), NSPoint(x: 784, y: 750), NSPoint(x: 590, y: 270), NSPoint(x: 434, y: 270)])
     NSGradient(colors: [hex(0x4F8BFF), hex(0x38C2D8), hex(0x5ADB8A)])!.draw(in: v, angle: -35)
 }
-// 3: extruded V — light top face, deeper side face (Tabby's language)
+// 3: extruded V — light top face, deeper side face
 let m3 = render {
     let top = poly([NSPoint(x: 250, y: 740), NSPoint(x: 390, y: 740), NSPoint(x: 512, y: 430), NSPoint(x: 634, y: 740), NSPoint(x: 774, y: 740), NSPoint(x: 580, y: 300), NSPoint(x: 444, y: 300)])
     let side = poly([NSPoint(x: 444, y: 300), NSPoint(x: 580, y: 300), NSPoint(x: 580, y: 250), NSPoint(x: 444, y: 250)])

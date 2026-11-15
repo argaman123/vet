@@ -21,7 +21,7 @@ enum DiffTheme {
 
     // MARK: Theme (Settings ▸ Theme; see CodeThemes.swift)
 
-    nonisolated(unsafe) private static var current: Palette = Palette.all.first { $0.id == UserDefaults.standard.string(forKey: "theme") } ?? .tide
+    nonisolated(unsafe) private static var current: Palette = Palette.all.first { $0.id == UserDefaults.standard.string(forKey: "theme") } ?? .graphite
     static var palette: Palette { current }
     static func setTheme(_ id: String) {
         guard let p = Palette.available.first(where: { $0.id == id }), p.id != current.id else { return }
@@ -32,7 +32,7 @@ enum DiffTheme {
     }
     /// After mods load: their theme, if it's the one you chose; off a mod theme whose mod is gone.
     static func reapplySavedTheme() {
-        let saved = UserDefaults.standard.string(forKey: "theme") ?? "tide"
+        let saved = UserDefaults.standard.string(forKey: "theme") ?? "graphite"
         if let p = Palette.available.first(where: { $0.id == saved }) {
             if p.id == current.id { current = p; resolved = [:]; NotificationCenter.default.post(name: .vetThemeChanged, object: nil) } // its colors may have changed
             else { setTheme(saved) }

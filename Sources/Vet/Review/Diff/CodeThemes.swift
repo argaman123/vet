@@ -28,21 +28,6 @@ struct Palette: Sendable, Codable {
 }
 
 extension Palette {
-    /// Your VS Code theme (Bearded Monokai Black), made Vet's: near-black, vivid, warm.
-    static let monokai = Palette(
-        id: "monokai", name: "Monokai Black",
-        window: 0x0B0B0B, sidebar: 0x0E0E0E, header: 0x101010,
-        background: 0x141414, text: 0xD4D4D4, lineNumber: 0x4A4F4C, lineNumberCurrent: 0xB5B5B5, selection: 0x3A3D41,
-        foldPill: 0x1C1C1C, foldPillHover: 0x2A2A2A, foldPillBorder: 0x303030, foldLabel: 0x8F8F8F, foldWave: 0x2E2E2E,
-        inlayBackground: 0x222222, inlayText: 0x9A9A9A, lensText: 0x7E7E7E, searchMatch: 0x5C4A12,
-        inserted: 0x1D3319, modified: 0x18304A, deleted: 0x3B1A1E,
-        insertedWord: 0x2F5A26, modifiedWord: 0x24507E, deletedWord: 0x63262D,
-        addedMark: 0x3FB950, modifiedMark: 0x58A6FF, removedMark: 0xF85149,
-        keyword: 0xFFD866, string: 0xA9DC76, comment: 0x6A6A6A, number: 0xFC9867, type: 0xAB9DF2,
-        decorator: 0xE991E3, tag: 0x78DCE8, attribute: 0xFFD866,
-        function: 0x78DCE8, property: 0xFC9867, parameter: 0xE991E3, classType: 0xAB9DF2, constant: 0xFC6A67, namespace: 0x78E8C6,
-        fileModified: 0x58A6FF, fileAdded: 0x3FB950, fileDeleted: 0xF85149, fileConflict: 0xD29922)
-
     /// Vet's own: the logo's blue, teal and green on a blue-black, with warm accents.
     static let vet = Palette(
         id: "vet", name: "Vet",
@@ -226,7 +211,7 @@ extension Palette {
     /// Themes from mods (ModHost), after Vet's own.
     nonisolated(unsafe) static var modThemes: [Palette] = []
     static var available: [Palette] { all + modThemes }
-    static let all: [Palette] = [.ink, .tide, .spectral, .aurora, .vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .monokai, .neon]
+    static let all: [Palette] = [.ink, .tide, .spectral, .aurora, .vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .neon]
 }
 
 /// Design variants being tried (Settings-free switches read from defaults; mockups for now).
