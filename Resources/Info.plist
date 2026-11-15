@@ -20,8 +20,6 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Vet docks the Claude window next to your code review.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>
