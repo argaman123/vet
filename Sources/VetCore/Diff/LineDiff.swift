@@ -4,8 +4,8 @@ import Foundation
 // src/vs/editor/common/diff/defaultLinesDiffComputer/defaultLinesDiffComputer.ts; MIT License,
 // Copyright (c) Microsoft Corporation). See THIRD-PARTY-NOTICES.md.
 
-/// Line diff between two versions of a file: a port of VS Code's `DefaultLinesDiffComputer`
-/// (see docs/reference/notes-vscode.md), except that lines compare by exact bytes, terminator
+/// Line diff between two versions of a file: a port of VS Code's `DefaultLinesDiffComputer`,
+/// except that lines compare by exact bytes, terminator
 /// included, so whitespace, line-ending and final-newline changes are all real, stageable changes.
 ///
 /// 1. Lines are aligned by a scored dynamic program (small files) or Myers' O(ND) diff with a

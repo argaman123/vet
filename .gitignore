@@ -6,9 +6,10 @@ node_modules/
 .swiftpm/
 .claude/worktrees/
 
-# Reference screenshots of other IDEs (local study material)
+# Local study material and working notes
 docs/reference/
 docs/screens/
+docs/superpowers/
 
 # Browser-test captures and scratch screenshots
 .playwright-mcp/
