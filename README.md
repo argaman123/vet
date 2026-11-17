@@ -4,9 +4,9 @@
 
 # Vet
 
-**The Mac app for working with your AI coding agent.**
+**Not another IDE for writing code. One built for the AI era.**
 
-Your agent writes the code. Vet is where you stay in control of it: the agent walks you through what it did, you answer on the exact line, and it fixes things while you keep reading.
+Your agent writes the code now. Vet is the IDE for the part that is still yours: understanding it, steering it, and deciding what ships.
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple)
 ![Swift 6.2](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)
