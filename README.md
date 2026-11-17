@@ -25,40 +25,63 @@ But you no longer write the code. Your agent does, and you are still using an ID
 
 Vet is built for this era. AI code isn't always right, so you still want control over every line of it, without the weight of an editor made for writing. Everything in Vet is there for one thing: guiding your agent, and making that as seamless as possible. It talks to the agent directly over [MCP](https://modelcontextprotocol.io), and it is small, fast and native: SwiftUI and AppKit, no Electron, no dependencies.
 
-## Features
+## A session, start to finish
 
-### The agent sets the review order
+### 1. Ask your agent for something
 
-When the agent finishes a change it sends Vet a plan: the files in the order to read them, a short summary of each, and notes on the lines that matter. The sidebar becomes a numbered **Review Order**, and each file opens with its summary.
+Open your project in Vet and work with your agent the way you always do. It finds Vet on its own and starts listening for you.
 
-![Review order and a file summary](docs/images/review-order.png)
+> add rate limiting to the API, tighter on sign-in
 
-### Notes from the agent, on the line
+### 2. It hands you a review order
 
-The agent's notes sit beside the change they are about and open as you arrive at it. For something you must not miss, it can put a pointer under a line.
+When the agent is done, it doesn't leave you with a pile of changed files. It tells Vet what to read and in which order, and the sidebar becomes a numbered **Review Order**.
 
-![A note from Claude beside a change](docs/images/claude-note.png)
+![The review order](docs/images/review-order.png)
 
-### Your notes go back to the agent
+### 3. Each file opens with its story
 
-Write a note on any line (`⌘N`) and send it (`⌘↩`). The agent's chat wakes up, reads it, fixes the code or answers the question, and the reply appears on the same line. You never leave Vet or type in the chat.
+Every file starts with the agent's short description of what changed in it and why, so you know what you are looking at before you read a line.
 
-![Claude's reply to a note](docs/images/note-reply.png)
+![A file's description](docs/images/file-summary.png)
 
-### Approve change by change
+### 4. Its notes wait on the lines that matter
 
-`Space` or `⌘↩` approves the current change and glides to the next one, then to the next file. Every file shows how much of it you have reviewed.
+As you arrive at a change, the agent's note about it opens beside it: why it did this, what to check, what it isn't sure about. For something you must not miss, it puts a pointer under the line.
+
+![A note from the agent beside a change](docs/images/claude-note.png)
+
+### 5. Approve change by change
+
+`Space` approves the change you are on and glides to the next one, then to the next file. Every file shows how much of it you have been through.
 
 - A mark belongs to the change itself: it survives edits elsewhere in the file and lapses if that change is edited again.
 - Approving is only for you: it changes nothing in git, so nothing is staged or committed behind your back.
-- Lock files and generated code can be marked **Unimportant** by path or glob, so they are reviewed automatically and listed apart.
-- When you are done, **Ask Claude to Commit** (`⌘K`) hands the agent the files you fully reviewed.
+- Lock files and generated code can be marked **Unimportant**, so they are approved automatically and listed apart.
+
+### 6. Not happy with something? Say it on the line
+
+Press `⌘N`, write what you think, and send it with `⌘↩`. The agent wakes up and starts on it in the background. You keep reviewing.
+
+![Writing a note](docs/images/your-note.png)
+
+### 7. The answer comes back to the same line
+
+The agent fixes the code or answers your question, and its reply appears where you asked. You never went back to the chat.
+
+![The agent's reply to a note](docs/images/note-reply.png)
+
+### 8. Ship it
+
+When everything is approved, `⌘K` asks the agent to commit exactly the files you reviewed.
+
+## Also in Vet
 
 ### Native glass
 
 One window, dark, drawn in macOS's own materials: a floating glass sidebar over a work surface that fills the window, with every control, menu and message made of the same sheet. Code fades out before the window's edge instead of being cut by it.
 
-### And the parts of an IDE you need along the way
+### The parts of an IDE you need along the way
 
 | | |
 |---|---|
@@ -69,7 +92,7 @@ One window, dark, drawn in macOS's own materials: a floating glass sidebar over 
 
 **Run and browser**: start your app, see its output, and open it in a built-in browser. The agent can read the output, the page and its console.
 
-Also: side-by-side or unified diff, an editor with autosave, find in files, branch switching and 11 themes.
+And: side-by-side or unified diff, an editor with autosave, find in files, branch switching and 11 themes.
 
 ## Install
 
