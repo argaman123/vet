@@ -166,26 +166,15 @@ The review order, notes, pointers, run output and browser work the same way. Wak
 
 ## Mods
 
-Vet can be changed from the inside. A mod is a small folder that binds keys, adds commands and themes, edits text, or shows its own panels, and it loads without a restart.
-
-The quickest way to make one is to ask your agent:
+Vet can be changed from the inside, and you don't write anything to do it. Ask your agent:
 
 > make a Vet mod that adds Vim keys
 
-It reads the mod guide through MCP, writes the mod and installs it, and you see it working a moment later. A mod can be as small as this, which makes `⌥J` and `⌥K` move between changes and `⌥A` approve:
+> add a panel that shows the failing tests next to the diff
 
-```json
-{
-  "id": "review-keys",
-  "keymap": [
-    { "key": "alt+j", "command": "app.nextChange" },
-    { "key": "alt+k", "command": "app.previousChange" },
-    { "key": "alt+a", "command": "app.approveAndNext" }
-  ]
-}
-```
+> give me a warmer theme
 
-Add a `main.js` next to it for anything that needs code. Mods live in `~/Library/Application Support/Vet/mods`, or in a project's `.vet/mods` to share them with the repository.
+It builds the mod and installs it, and Vet picks it up without a restart. Mods can bind keys, add commands and themes, edit text, and show their own panels.
 
 ## How it works
 
