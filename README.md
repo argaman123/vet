@@ -4,9 +4,9 @@
 
 # Vet
 
-**Not another IDE for writing code. One built for the AI era.**
+**Your usual IDE was built for typing code. Vet is built for the AI era.**
 
-Your agent writes the code now. Vet is the IDE for the part that is still yours: understanding it, steering it, and deciding what ships.
+You don't write the code anymore, your agent does. Vet is the IDE for guiding it and staying in control of what it writes.
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple)
 ![Swift 6.2](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)
@@ -19,9 +19,11 @@ Your agent writes the code now. Vet is the IDE for the part that is still yours:
 
 ## Why
 
-An agent can change twenty files in a minute. A chat window is a poor place to follow that, and an editor built for typing code doesn't know an agent exists: you can't tell where to start, what matters, or what you already checked.
+Every IDE you know was built to make writing code better. They are huge, packed with features for typing faster, and they were great at it.
 
-Vet puts you and the agent in the same place. It connects to your agent over [MCP](https://modelcontextprotocol.io), so the agent can show you its work in the right order, explain it on the line, see what you are looking at, and hear back from you without a single copy and paste. It is a small, fast, native macOS app: SwiftUI and AppKit, no Electron, no dependencies.
+But you no longer write the code. Your agent does, and you are still using an IDE made for a job you stopped doing.
+
+Vet is built for this era. AI code isn't always right, so you still want control over every line of it, without the weight of an editor made for writing. Everything in Vet is there for one thing: guiding your agent, and making that as seamless as possible. It talks to the agent directly over [MCP](https://modelcontextprotocol.io), and it is small, fast and native: SwiftUI and AppKit, no Electron, no dependencies.
 
 ## Features
 
