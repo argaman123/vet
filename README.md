@@ -4,13 +4,13 @@
 
 # Vet
 
-**A native Mac app for reviewing the code your AI agent writes.**
+**The Mac app for working with your AI coding agent.**
 
-Your agent tells Vet what to read and in what order. You approve change by change, leave notes on lines, and the agent answers them beside the code.
+Your agent writes the code. Vet is where you stay in control of it: the agent walks you through what it did, you answer on the exact line, and it fixes things while you keep reading.
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple)
 ![Swift 6.2](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)
-![MCP](https://img.shields.io/badge/MCP-Claude%20Code-D97757)
+![MCP](https://img.shields.io/badge/MCP-any%20agent-D97757)
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)
 
 ![Vet reviewing a change](docs/images/review.png)
@@ -19,27 +19,27 @@ Your agent tells Vet what to read and in what order. You approve change by chang
 
 ## Why
 
-An agent can change twenty files in a minute. Reading them in a chat window, or in an editor built for writing code, is slow: you don't know where to start, what matters, or what you already checked.
+An agent can change twenty files in a minute. A chat window is a poor place to follow that, and an editor built for typing code doesn't know an agent exists: you can't tell where to start, what matters, or what you already checked.
 
-Vet is built for that one job. It is a small, fast, native macOS app (SwiftUI and AppKit, no Electron, no dependencies) that connects to Claude Code over [MCP](https://modelcontextprotocol.io) and turns "here is a diff" into a guided review.
+Vet puts you and the agent in the same place. It connects to your agent over [MCP](https://modelcontextprotocol.io), so the agent can show you its work in the right order, explain it on the line, see what you are looking at, and hear back from you without a single copy and paste. It is a small, fast, native macOS app: SwiftUI and AppKit, no Electron, no dependencies.
 
 ## Features
 
 ### The agent sets the review order
 
-When Claude finishes a change it sends Vet a plan: the files in the order to read them, a short summary of each, and notes on the lines that matter. The sidebar becomes a numbered **Review Order**, and each file opens with its summary.
+When the agent finishes a change it sends Vet a plan: the files in the order to read them, a short summary of each, and notes on the lines that matter. The sidebar becomes a numbered **Review Order**, and each file opens with its summary.
 
 ![Review order and a file summary](docs/images/review-order.png)
 
 ### Notes from the agent, on the line
 
-Claude's notes sit beside the change they are about and open as you arrive at it. For something you must not miss, Claude can put a pointer under a line.
+The agent's notes sit beside the change they are about and open as you arrive at it. For something you must not miss, it can put a pointer under a line.
 
 ![A note from Claude beside a change](docs/images/claude-note.png)
 
 ### Your notes go back to the agent
 
-Write a note on any line (`⌘N`) and send it (`⌘↩`). The Claude Code chat that is listening wakes up, reads it, fixes the code or answers the question, and the reply appears on the same line. You never leave Vet or type in the chat.
+Write a note on any line (`⌘N`) and send it (`⌘↩`). The agent's chat wakes up, reads it, fixes the code or answers the question, and the reply appears on the same line. You never leave Vet or type in the chat.
 
 ![Claude's reply to a note](docs/images/note-reply.png)
 
@@ -48,22 +48,26 @@ Write a note on any line (`⌘N`) and send it (`⌘↩`). The Claude Code chat t
 `Space` or `⌘↩` approves the current change and glides to the next one, then to the next file. Every file shows how much of it you have reviewed.
 
 - A mark belongs to the change itself: it survives edits elsewhere in the file and lapses if that change is edited again.
-- Marks are Vet's own. Git's staging area is never touched.
+- Approving is only for you: it changes nothing in git, so nothing is staged or committed behind your back.
 - Lock files and generated code can be marked **Unimportant** by path or glob, so they are reviewed automatically and listed apart.
-- **Ask Claude to Commit** hands the agent the list of fully reviewed files to commit.
+- When you are done, **Ask Claude to Commit** (`⌘K`) hands the agent the files you fully reviewed.
 
 ### Native glass
 
 One window, dark, drawn in macOS's own materials: a floating glass sidebar over a work surface that fills the window, with every control, menu and message made of the same sheet. Code fades out before the window's edge instead of being cut by it.
 
-### And the parts of an IDE you need while reviewing
+### And the parts of an IDE you need along the way
 
 | | |
 |---|---|
 | ![Search Everywhere](docs/images/search-everywhere.png) | ![Find usages](docs/images/find-usages.png) |
 | **Search Everywhere** (`⇧⇧`): files, symbols, actions and text in one panel. | **Code navigation**: go to definition, find usages with a preview, hover docs, inlay types and usage counts, for TypeScript, JavaScript, Python and Kotlin. |
-| ![Run output and the built-in browser](docs/images/run-and-browser.png) | |
-| **Run and browser**: start your app, see its output, and open it in a built-in browser. Claude can read the output, the page and its console through MCP. | **Also**: side-by-side or unified diff, an editor with autosave, find in files, branch switching, 11 themes, and mods. |
+
+![Run output and the built-in browser](docs/images/run-and-browser.png)
+
+**Run and browser**: start your app, see its output, and open it in a built-in browser. The agent can read the output, the page and its console.
+
+Also: side-by-side or unified diff, an editor with autosave, find in files, branch switching and 11 themes.
 
 ## Install
 
@@ -98,9 +102,11 @@ Go to definition and find usages use language servers, which Vet does not bundle
 scripts/install-language-servers.sh
 ```
 
-## Use it with Claude Code
+## Use it with your agent
 
-Vet runs an MCP server on `127.0.0.1:47821` while it is open.
+Vet runs an MCP server on `127.0.0.1:47821` while it is open. Any agent that can use a local MCP server over HTTP can connect, and the server itself tells the agent how to use Vet, so there is nothing to add to your prompts.
+
+### Claude Code
 
 1. In Vet, choose **Review → Connect Claude Code…** and click **Connect**. It runs this for you:
 
@@ -111,11 +117,24 @@ Vet runs an MCP server on `127.0.0.1:47821` while it is open.
 2. Open your project in Vet (`⌘O`).
 3. Start a new Claude Code session in that project and work as usual.
 
-The server tells Claude how to use Vet, so there is nothing to add to your prompts. From then on:
+From then on:
 
 - When Claude finishes a change, Vet shows **Claude finished** and the review order.
 - You review, approve, and send notes from Vet.
 - Claude keeps a listener running in the background, so your notes reach it even while the chat is idle. If the note popover says no chat is listening, type `vet` once in your Claude chat.
+
+### Codex, Cursor and other agents
+
+Add Vet as an HTTP MCP server named `vet` with the URL `http://127.0.0.1:47821/mcp`. For OpenAI's Codex, that is two lines in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.vet]
+url = "http://127.0.0.1:47821/mcp"
+```
+
+In Cursor and most other clients it is one entry in the MCP settings with the same URL.
+
+The review order, notes, pointers, run output and browser work the same way. Waking an idle chat when you send a note depends on the agent being able to wait on a background command; where it can't, tell it "check Vet" and it reads your notes. The ChatGPT app itself only connects to servers on the internet, so with OpenAI use Codex.
 
 ### What the agent can do
 
@@ -130,8 +149,6 @@ The server tells Claude how to use Vet, so there is nothing to add to your promp
 | `run_app` / `stop_app` / `run_output` | Runs your app from a run configuration and reads its output. |
 | `browser_view` | Reads the built-in browser: page text, console, and a screenshot. |
 | `install_mod` and the other mod tools | Changes Vet itself: keys, themes, commands, panels. |
-
-Any MCP client that speaks streamable HTTP can use the same server.
 
 ## Keyboard
 
@@ -156,13 +173,30 @@ Any MCP client that speaks streamable HTTP can use the same server.
 
 ## Mods
 
-A mod is a folder with a `mod.json` and an optional `main.js`. It can bind keys, add commands and themes, edit text, and show panels, and it loads without a restart. Mods live in `~/Library/Application Support/Vet/mods`, or in a project's `.vet/mods`.
+Vet can be changed from the inside. A mod is a small folder that binds keys, adds commands and themes, edits text, or shows its own panels, and it loads without a restart.
 
-The quickest way to make one is to ask Claude: "make a Vet mod that adds Vim keys". It reads the mod guide through MCP and installs the mod for you.
+The quickest way to make one is to ask your agent:
+
+> make a Vet mod that adds Vim keys
+
+It reads the mod guide through MCP, writes the mod and installs it, and you see it working a moment later. A mod can be as small as this, which makes `⌥J` and `⌥K` move between changes and `⌥A` approve:
+
+```json
+{
+  "id": "review-keys",
+  "keymap": [
+    { "key": "alt+j", "command": "app.nextChange" },
+    { "key": "alt+k", "command": "app.previousChange" },
+    { "key": "alt+a", "command": "app.approveAndNext" }
+  ]
+}
+```
+
+Add a `main.js` next to it for anything that needs code. Mods live in `~/Library/Application Support/Vet/mods`, or in a project's `.vet/mods` to share them with the repository.
 
 ## How it works
 
-- **`Sources/VetCore`**: the diff engine (a Swift port of VS Code's), change fingerprints, fuzzy matching and search. No UI, covered by tests (`scripts/test.sh`).
+- **`Sources/VetCore`**: the diff engine, change fingerprints, fuzzy matching and search. No UI.
 - **`Sources/Vet`**: the app. The diff and editor views are AppKit text views; the window, sidebar and panels are SwiftUI.
 - **`Sources/Vet/Claude`**: the MCP server and its tools.
 - **`.vet/`** in each project holds your review marks, notes, the review plan and run configurations. It ignores itself in git, so your repository is never changed.

@@ -217,7 +217,7 @@ final class MCPServer: @unchecked Sendable {
         }
     }
 
-    /// What every Claude session learns about Vet when it connects (the MCP limit is 4,096
+    /// What every agent session learns about Vet when it connects (the MCP limit is 4,096
     /// characters): so Claude uses Vet's review order, notes and listener without being asked.
     static var instructions: String { """
         Vet is the user's code review IDE on this Mac. They read your changes in Vet, not in this chat, \
@@ -239,11 +239,12 @@ final class MCPServer: @unchecked Sendable {
 
         3. Listening. Notes reach you without the user typing here because you keep one listener \
         running in the background in this chat, whenever you work in a project that's open in Vet \
-        (vet_status shows it). Start it on your own, without being asked, with your Bash tool and \
-        run_in_background: true:
+        (vet_status shows it). Start it on your own, without being asked, as a background shell command \
+        (in Claude Code: the Bash tool with run_in_background: true):
         \(listenCommand(root: "<the project's root folder>"))
-        This works: when a background command ends, you get a new turn automatically, even while the \
-        chat is idle. It ends when the user sends notes, and its output says what to do; after \
+        When a background command ends you get a new turn automatically, even while the chat is \
+        idle (if your client can't do that, call get_notes whenever the user asks you to check Vet). \
+        It ends when the user sends notes, and its output says what to do; after \
         handling them, start it again. One per chat: not if one is already running; not again if it \
         ended because Vet isn't running (curl fails to connect).
 
@@ -265,8 +266,8 @@ final class MCPServer: @unchecked Sendable {
     /// Added to replies while no chat listens on the project.
     static func listenHint(root: String) -> String {
         """
-        Vet: no chat is listening for the user's notes. Start the listener now, without asking (Bash, \
-        run_in_background: true): \(listenCommand(root: root))
+        Vet: no chat is listening for the user's notes. Start the listener now, without asking (a background \
+        shell command): \(listenCommand(root: root))
         When it ends you get a turn automatically, even while idle; its output says what to do. Then \
         start it again. Skip this if you already have one running in this chat.
         """
