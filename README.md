@@ -13,7 +13,7 @@ You don't write the code anymore, your agent does. Vet is the IDE for guiding it
 ![MCP](https://img.shields.io/badge/MCP-any%20agent-D97757)
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)
 
-![Vet reviewing a change](docs/images/review.png)
+![Vet reviewing a change](docs/images/0.2.0/review.png)
 
 </div>
 
@@ -29,11 +29,11 @@ Vet is built for this era. AI code isn't always right, so you still want control
 
 **1. Ask your agent for something.** When it is done, it gives Vet the files to read, in order.
 
-![The review order](docs/images/review-order.png)
+![The review order](docs/images/0.2.0/review-order.png)
 
 **2. Read its notes on the code.** Each file comes with a short description in the sidebar, and the agent's notes wait beside the changes that matter.
 
-![A note from the agent beside a change](docs/images/claude-note.png)
+![A note from the agent beside a change](docs/images/0.2.0/claude-note.png)
 
 **3. Approve as you go.** Every change has a dot beside it: amber when it's new to you, white once you've seen it, dim once approved. Click it, or press `Space` to approve and move to the next. Nothing in git changes until you press `⌘K`, which asks the agent to commit what you reviewed.
 
@@ -41,7 +41,7 @@ Vet is built for this era. AI code isn't always right, so you still want control
 
 | | |
 |---|---|
-| ![Writing a note](docs/images/your-note.png) | ![The agent's reply](docs/images/note-reply.png) |
+| ![Writing a note](docs/images/0.2.0/your-note.png) | ![The agent's reply](docs/images/0.2.0/note-reply.png) |
 
 ## Also in Vet
 
@@ -53,10 +53,10 @@ One window, dark, in macOS's own Liquid Glass: the sidebar sits in a glass panel
 
 | | |
 |---|---|
-| ![Search Everywhere](docs/images/search-everywhere.png) | ![Find usages](docs/images/find-usages.png) |
+| ![Search Everywhere](docs/images/0.2.0/search-everywhere.png) | ![Find usages](docs/images/0.2.0/find-usages.png) |
 | **Search Everywhere** (`⇧⇧`): files, symbols, actions and text in one panel. | **Code navigation**: go to definition, find usages with a preview, hover docs, inlay types and usage counts, for TypeScript, JavaScript, Python and Kotlin. |
 
-![Run output and the built-in browser](docs/images/run-and-browser.png)
+![Run output and the built-in browser](docs/images/0.2.0/run-and-browser.png)
 
 **Run and browser**: start your app, see its output, and open it in a built-in browser. The agent can read the output, the page and its console.
 
