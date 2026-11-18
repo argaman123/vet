@@ -66,7 +66,7 @@ And: side-by-side or unified diff, an editor with autosave, find in files, branc
 
 ### Download
 
-1. Get `Vet-0.1.0.dmg` from the [latest release](../../releases/latest) and drag **Vet** to **Applications**.
+1. Get `Vet-0.2.0.dmg` from the [latest release](../../releases/latest) and drag **Vet** to **Applications**.
 2. Open it. Vet is not notarized by Apple, so macOS blocks the first launch: go to **System Settings → Privacy & Security** and click **Open Anyway**. Or run:
 
    ```bash
