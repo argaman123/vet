@@ -373,8 +373,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.onCreateNote?(line - 1, String(staging.work.lines[line - 1].text), args.dropFirst(2).joined(separator: " "))
                 return
             }
-            let n = Int(args.first ?? "0") ?? 0
-            guard n < view.shownNotes.count, let row = view.workRow(ofFileLine: view.shownNotes[n].line) else { return }
+            // note mine: your own first note
+            let n = args.first == "mine" ? (view.shownNotes.firstIndex { !$0.isClaude } ?? -1) : Int(args.first ?? "0") ?? 0
+            guard n >= 0, n < view.shownNotes.count, let row = view.workRow(ofFileLine: view.shownNotes[n].line) else { return }
             view.debugClickNote(view.shownNotes[n].id, row: row)
         }
         SnapshotHook.on("markfilm") { _ in if let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] { StageToggle.film(to: dir) } }

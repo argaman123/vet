@@ -31,11 +31,11 @@ Vet is built for this era. AI code isn't always right, so you still want control
 
 ![The review order](docs/images/review-order.png)
 
-**2. Read its notes on the code.** Each file opens with a short description, and the agent's notes wait beside the changes that matter.
+**2. Read its notes on the code.** Each file comes with a short description in the sidebar, and the agent's notes wait beside the changes that matter.
 
 ![A note from the agent beside a change](docs/images/claude-note.png)
 
-**3. Approve as you go.** `Space` approves a change and moves to the next. Nothing in git changes until you press `⌘K`, which asks the agent to commit what you reviewed.
+**3. Approve as you go.** Every change has a dot beside it: amber when it's new to you, blue once you've seen it, grey once approved. Click it, or press `Space` to approve and move to the next. Nothing in git changes until you press `⌘K`, which asks the agent to commit what you reviewed.
 
 **4. Say what's wrong on the line.** `⌘N` writes a note, `⌘↩` sends it. The agent fixes it in the background and answers on the same line while you keep reading.
 
@@ -47,7 +47,7 @@ Vet is built for this era. AI code isn't always right, so you still want control
 
 ### Native glass
 
-One window, dark, drawn in macOS's own materials: a floating glass sidebar over a work surface that fills the window, with every control, menu and message made of the same sheet. Code fades out before the window's edge instead of being cut by it.
+One window, dark, in macOS's own Liquid Glass: the sidebar sits in a glass panel, the code fills the rest of the window, and menus, search and messages float in the system's clear glass. Every button, field and panel shares the same shapes and quiet motion, and the code fades out before the window's edge instead of being cut by it.
 
 ### The parts of an IDE you need along the way
 
