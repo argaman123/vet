@@ -391,9 +391,66 @@ enum FileIcons {
 
     /// A file's icon, in the spirit of VS Code's Material icon theme: a small colored badge with
     /// the language's mark (TS, JS, {}, #…), or a symbol for images and plain files. Cached.
+    /// The bundled Material Icon Theme (MIT): its own table of names, extensions and languages to SVGs.
+    private struct Theme {
+        let dir: URL
+        let defs: [String: String]       // icon name → file name
+        let names: [String: String], exts: [String: String], langs: [String: String], folders: [String: String]
+        let file: String, folder: String
+    }
+    private static let theme: Theme? = {
+        guard let base = Bundle.main.resourceURL?.appendingPathComponent("FileIcons/material"),
+              let data = try? Data(contentsOf: base.appendingPathComponent("material-icons.json")),
+              let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let defs = j["iconDefinitions"] as? [String: [String: String]] else { return nil }
+        func table(_ key: String) -> [String: String] {
+            var out: [String: String] = [:]
+            for (k, v) in (j[key] as? [String: String]) ?? [:] { out[k.lowercased()] = v }
+            return out
+        }
+        return Theme(dir: base.appendingPathComponent("icons"),
+                     defs: defs.compactMapValues { $0["iconPath"].map { ($0 as NSString).lastPathComponent } },
+                     names: table("fileNames"), exts: table("fileExtensions"), langs: table("languageIds"), folders: table("folderNames"),
+                     file: j["file"] as? String ?? "file", folder: j["folder"] as? String ?? "folder")
+    }()
+    /// Extensions the theme lists by language rather than by extension.
+    private static let languages: [String: String] = [
+        "ts": "typescript", "tsx": "typescriptreact", "js": "javascript", "jsx": "javascriptreact", "mjs": "javascript", "cjs": "javascript",
+        "json": "json", "jsonc": "json", "md": "markdown", "py": "python", "sh": "shellscript", "zsh": "shellscript", "yml": "yaml", "yaml": "yaml",
+        "kt": "kotlin", "kts": "kotlin", "rs": "rust", "txt": "plaintext", "html": "html", "css": "css", "scss": "scss", "less": "less",
+        "swift": "swift", "go": "go", "java": "java", "xml": "xml", "sql": "sql", "c": "c", "cpp": "cpp", "h": "c", "rb": "ruby", "php": "php",
+    ]
+    private static var packCache: [String: NSImage] = [:]
+    private static func themeImage(_ icon: String?) -> NSImage? {
+        guard let theme, let icon, let file = theme.defs[icon] else { return nil }
+        if let i = packCache[file] { return i }
+        guard let i = NSImage(contentsOf: theme.dir.appendingPathComponent(file)) else { return nil }
+        i.size = NSSize(width: 16, height: 16)
+        packCache[file] = i
+        return i
+    }
+    /// A folder's icon from the theme (its own for well-known names: src, tests…).
+    static func packIcon(_ key: String, folderName: String? = nil) -> NSImage? {
+        guard let theme, key == "folder" else { return nil }
+        return themeImage(folderName.flatMap { theme.folders[$0.lowercased()] }) ?? themeImage(theme.folder)
+    }
+    private static func themeIcon(_ lower: String) -> NSImage? {
+        guard let theme else { return nil }
+        if let i = themeImage(theme.names[lower]) { return i }
+        // The longest extension first: "rateLimit.test.ts" → "test.ts", then "ts".
+        var rest = Substring(lower)
+        while let dot = rest.firstIndex(of: ".") {
+            rest = rest[rest.index(after: dot)...]
+            if let i = themeImage(theme.exts[String(rest)]) { return i }
+        }
+        let ext = (lower as NSString).pathExtension
+        return themeImage(languages[ext].flatMap { theme.langs[$0] }) ?? themeImage(theme.file)
+    }
+
     static func icon(for name: String) -> NSImage {
         let lower = (name as NSString).lastPathComponent.lowercased()
         let ext = (lower as NSString).pathExtension
+        if let i = themeIcon(lower) { return i }
         let key = (special[lower] != nil ? lower : ext) + (Design.monoIcons ? "#mono" : "") + "#" + Design.fileIcon.rawValue
         if let i = cache[key] { return i }
         let style = special[lower] ?? styles[ext] ?? Style(mark: nil, symbol: "doc.text", color: 0x8A93A6)
@@ -430,8 +487,8 @@ enum FileIcons {
         ".gitattributes": .init(mark: nil, symbol: "arrow.triangle.branch", color: 0xF4511E),
         "dockerfile": .init(mark: nil, symbol: "shippingbox.fill", color: 0x2496ED),
         "readme.md": .init(mark: nil, symbol: "info.circle.fill", color: 0x42A5F5),
-        "claude.md": .init(mark: nil, symbol: "sparkle", color: 0xD97757),
-        "agents.md": .init(mark: nil, symbol: "sparkle", color: 0xD97757),
+        "claude.md": .init(mark: nil, symbol: "asterisk", color: 0xD97757),
+        "agents.md": .init(mark: nil, symbol: "asterisk", color: 0xD97757),
     ]
 
     private static func draw(_ style: Style) -> NSImage {

@@ -104,7 +104,8 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         var rows: [Int: RibbonGutterView.NoteMark] = [:]
         // Your note's bubble shows when a line has Claude's pointer too (the popover lists both).
         for n in shownNotes.sorted(by: { $0.isClaude && !$1.isClaude }) {
-            if let r = workRow(ofFileLine: n.line) { rows[r] = .init(id: n.id, fromClaude: n.isClaude) }
+            // Yours: not sent yet, or sent and waiting for Claude. Claude's: an answer or a note of its own.
+            if let r = workRow(ofFileLine: n.line) { rows[r] = .init(id: n.id, fromClaude: n.isClaude, waiting: !n.isClaude && n.sent) }
         }
         gutter.noteMarks = rows
     }
@@ -113,6 +114,10 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     private func showNote(id: String, rect: NSRect) {
         guard let note = shownNotes.first(where: { $0.id == id }) else { return }
         let here = shownNotes.filter { $0.line == note.line }.sorted { !$0.isClaude && $1.isClaude }
+        // Read: Claude's notes on this line go quiet from now on.
+        for n in here where n.isClaude { RibbonGutterView.markSeen(note: n.id) }
+        gutter.needsDisplay = true
+        gutter.subviews.forEach { $0.needsDisplay = true }
         NotePopover.shared.show(here, line: note.line, at: rect, in: gutter, actions: .init(
             save: { [weak self] id, text in if let id { self?.noteActions?.save(id, text) } },
             delete: { [weak self] id in self?.noteActions?.delete(id) },
@@ -465,6 +470,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
 
         gutter.mode = mode
         gutter.diffLayout = layout
+        gutter.docKey = doc.change.path
         gutter.hunks = staging.hunks
         gutter.states = states
         gutter.snapshotID = staging.snapshotID
@@ -1407,6 +1413,11 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
         openedChange = nil
         guard let staging = shownStaging, let layout = diffLayout else { return }
         guard let id = currentChangeID() else { onFileDone?(); return }
+        // A note you haven't sent yet comes first: it opens instead (send it or remove it, then accept).
+        if let note = unsentNote(onChange: id), let row = workRow(ofFileLine: note.line) {
+            showNote(id: note.id, rect: gutter.noteRect(row))
+            return
+        }
         let remaining = staging.hunks.filter { $0.id != id && (pendingHunks[$0.id] ?? .unstaged) != .staged }
         // The ring flips now; the mark itself goes to the model once the glide below has landed.
         gutter.show(id, .staged)
@@ -1469,6 +1480,12 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
     // MARK: Claude's notes on the change you land on
 
     /// Claude's notes (explanations, replies, pointers) on a change's lines.
+    private func unsentNote(onChange id: Int) -> ReviewNote? {
+        guard let hunk = shownStaging?.hunks.first(where: { $0.id == id }) else { return nil }
+        let lines = hunk.work.isEmpty ? hunk.work.lowerBound..<(hunk.work.lowerBound + 1) : hunk.work
+        return shownNotes.filter { !$0.isClaude && !$0.sent && lines.contains($0.line) }.min { $0.line < $1.line }
+    }
+
     private func claudeNotes(onChange id: Int) -> [ReviewNote] {
         guard let hunk = shownStaging?.hunks.first(where: { $0.id == id }) else { return [] }
         let lines = hunk.work.isEmpty ? hunk.work.lowerBound..<(hunk.work.lowerBound + 1) : hunk.work

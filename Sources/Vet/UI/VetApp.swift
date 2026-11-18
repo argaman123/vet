@@ -377,6 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard n < view.shownNotes.count, let row = view.workRow(ofFileLine: view.shownNotes[n].line) else { return }
             view.debugClickNote(view.shownNotes[n].id, row: row)
         }
+        SnapshotHook.on("markfilm") { _ in if let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] { StageToggle.film(to: dir) } }
         SnapshotHook.on("decorate") { [weak self] _ in self?.workspace.files.editorView.debugDecorate() }
         SnapshotHook.on("hover") { [weak self] args in
             guard args.count == 2, let line = Int(args[0]), let character = Int(args[1]) else { return }

@@ -80,7 +80,7 @@ struct ClaudeBanner: View {
     var body: some View {
         if let event = app.workspace.claudeEvent {
             HStack(spacing: 10) {
-                Image(systemName: "sparkle").foregroundStyle(.secondary)
+                Image(systemName: RibbonGutterView.claudeSymbol).foregroundStyle(.secondary)
                 Text(event.title).lineLimit(2)
                 if event.path != nil {
                     Button("Show") { app.showClaudeEvent(event) }.buttonStyle(.hand).fontWeight(.semibold)
@@ -90,7 +90,7 @@ struct ClaudeBanner: View {
             }
             .font(.callout)
             .padding(.horizontal, 14).padding(.vertical, 9)
-            .glassPanel(radius: 12)
+            .glassPanel()
             .frame(maxWidth: 620)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }

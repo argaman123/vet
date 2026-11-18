@@ -47,7 +47,7 @@ struct HoverFill: View {
     var gated = true
     var body: some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(Color.white.opacity((on && !(gated && PointerState.shared.blocked)) || HoverDebug.shared.forced ? 0.12 : 0))
+            .fill((on && !(gated && PointerState.shared.blocked)) || HoverDebug.shared.forced ? Glass.fillStrong : Color.clear)
             .animation(.easeOut(duration: 0.12), value: on)
     }
 }

@@ -30,7 +30,7 @@ struct MainArea: View {
                     .overlay(alignment: .topTrailing) { ModPanels(state: ModHost.shared.ui) }
                     .animation(.easeOut(duration: 0.18), value: ModHost.shared.ui.prompt?.serial)
                 if run.outputVisible {
-                    Divider()
+                    Color.clear.frame(height: 1) // no line: the output is a panel of its own; this is its resize handle
                         .overlay {
                             Color.clear
                                 .frame(height: 7)
@@ -46,6 +46,7 @@ struct MainArea: View {
                         }
                     OutputPane(app: app, minimized: $outputMinimized)
                         .frame(height: outputMinimized ? OutputPane.stripHeight : min(outputHeight, max(100, geo.size.height - 160)))
+                        .modifier(OutputCard())
                 }
             }
         }
@@ -171,21 +172,6 @@ struct DiffHeader: View {
             // The diff's own controls, where WebStorm keeps them: the count and change navigation,
             // then the view.
             RowGroup {
-                if !review.diffDirty, let staging = doc.staging, !staging.hunks.isEmpty {
-                    let total = staging.hunks.count
-                    let staged = review.hunkStates.values.filter { $0 == .staged }.count
-                    Text("\(staged)/\(total)")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .padding(.horizontal, 4)
-                        .help("\(staged) of \(total) changes reviewed")
-                }
-                Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up").frame(width: 24, height: 24).contentShape(Rectangle()) }
-                    .help("Previous Change (⌘↑)")
-                Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down").frame(width: 24, height: 24).contentShape(Rectangle()) }
-                    .help("Next Change (⌘↓)")
-            }
-            RowGroup {
             // The way back to the file, as the editor's header offers Show Changes (JetBrains' pencil
             // for Jump to Source).
             Button { if let url = review.url(for: change.path) { app.showFile(url) } } label: { Image(systemName: "pencil").frame(width: 24, height: 24).contentShape(Rectangle()) }
@@ -199,7 +185,7 @@ struct DiffHeader: View {
             .help(review.allCollapsed ? "Expand All (⌥⇧⌘→)" : "Collapse All (⌥⇧⌘←)")
             .accessibilityLabel(review.allCollapsed ? "Expand All" : "Collapse All")
             // One button that flips the layout (its icon shows the other one).
-            Button { withAnimation(.easeInOut(duration: 0.2)) { review.unified.toggle() } } label: {
+            Button { withAnimation(Motion.move) { review.unified.toggle() } } label: {
                 Image(systemName: review.unified ? "rectangle.split.2x1" : "rectangle.grid.1x2")
                     .frame(width: 24, height: 24).contentShape(Rectangle())
             }
@@ -398,7 +384,7 @@ struct HeaderBar<Content: View>: View {
                 .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the code's I-beam
                 .padding(.horizontal, 14)
                 // A light tint of the code's own color keeps the header readable over passing code.
-                .glassEffect(.regular.tint(Color(nsColor: DiffTheme.background).opacity(0.55)), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                .glassPanel()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
         } else {
@@ -424,8 +410,9 @@ private struct Banner: View {
                 .lineLimit(3)
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 // The sidebar's sheet, under a red tint.
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.red.opacity(0.2)))
-                .glassPanel(radius: 12)
+                .background(RoundedRectangle(cornerRadius: Glass.panelRadius, style: .continuous).fill(Color.red.opacity(0.2)))
+                .glassPanel()
+                .popsIn(anchor: .top)
                 .padding(.top, 44)
                 .onTapGesture { review.dismissError() }
                 .help("Click to dismiss")
@@ -445,10 +432,11 @@ private struct Toast: View {
         }
         .font(.callout)
         .padding(.horizontal, 14).padding(.vertical, 8)
-        .glassPanel(radius: 11)
-        .padding(.bottom, 18)
+        .glassPanel()
+        .padding(.bottom, NativeShell.gap + NativeShell.capsuleHeight + 8) // over the review bar
         .opacity(ws.link.toast == nil ? 0 : 1)
-        .animation(.easeOut(duration: 0.2), value: ws.link.toast == nil)
+        .offset(y: ws.link.toast == nil ? 6 : 0)
+        .animation(Motion.quick, value: ws.link.toast == nil)
     }
 }
 
@@ -496,7 +484,7 @@ struct OutputPane: View {
                             }
                             .padding(.horizontal, 8)
                             .frame(height: 22)
-                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.07)))
+                            .background(RoundedRectangle(cornerRadius: Glass.rowRadius, style: .continuous).fill(Glass.fill))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.hand).foregroundStyle(.primary)
@@ -518,7 +506,6 @@ struct OutputPane: View {
                 }
                 .padding(.leading, 14).padding(.trailing, 8)
                 .frame(height: OutputPane.stripHeight)
-                .background(Color.white.opacity(0.04))
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { minimized.toggle() }
             } else {
@@ -632,6 +619,21 @@ struct ReviewFooter: View {
             // One of the window's glass controls, in white: the same shape as the row's groups.
             HStack {
                 Spacer()
+                // Previous, the count, next: beside Approve, where the reviewing happens.
+                do {
+                    HStack(spacing: 2) {
+                        Button { review.jumpToChange(forward: false) } label: { Image(systemName: "chevron.up").frame(width: 28, height: 28).contentShape(Rectangle()) }
+                        if !review.diffDirty, let staging = review.diff?.staging, !staging.hunks.isEmpty {
+                            Text("\(review.hunkStates.values.filter { $0 == .staged }.count)/\(staging.hunks.count)").foregroundStyle(.secondary).monospacedDigit().padding(.horizontal, 2)
+                        }
+                        Button { review.jumpToChange(forward: true) } label: { Image(systemName: "chevron.down").frame(width: 28, height: 28).contentShape(Rectangle()) }
+                    }
+                    .font(.system(size: 13)).buttonStyle(.hand)
+                    .environment(\.hoverRadius, 14)
+                    .padding(.horizontal, 5)
+                    .frame(height: NativeShell.capsuleHeight)
+                    .windowGlassOverCode(radius: NativeShell.capsuleRadius)
+                }
                 Button { review.approveAndNext() } label: {
                     HStack(spacing: 7) {
                         Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(nsColor: DiffTheme.added))
@@ -646,6 +648,7 @@ struct ReviewFooter: View {
                 .environment(\.hoverRadius, NativeShell.capsuleRadius)
                 .windowGlassOverCode(radius: NativeShell.capsuleRadius)
                 .help("Approve the change with the lit line numbers and go to the next (⌘↩)")
+                Spacer()
             }
             .padding(NativeShell.gap)
         } else if floating {
@@ -681,12 +684,7 @@ struct ClaudeNoteButton: View {
     @State private var open = false
 
     var body: some View {
-        Button { open.toggle() } label: { Image(systemName: "sparkle") }
-            .task(id: key) {
-                guard !review.closedSummaries.contains(key) else { return }
-                try? await Task.sleep(for: .seconds(0.35)) // once the header is in its window
-                if !Task.isCancelled { open = true }
-            }
+        Button { open.toggle() } label: { Image(systemName: RibbonGutterView.claudeSymbol) }
             .onChange(of: open) { _, isOpen in
                 guard !isOpen else { return }
                 review.closedSummaries.insert(key)
@@ -716,6 +714,7 @@ struct ClaudeNoteButton: View {
                 .font(.callout)
                 .padding(14)
                 .frame(width: 360, alignment: .leading)
+                // The same dark sheet as a note's popover, out to its edges and arrow.
             }
     }
 }
@@ -771,4 +770,14 @@ private struct CodeLabel: NSViewRepresentable {
         return f
     }
     func updateNSView(_ f: NSTextField, context: Context) { f.attributedStringValue = text }
+}
+
+/// The run output: a panel of its own under the code, the same surface as the menu.
+private struct OutputCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: Glass.panelRadius, style: .continuous))
+            .menuPanel()
+            .padding(.leading, 4).padding([.trailing, .bottom], NativeShell.gap).padding(.top, 2)
+    }
 }

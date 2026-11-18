@@ -28,7 +28,7 @@ struct NativeShell: View {
             if !sidebarHidden {
                 NativeSidebar(app: app, fullScreen: fullScreen) { self.sidebarHidden = true }
                     .frame(width: sidebarWidth - NativeShell.gap)
-                    .windowGlass(radius: NativeShell.panelRadius, lift: 9) // the floating sidebar's panel
+                    .menuPanel()
                     .padding(NativeShell.gap)
                     .overlay(alignment: .trailing) {
                         // Drag the gap between the sidebar and the card to resize.
@@ -52,10 +52,10 @@ struct NativeShell: View {
                     .environment(\.headerInRow, true)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: sidebarHidden)
+        .animation(Motion.move, value: sidebarHidden)
         .ignoresSafeArea() // up to the window's top edge: the rows sit beside the window buttons
         // The dark work surface over the window's glass, the same under everything that lies on it.
-        .background { Color(red: 0.045, green: 0.045, blue: 0.06).opacity(0.68).ignoresSafeArea() }
+        .background { Color(red: 0.045, green: 0.045, blue: 0.06).opacity(0.5).ignoresSafeArea() }
         .background { NativeWindowGlass().ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .overlay { GlassMenuOverlay(app: app) }
@@ -98,12 +98,12 @@ struct NativeShell: View {
     static let searchWidth: CGFloat = 32
     /// The row's control groups: rounded squares of glass (the mock's), Search's too.
     static let capsuleHeight: CGFloat = 34
-    static let capsuleRadius: CGFloat = 8
+    static let capsuleRadius: CGFloat = capsuleHeight / 2
     /// The one distance between things: the window's edge to a piece of glass, a piece of
     /// glass to what's in it, and one piece to the next. It is what the title row leaves around
     /// its groups, so every side matches.
     static let gap: CGFloat = (rowHeight - capsuleHeight) / 2
-    static let panelRadius: CGFloat = 10
+    static let panelRadius: CGFloat = Glass.panelRadius
     /// Where the project's name starts, sidebar shown or hidden.
     static let titleX: CGFloat = 88
     /// The work surface's color where it fills the window (what the edge fade ends in).
@@ -189,8 +189,8 @@ private struct PlaceSwitcher: View {
         .padding(3)
         .frame(height: compact ? 28 : 30)
         // The tabs' track: a sheet of the same glass, lying on the sidebar's.
-        .windowGlass(radius: compact ? 6 : NativeShell.capsuleRadius, lift: 2)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: app.place)
+        .modifier(TabsTrack(compact: compact))
+        .animation(Motion.move, value: app.place)
     }
 
     private func segment(_ place: AppDelegate.Place, _ symbol: String, _ help: String) -> some View {
@@ -201,14 +201,14 @@ private struct PlaceSwitcher: View {
                 .frame(minWidth: compact ? 36 : nil, maxWidth: compact ? 36 : .infinity, maxHeight: .infinity)
                 .background {
                     if on {
-                        RoundedRectangle(cornerRadius: NativeShell.capsuleRadius - 3, style: .continuous).fill(Color.white.opacity(0.11))
+                        RoundedRectangle(cornerRadius: ((compact ? NativeShell.capsuleRadius : Glass.fieldRadius) - 3), style: .continuous).fill(Glass.fillStrong)
                             .matchedGeometryEffect(id: "thumb", in: thumb)
                     }
                 }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.hand)
-        .environment(\.hoverRadius, NativeShell.capsuleRadius - 3)
+        .environment(\.hoverRadius, ((compact ? NativeShell.capsuleRadius : Glass.fieldRadius) - 3))
         .foregroundStyle(on ? .primary : .secondary)
         .help(help)
         .accessibilityLabel(help)
@@ -264,7 +264,7 @@ private struct NativeTopRow: View {
                 }
                 .padding(.trailing, 3)
                 .frame(height: NativeShell.capsuleHeight)
-                .windowGlass(radius: NativeShell.capsuleRadius, lift: 6)
+                .windowGlass(radius: NativeShell.capsuleRadius)
             }
             HStack(spacing: NativeShell.gap) {
                 switch app.ui.location {
@@ -379,9 +379,8 @@ private struct SearchOverlay: View {
                 .onTapGesture { close() }
                 .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } } // not the I-beam of the code underneath
             SearchPanel(app: app)
-                .glassPanel(radius: 14)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .black.opacity(0.45), radius: 30, y: 12)
+                .glassPanel()
+                                .popsIn(anchor: .top)
                 .padding(.top, 120)
                 .onExitCommand { close() }
         }
@@ -415,10 +414,11 @@ private struct SearchPanel: View {
                     .onKeyPress(.downArrow) { selected = min(selected + 1, max(0, items.count - 1)); return .handled }
                     .onKeyPress(.upArrow) { selected = max(selected - 1, 0); return .handled }
             }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .fieldGlass(radius: 18)
+            .padding(8)
             if !items.isEmpty {
-                Divider()
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
@@ -433,7 +433,7 @@ private struct SearchPanel: View {
                                 }
                             }
                         }
-                        .padding(6)
+                        .padding([.horizontal, .bottom], 6)
                     }
                     .onChange(of: selected) { _, i in if items.indices.contains(i) { proxy.scrollTo(items[i].id) } }
                 }
@@ -465,15 +465,26 @@ private struct SearchRow: View {
             }
             .foregroundStyle(.secondary)
             .frame(width: 18)
-            Text(item.title).lineLimit(1)
+            Text(item.kind == .text ? SearchEverywhereSuggestions.codeLine(item) : AttributedString(item.title)).lineLimit(1)
                 .font(item.kind == .text ? .system(size: 12, design: .monospaced) : .body)
             Text(item.detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(selected ? 0.12 : hovering ? 0.07 : 0)))
+        .background(RoundedRectangle(cornerRadius: Glass.panelRadius - 6, style: .continuous).fill(selected ? Glass.fillStrong : hovering ? Glass.fill : Color.clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+}
+
+
+// STUDY (not shipped): looks picked with VET_FRAME=f1…f6 and VET_BTN=flat|line|glass|bare.
+
+/// The tabs' track: an outlined field in the menu panel; in the top row (menu hidden), one of its round buttons.
+private struct TabsTrack: ViewModifier {
+    let compact: Bool
+    func body(content: Content) -> some View {
+        if compact { content.windowGlass(radius: NativeShell.capsuleRadius) } else { content.fieldGlass() }
     }
 }

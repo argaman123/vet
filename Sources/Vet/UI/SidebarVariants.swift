@@ -38,7 +38,21 @@ struct ChangesVariant: View {
         }
         .frame(maxHeight: .infinity)
         // Glass over the list: the rows pass under the bar.
-        .sidebarFooter { FilterBar(app: app, filter: $filter, tree: style == .tree) }
+        .sidebarFooter {
+            VStack(spacing: 0) {
+                if let path = app.workspace.review.diff?.change.path, let summary = app.workspace.review.plan?.file(path)?.summary, !summary.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label((path as NSString).lastPathComponent, systemImage: RibbonGutterView.claudeSymbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                        Text(summary).font(.system(size: 12)).foregroundStyle(.primary.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Glass.fill, in: .rect(cornerRadius: Glass.fieldRadius, style: .continuous))
+                    .padding(.horizontal, NativeShell.gap).padding(.top, 6)
+                }
+                FilterBar(app: app, filter: $filter, tree: style == .tree)
+            }
+        }
         .quickLookPreview($quickLook)
     }
 

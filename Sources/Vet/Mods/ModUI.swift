@@ -131,7 +131,7 @@ struct ModPromptBar: View {
             .font(.system(size: DiffTheme.fontSize, design: .monospaced))
             .padding(.horizontal, 18)
             .frame(width: 460, height: 36)
-            .glassPanel(radius: 11)
+            .glassPanel()
             .padding(.bottom, 22)
             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
             .onAppear { focused = true }
@@ -160,7 +160,7 @@ struct ModPanels: View {
                 }
                 .padding(14)
                 .frame(width: 300, alignment: .leading)
-                .glassPanel(radius: 12)
+                .glassPanel()
             }
         }
         .padding(.top, 56).padding(.trailing, 14)

@@ -73,9 +73,9 @@ final class ReferencesPresenter: NSObject, NSPopoverDelegate {
             open(loc)
         }))
         host.sizingOptions = []
-        host.view.frame = NSRect(x: 0, y: 0, width: 880, height: 360)
+        host.view.frame = NSRect(x: 0, y: 0, width: 600, height: 470)
         p.contentViewController = host
-        p.contentSize = NSSize(width: 880, height: 360)
+        p.contentSize = NSSize(width: 600, height: 470)
         popover = p
         if let view = NavigationAnchor.view, view.window != nil {
             p.show(relativeTo: NavigationAnchor.rect, of: view, preferredEdge: .maxY)
@@ -177,53 +177,60 @@ struct ReferencesView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 if let hit = model.selectedHit {
-                    Button("Open") { open(hit.location) }.keyboardShortcut(.defaultAction).controlSize(.small)
+                    Button("Open") { open(hit.location) }.keyboardShortcut(.defaultAction).buttonStyle(PanelButtonStyle())
                 }
             }
             .font(.callout)
-            .padding(.horizontal, 12)
-            .frame(height: 32)
-            Divider()
-            HSplitView {
-                Group {
-                    if let hit = model.selectedHit {
-                        ReferencePreview(lines: model.lines(of: hit.location.url), url: hit.location.url, line: hit.location.startLine,
-                                         columns: hit.column, tokens: model.tokens)
-                    } else {
-                        Color(nsColor: .textBackgroundColor)
-                    }
-                }
-                .frame(minWidth: 360, maxWidth: .infinity)
-                List(selection: $model.selection) {
+            .padding(.leading, 16).padding(.trailing, 10)
+            .frame(height: 44)
+            // The matches, grouped by file: the same rows as Search Everywhere.
+            ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(model.files) { file in
-                        DisclosureGroup(isExpanded: .constant(true)) {
-                            ForEach(file.hits) { hit in
-                                HitRow(hit: hit)
-                                    .tag(hit.id)
-                                    .onTapGesture(count: 2) { open(hit.location) }
-                                    .simultaneousGesture(TapGesture().onEnded { model.selection = hit.id })
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(nsImage: FileIcons.icon(for: file.name)).resizable().frame(width: 14, height: 14)
-                                Text(file.name)
-                                Text(file.folder).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
-                                Spacer()
-                                Text("\(file.hits.count)").foregroundStyle(.secondary).monospacedDigit()
-                            }
+                        HStack(spacing: 6) {
+                            Image(nsImage: FileIcons.icon(for: file.name)).resizable().frame(width: 14, height: 14)
+                            Text(file.name).fontWeight(.medium)
+                            Text(file.folder).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                            Spacer()
+                            Text("\(file.hits.count)").foregroundStyle(.tertiary).monospacedDigit()
+                        }
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 2)
+                        ForEach(file.hits) { hit in
+                            HitRow(hit: hit)
+                                .id(hit.id)
+                                .padding(.horizontal, 10)
+                                .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+                                .background(RoundedRectangle(cornerRadius: Glass.panelRadius - 6, style: .continuous).fill(model.selection == hit.id ? Glass.fillStrong : Color.clear))
+                                .contentShape(Rectangle())
+                                .onTapGesture(count: 2) { open(hit.location) }
+                                .simultaneousGesture(TapGesture().onEnded { model.selection = hit.id })
                         }
                     }
                 }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                .environment(\.sidebarRowSize, .small)
-                .environment(\.defaultMinListRowHeight, 22)
-                .frame(minWidth: 260, idealWidth: 340, maxWidth: 520)
+                .padding([.horizontal, .bottom], 6)
             }
+            .onChange(of: model.selection) { _, id in if let id { withAnimation(Motion.quick) { proxy.scrollTo(id) } } }
+            }
+            .frame(maxHeight: 190)
+            // The selected match in its file.
+            Group {
+                if let hit = model.selectedHit {
+                    ReferencePreview(lines: model.lines(of: hit.location.url), url: hit.location.url, line: hit.location.startLine,
+                                     columns: hit.column, tokens: model.tokens)
+                } else { Color.clear }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Glass.fill)
+            .clipShape(RoundedRectangle(cornerRadius: Glass.panelRadius - 6, style: .continuous))
+            .padding([.horizontal, .bottom], 6)
         }
-        .tint(Color(nsColor: DiffTheme.accent)) // the popover's own glass, like the sidebar
-        .onKeyPress(.upArrow) { model.move(-1); return .handled }
+        .tint(Color(nsColor: DiffTheme.accent))
+        .focusable()
+        .focusEffectDisabled()
         .onKeyPress(.downArrow) { model.move(1); return .handled }
+        .onKeyPress(.upArrow) { model.move(-1); return .handled }
     }
 }
 

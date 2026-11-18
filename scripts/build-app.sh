@@ -20,6 +20,7 @@ cp "$BIN" "$APP/Contents/MacOS/Vet"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
+cp -R Resources/FileIcons "$APP/Contents/Resources/FileIcons"
 if security find-identity -p codesigning 2>/dev/null | grep -q "Vet Local Development"; then
   codesign --force --sign "Vet Local Development" "$APP"
 else

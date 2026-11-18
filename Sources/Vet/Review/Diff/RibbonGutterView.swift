@@ -1,3 +1,4 @@
+import ImageIO
 import AppKit
 import VetCore
 
@@ -10,7 +11,7 @@ final class RibbonGutterView: NSView {
     static var ribbonWidth: CGFloat { Design.bridge == .map ? 10 : ringInBridge ? 44 : 30 }
     /// The review ring sits in the bridge (in a flat stretch on the taller side, so it always fits).
     static var ringInBridge: Bool { [.native, .mono, .check, .circle, .progress].contains(Design.marker) }
-    static let ringZone: CGFloat = 16
+    static let ringZone: CGFloat = 20
 
     /// Where a change's bridge runs flat for its ring: the side with more lines.
     func ringOnRight(_ s: DiffLayout.Segment) -> Bool { s.right.count >= s.left.count }
@@ -40,7 +41,13 @@ final class RibbonGutterView: NSView {
     var hunks: [Hunk] = []
     var states: [Int: StageState] = [:]
     /// The change ⌘↩ / Space would approve (outlined in the accent color).
-    var currentID: Int? { didSet { if oldValue != currentID { needsDisplay = true } } }
+    var currentID: Int? { didSet { if oldValue != currentID { needsDisplay = true; markCurrentSeen() } } }
+    /// The change you are on is seen from that moment: its mark turns from amber to blue.
+    private func markCurrentSeen() {
+        guard let id = currentID, let h = hunks.first(where: { $0.id == id }) else { return }
+        Self.markSeen(change: changeKey(h))
+        boxes[id]?.fresh = false
+    }
     var leftNumbers: [Int?] = []  // display line → file line (nil for folds)
     var rightNumbers: [Int?] = []
     /// Display lines pinned at the top of each pane (sticky lines); their numbers cover the
@@ -135,9 +142,79 @@ final class RibbonGutterView: NSView {
 
     // MARK: Notes: a bubble beside the line (NotePopover.swift shows it)
 
-    struct NoteMark: Equatable { let id: String; let fromClaude: Bool }
+    struct NoteMark: Equatable { let id: String; let fromClaude: Bool; var waiting = false }
+    /// Claude's notes you have opened: from then on blue instead of amber. Kept per project (.vet/seen.json).
+    private(set) static var seenNotes: Set<String> = []
+    /// What needs you (a note you haven't sent, an answer you haven't read), and what is only waiting.
+    /// Amber: new to you, not seen yet (a change you haven't looked at, a note you haven't opened).
+    /// Once seen it turns the accent blue: it still needs you. What is settled or only waiting is dim grey.
+    /// Claude's notes and summaries: an asterisk, a plain mark of "the AI's words" (not a product's logo).
+    static let claudeSymbol = "asterisk"
+    /// A note outside any change sits in the same column as the changes' marks.
+    private func freeNoteRect(_ row: Int) -> NSRect {
+        let r = noteRect(row)
+        guard mode == .split else { return r }
+        return NSRect(x: Self.numbersWidth * 2 + Self.ribbonWidth + 1, y: r.minY, width: Self.checkWidth - 2, height: r.height)
+    }
+    static let noteAmber = NSColor(srgbRed: 0.94, green: 0.66, blue: 0.29, alpha: 1)
+    static let noteCalm = NSColor.white.withAlphaComponent(0.38)
+    /// The changes you have already been on, by file and place (kept with the notes you've opened).
+    private(set) static var seenChanges: Set<String> = []
+    private static var seenFile: URL?
+    private struct Seen: Codable { var changes: [String]; var notes: [String] }
+    /// The project's record of what you've seen, read when the project opens.
+    static func loadSeen(root: URL) {
+        seenFile = ProjectFolder.url(root, "seen.json")
+        let seen = seenFile.flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode(Seen.self, from: $0) }
+        seenChanges = Set(seen?.changes ?? []); seenNotes = Set(seen?.notes ?? [])
+    }
+    static func markSeen(note id: String) { if seenNotes.insert(id).inserted { saveSeen() } }
+    private static func markSeen(change key: String) { if seenChanges.insert(key).inserted { saveSeen() } }
+    /// Written at once (it changes only when you move to a change or open a note).
+    private static func saveSeen() {
+        guard let seenFile else { return }
+        let seen = Seen(changes: Array(seenChanges), notes: Array(seenNotes))
+        try? JSONEncoder().encode(seen).write(to: seenFile, options: .atomic)
+    }
+    /// The file on show: its changes count as seen once you move on to another.
+    /// The file on show. A new one starts with no current change (ids are per file).
+    var docKey = "" { didSet { if oldValue != docKey { currentID = nil } } }
+    private func changeKey(_ h: Hunk) -> String { "\(docKey)#\(h.work.lowerBound):\(h.work.count):\(h.head.count)" }
+    /// The rows of every change: a note there belongs to the change's one mark, not to an icon of its own.
+    private var changeRows: IndexSet {
+        var rows = IndexSet()
+        for s in segments.values where !s.right.isEmpty { rows.insert(integersIn: s.right) }
+        return rows
+    }
+    /// Notes on lines outside any change: these keep a mark of their own beside the line.
+    private var freeNoteMarks: [Int: NoteMark] {
+        guard mode == .split, Design.marker == .dot else { return noteMarks } // only there does a change have its one mark
+        let taken = changeRows
+        return noteMarks.filter { !taken.contains($0.key) }
+    }
+    /// The note a change's mark speaks for: yours that needs sending first, then Claude's, then one that is waiting.
+    func note(inChange id: Int) -> NoteMark? {
+        guard let s = segments[id], !s.right.isEmpty else { return nil }
+        let here = noteMarks.filter { s.right.contains($0.key) }.sorted { $0.key < $1.key }.map(\.value)
+        return here.first { !$0.fromClaude && !$0.waiting } ?? here.first { $0.fromClaude } ?? here.first
+    }
+    private var spinTimer: Timer?
+    /// The waiting spinners turn while any are shown (still, with Reduce Motion).
+    private func updateSpinTimer() {
+        let spinning = noteMarks.values.contains { $0.waiting } && window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if spinning, spinTimer == nil {
+            spinTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.window != nil else { self?.spinTimer?.invalidate(); self?.spinTimer = nil; return }
+                    // Only the spinners redraw.
+                    for (row, mark) in self.freeNoteMarks where mark.waiting { self.setNeedsDisplay(self.freeNoteRect(row)) }
+                    self.boxes.values.forEach { if $0.note?.waiting == true { $0.needsDisplay = true } }
+                }
+            }
+        } else if !spinning { spinTimer?.invalidate(); spinTimer = nil }
+    }
     /// Notes by working-file display row. A note's bubble takes the icon column on its row.
-    var noteMarks: [Int: NoteMark] = [:] { didSet { if oldValue != noteMarks { needsDisplay = true; window?.invalidateCursorRects(for: self) } } }
+    var noteMarks: [Int: NoteMark] = [:] { didSet { if oldValue != noteMarks { needsDisplay = true; window?.invalidateCursorRects(for: self); updateSpinTimer(); placeCheckboxes() } } }
     /// A note's bubble was clicked: (note id, the bubble's rect).
     var onNoteClick: ((String, NSRect) -> Void)?
     /// The faint bubble on a hovered row was clicked: (working-file line, the bubble's rect).
@@ -166,30 +243,52 @@ final class RibbonGutterView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) { addRow = nil }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateSpinTimer() }
 
-    private static func noteImage(_ name: String, alpha: CGFloat) -> NSImage? {
+    private static func noteImage(_ name: String, alpha: CGFloat, color: NSColor? = nil) -> NSImage? {
         let config = NSImage.SymbolConfiguration(pointSize: 10.5, weight: .medium)
-            .applying(.init(paletteColors: [DiffTheme.text.withAlphaComponent(alpha)]))
+            .applying(.init(paletteColors: [(color ?? DiffTheme.text).withAlphaComponent(alpha)]))
         return NSImage(systemSymbolName: name, accessibilityDescription: "Note")?.withSymbolConfiguration(config)
     }
 
     private func drawNotes() {
         guard mode != .leftOnly else { return }
-        var bubbles = noteMarks.map { ($0.key, $0.value.fromClaude ? "sparkle" : "text.bubble.fill", CGFloat(0.75)) }
-        if let addRow { bubbles.append((addRow, "plus.bubble", 0.35)) }
-        for (row, name, alpha) in bubbles {
-            let r = noteRect(row)
-            guard r.maxY > covered.top, r.minY < bounds.height - covered.bottom, let image = Self.noteImage(name, alpha: alpha) else { continue }
-            DiffTheme.gutter.setFill()
-            r.insetBy(dx: -1, dy: -1).fill() // over a jump icon on the same row
-            let size = image.size
+        func visible(_ r: NSRect) -> Bool { r.maxY > covered.top && r.minY < bounds.height - covered.bottom }
+        for (row, mark) in freeNoteMarks {
+            let r = freeNoteRect(row)
+            guard visible(r) else { continue }
+            let c = NSPoint(x: r.midX, y: r.midY)
+            if mark.fromClaude {
+                // An answer or a note from Claude: in the attention color until you open it, then grey.
+                let seen = Self.seenNotes.contains(mark.id)
+                guard let image = Self.noteImage(Self.claudeSymbol, alpha: 1, color: seen ? DiffTheme.accent : Self.noteAmber) else { continue }
+                let size = image.size
+                image.draw(in: NSRect(x: c.x - size.width / 2, y: c.y - size.height / 2, width: size.width, height: size.height))
+            } else if mark.waiting {
+                // Sent: Claude is on it, nothing for you to do. A calm spinner.
+                let track = NSBezierPath(ovalIn: NSRect(x: c.x - 4.5, y: c.y - 4.5, width: 9, height: 9))
+                track.lineWidth = 1.6
+                NSColor.white.withAlphaComponent(0.14).setStroke(); track.stroke()
+                let turn = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9) * 360
+                let arc = NSBezierPath()
+                arc.appendArc(withCenter: c, radius: 4.5, startAngle: 90 - turn, endAngle: 90 - turn - 100, clockwise: true)
+                arc.lineWidth = 1.6; arc.lineCapStyle = .round
+                NSColor.white.withAlphaComponent(0.6).setStroke(); arc.stroke()
+            } else {
+                // Written, not sent yet: an outline.
+                Self.noteAmber.setStroke()
+                let ring = NSBezierPath(ovalIn: NSRect(x: c.x - 3.5, y: c.y - 3.5, width: 7, height: 7).insetBy(dx: 0.75, dy: 0.75)); ring.lineWidth = 1.5; ring.stroke()
+            }
+        }
+        if let addRow, visible(noteRect(addRow)), let image = Self.noteImage("plus.bubble", alpha: 0.35) {
+            let r = noteRect(addRow), size = image.size
             image.draw(in: NSRect(x: r.midX - size.width / 2, y: r.midY - size.height / 2, width: size.width, height: size.height))
         }
     }
 
     private func drawMarks() {
         guard mode != .leftOnly, !rightMarks.isEmpty else { return }
-        for (row, mark) in rightMarks where noteMarks[row] == nil {
+        for (row, mark) in rightMarks {
             let r = markRect(row)
             guard r.maxY > covered.top, r.minY < bounds.height - covered.bottom, let image = Self.markImage(mark) else { continue }
             let size = image.size
@@ -204,6 +303,9 @@ final class RibbonGutterView: NSView {
         for seg in diffLayout?.segments ?? [] { if case .hunk(let id) = seg.kind { segments[id] = seg } }
         for h in hunks {
             let b = StageToggle(id: h.id) { [weak self] id in self?.toggled(id) }
+            b.onNote = { [weak self, weak b] noteID in if let self, let b { self.onNoteClick?(noteID, b.frame) } }
+            let key = changeKey(h)
+            b.fresh = !Self.seenChanges.contains(key)
             b.tint = DiffTheme.marker(DiffTheme.change(head: h.head, work: h.work))
             b.isHidden = Design.marker == .inline || Design.marker == .row
             addSubview(b)
@@ -282,7 +384,14 @@ final class RibbonGutterView: NSView {
                 let top = s.right.isEmpty ? max(y(0, left: false) - DiffTheme.inset.height + 1, y(s.right.lowerBound, left: false) - DiffTheme.lineHeight / 2)
                     : y(s.right.lowerBound, left: false)
                 let x = Self.numbersWidth * 2 + Self.ribbonWidth + (Self.checkWidth - 16) / 2
-                if Design.marker == .bar {
+                if Design.marker == .dot {
+                    // The dot's cell: room for the round button it grows into under the pointer.
+                    let w = Self.checkWidth - 2
+                    // One mark for the change and its note. Accepted: the note no longer matters.
+                    b.note = b.state == .staged ? nil : note(inChange: id)
+                    // (Claude's note opens into a two-part pill: room for it to the right.)
+                    b.frame = NSRect(x: Self.numbersWidth * 2 + Self.ribbonWidth + 1, y: top + (DiffTheme.lineHeight - w) / 2, width: b.note?.fromClaude == true ? w + 18 : w, height: w)
+                } else if Design.marker == .bar {
                     let bottom = s.right.isEmpty ? top + DiffTheme.lineHeight : y(s.right.upperBound, left: false)
                     b.frame = NSRect(x: x, y: top, width: 16, height: bottom - top)
                 } else {
@@ -415,10 +524,9 @@ final class RibbonGutterView: NSView {
                     NSRect(x: x1, y: r0, width: bounds.width - x1, height: r1 - r0).fill()
                     continue
                 }
-                DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: staged).setFill()
+                let fill = DiffTheme.fill(change, hasWords: !(h.headCols.isEmpty && h.workCols.isEmpty), staged: staged)
+                fill.setFill()
                 path.fill()
-
-
             }
         }
         // Folded rows: the wave continues through the number columns (each side at its own scroll).
@@ -544,8 +652,8 @@ final class RibbonGutterView: NSView {
     // Drag to resize the panes; double-click to reset.
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        if let (row, note) = noteMarks.first(where: { noteRect($0.key).insetBy(dx: -3, dy: -3).contains(p) }) {
-            onNoteClick?(note.id, noteRect(row))
+        if let (row, note) = freeNoteMarks.first(where: { freeNoteRect($0.key).insetBy(dx: -3, dy: -3).contains(p) }) {
+            onNoteClick?(note.id, freeNoteRect(row))
             return
         }
         if let row = addRow, noteRect(row).insetBy(dx: -4, dy: -3).contains(p), let line = rightNumbers[row] {
@@ -600,11 +708,12 @@ final class StageToggle: NSView {
         didSet {
             guard oldValue != state else { return }
             animateProgress()
+            if style == .dot { animateMarks() }
             setAccessibilityValue(state == .staged ? 1 : state == .partial ? 2 : 0)
             native?.state = switch state { case .staged: .on; case .unstaged: .off; case .partial: .mixed }
         }
     }
-    private var hovering = false { didSet { needsDisplay = true } }
+    private var hovering = false { didSet { needsDisplay = true; if style == .dot, oldValue != hovering { animateMarks() } } }
     /// How much is reviewed (files and folders); sections use their state.
     var fraction: Double? { didSet { if oldValue != fraction { animateProgress() } } }
     private var shown: Double = -1
@@ -619,7 +728,7 @@ final class StageToggle: NSView {
     init(id: Int, inList: Bool = false, onToggle: @escaping (Int) -> Void) {
         self.id = id
         let m = Design.marker
-        style = inList && (m == .bar || m == .row) ? .native : m
+        style = inList ? .progress : m
         self.onToggle = onToggle
         super.init(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
         toolTip = "Mark this change reviewed"
@@ -642,7 +751,19 @@ final class StageToggle: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func accessibilityPerformPress() -> Bool { onToggle(id); return true }
-    override func mouseDown(with event: NSEvent) { onToggle(id) }
+    /// The note this change's mark speaks for (nil: none, or the change is accepted).
+    var note: RibbonGutterView.NoteMark? { didSet { if oldValue != note { needsDisplay = true } } }
+    /// Not seen before: amber until you have been shown it once.
+    var fresh = false { didSet { if oldValue != fresh { needsDisplay = true; if style == .dot { animateMarks() } } } }
+    var onNote: ((String) -> Void)?
+    /// Where the mark sits in its cell (the cell is wider when it can open into the two-part pill).
+    private var markX: CGFloat { bounds.height / 2 }
+    override func mouseDown(with event: NSEvent) {
+        guard style == .dot, let note, state != .staged, !note.waiting else { onToggle(id); return }
+        // Your note opens first: a change is accepted only once its note is sent or removed.
+        // Claude's: the check half accepts, the sparkle half opens the note.
+        if note.fromClaude, convert(event.locationInWindow, from: nil).x < markX + 10 { onToggle(id) } else { onNote?(note.id) }
+    }
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
@@ -686,15 +807,17 @@ final class StageToggle: NSView {
 
     /// A bar the height of the change: its color while to review, green with a check once reviewed.
     private func drawBar() {
-        let r = NSRect(x: bounds.midX - 3.5, y: bounds.minY + 1, width: 7, height: max(6, bounds.height - 2))
-        let bar = NSBezierPath(roundedRect: r, xRadius: 3.5, yRadius: 3.5)
+        let w: CGFloat = 7
+        let r = NSRect(x: bounds.midX - w / 2, y: bounds.minY + 1, width: w, height: max(6, bounds.height - 2))
+        let bar = NSBezierPath(roundedRect: r, xRadius: w / 2, yRadius: w / 2)
         switch state {
         case .staged:
             DiffTheme.added.setFill(); bar.fill()
             if r.height >= 14 {
-                let c = NSPoint(x: r.midX, y: r.minY + 7)
+                // A check at the bar's top (this view isn't flipped: y grows upward).
+                let c = NSPoint(x: r.midX, y: r.maxY - 7)
                 let check = NSBezierPath()
-                check.move(to: NSPoint(x: c.x - 2.2, y: c.y)); check.line(to: NSPoint(x: c.x - 0.6, y: c.y + 1.8)); check.line(to: NSPoint(x: c.x + 2.4, y: c.y - 2))
+                check.move(to: NSPoint(x: c.x - 2.2, y: c.y)); check.line(to: NSPoint(x: c.x - 0.6, y: c.y - 1.8)); check.line(to: NSPoint(x: c.x + 2.4, y: c.y + 2))
                 check.lineWidth = 1.4; check.lineCapStyle = .round; check.lineJoinStyle = .round
                 NSColor.black.withAlphaComponent(0.75).setStroke(); check.stroke()
             }
@@ -735,7 +858,8 @@ final class StageToggle: NSView {
         if shown < 0 { shown = target }
         if progressTimer?.isValid != true { shown = target }
         // Fits inside one line's height of the bridge, whatever the text size.
-        let d = min(13, max(9, DiffTheme.lineHeight - 4))
+        // Well inside the bridge: the bridge is one line tall where the ring sits, the ring a little over half of it.
+        let d: CGFloat = min(10, max(8, DiffTheme.lineHeight - 8)), k = d / 13
         let r = NSRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
         let c = NSPoint(x: r.midX, y: r.midY)
         if shown >= 0.999 {
@@ -743,15 +867,15 @@ final class StageToggle: NSView {
             NSBezierPath(ovalIn: r).fill()
             // A checkmark (this view isn't flipped: y grows upward).
             let check = NSBezierPath()
-            check.move(to: NSPoint(x: c.x - 3.1, y: c.y - 0.1))
-            check.line(to: NSPoint(x: c.x - 0.9, y: c.y - 2.3))
-            check.line(to: NSPoint(x: c.x + 3.2, y: c.y + 2.4))
-            check.lineWidth = 1.6; check.lineCapStyle = .round; check.lineJoinStyle = .round
+            check.move(to: NSPoint(x: c.x - 3.1 * k, y: c.y - 0.1 * k))
+            check.line(to: NSPoint(x: c.x - 0.9 * k, y: c.y - 2.3 * k))
+            check.line(to: NSPoint(x: c.x + 3.2 * k, y: c.y + 2.4 * k))
+            check.lineWidth = 1.4; check.lineCapStyle = .round; check.lineJoinStyle = .round
             NSColor.white.setStroke(); check.stroke()
             return
         }
         let track = NSBezierPath(ovalIn: r.insetBy(dx: 0.8, dy: 0.8))
-        track.lineWidth = 1.6
+        track.lineWidth = 1.4
         (hovering ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor).setStroke()
         track.stroke()
         if shown > 0.001 {
@@ -806,20 +930,183 @@ final class StageToggle: NSView {
 
     /// Mail's unread dot: a dot means "still to review"; half a dot, partly; none, reviewed (a
     /// faint ring shows under the pointer, to mark it again).
-    private func drawDot() {
-        let dot = NSBezierPath(ovalIn: NSRect(x: bounds.midX - 4.5, y: bounds.midY - 4.5, width: 9, height: 9))
-        switch state {
-        case .unstaged:
-            DiffTheme.accent.setFill(); dot.fill()
-        case .partial:
-            DiffTheme.accent.setStroke(); dot.lineWidth = 1.5; dot.stroke()
-            NSGraphicsContext.saveGraphicsState()
-            NSRect(x: bounds.midX - 5, y: bounds.minY, width: 5, height: bounds.height).clip()
-            DiffTheme.accent.setFill(); dot.fill()
-            NSGraphicsContext.restoreGraphicsState()
-        case .staged:
-            if hovering { DiffTheme.foldLabel.setStroke(); dot.lineWidth = 1.2; dot.stroke() }
+    /// The mark's three animated amounts, each following its target smoothly and from wherever it is
+    /// (so a quick in-and-out of the pointer, or a click mid-way, never jumps):
+    /// grown, the dot opened into its button (the pointer); on, accepted; freshAmount, amber (new to you).
+    private var grown: CGFloat = 0
+    private var on: CGFloat = -1
+    private var freshAmount: CGFloat = -1
+    private var markTimer: Timer?
+    private var markClock = Date()
+    private func animateMarks() {
+        if on < 0 { on = state == .staged ? 1 : 0; freshAmount = fresh ? 1 : 0 }
+        needsDisplay = true
+        guard markTimer == nil else { return }
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, window != nil else { settleMarks(); return }
+        markClock = Date()
+        markTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stepMarks() }
         }
+    }
+    private func settleMarks() {
+        grown = hovering ? 1 : 0; on = state == .staged ? 1 : 0; freshAmount = fresh ? 1 : 0
+        needsDisplay = true
+    }
+    private func stepMarks() {
+        let now = Date(), dt = CGFloat(now.timeIntervalSince(markClock)); markClock = now
+        // Critically damped approach: quick at first, settling without overshoot.
+        func follow(_ v: inout CGFloat, _ target: CGFloat, _ tau: CGFloat) -> Bool {
+            v += (target - v) * (1 - exp(-dt / tau))
+            if abs(target - v) < 0.002 { v = target; return true }
+            return false
+        }
+        let a = follow(&grown, hovering ? 1 : 0, hovering ? 0.045 : 0.035)
+        let b = follow(&on, state == .staged ? 1 : 0, 0.06)
+        let c = follow(&freshAmount, fresh ? 1 : 0, 0.12)
+        needsDisplay = true
+        if a && b && c { markTimer?.invalidate(); markTimer = nil }
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            // Taken out (a reload, the file closed): no timer outlives the view.
+            markTimer?.invalidate(); markTimer = nil
+            progressTimer?.invalidate(); progressTimer = nil
+            return
+        }
+        if style == .dot { on = -1; animateMarks(); settleMarks() }
+    }
+
+    /// Tests: the mark's motion, frame by frame, as an animated GIF and a strip (VET_SNAPSHOT_DIR/markfilm.*).
+    /// Each sequence: the pointer arrives, a click, the pointer leaves.
+    static func film(to dir: String) {
+        let scale: CGFloat = 4, size = NSSize(width: 26, height: 22)
+        var frames: [CGImage] = []
+        func frame(_ t: StageToggle, band: NSColor) {
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale), bitsPerSample: 8,
+                                       samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            rep.size = size
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            band.setFill(); NSRect(origin: .zero, size: size).fill()
+            t.draw(t.bounds)
+            NSGraphicsContext.restoreGraphicsState()
+            if let cg = rep.cgImage { frames.append(cg) }
+        }
+        let bandNew = NSColor(srgbRed: 0.24, green: 0.29, blue: 0.37, alpha: 1), bandDone = NSColor(srgbRed: 0.17, green: 0.17, blue: 0.19, alpha: 1)
+        for start in ["fresh", "seen", "accepted"] {
+            let t = StageToggle(id: 0) { _ in }
+            t.frame = NSRect(origin: .zero, size: size)
+            t.fresh = start == "fresh"; t.state = start == "accepted" ? .staged : .unstaged
+            t.on = start == "accepted" ? 1 : 0; t.freshAmount = t.fresh ? 1 : 0; t.grown = 0
+            func run(_ steps: Int, _ body: (CGFloat) -> Void) {
+                for i in 0...steps { let p = CGFloat(i) / CGFloat(steps); body(1 - pow(1 - p, 3)); frame(t, band: (t.on > 0.5 ? bandDone : bandNew)) }
+            }
+            run(6) { _ in }                                  // at rest
+            run(9) { t.grown = $0 }                          // the pointer arrives
+            run(4) { _ in }
+            let from = t.on
+            t.state = from > 0.5 ? .unstaged : .staged
+            t.grown = 1; t.on = from // (off screen the state change settles at once; the film shows the motion)
+            if start == "fresh" { t.freshAmount = 0 }
+            run(10) { t.on = from + ((from > 0.5 ? 0 : 1) - from) * $0 } // the click
+            run(6) { _ in }
+            run(9) { t.grown = 1 - $0 }                      // the pointer leaves
+            run(10) { _ in }
+        }
+        let url = URL(fileURLWithPath: dir + "/markfilm.gif") as CFURL
+        guard let dest = CGImageDestinationCreateWithURL(url, "com.compuserve.gif" as CFString, frames.count, nil) else { return }
+        CGImageDestinationSetProperties(dest, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary)
+        for f in frames { CGImageDestinationAddImage(dest, f, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 1.0 / 30]] as CFDictionary) }
+        CGImageDestinationFinalize(dest)
+    }
+
+    /// A small dot beside a change that still needs you, like an unread mark; a faint hollow dot
+    /// once accepted. Under the pointer it opens into a small button in the app's own style (the
+    /// flat fill and green check of Approve and Next): a click accepts the change, or takes it back.
+    private func drawDot() {
+        let grown = HoverDebug.shared.forced ? 1 : self.grown // tests: every button shown open
+        let accent = DiffTheme.accent, amber = RibbonGutterView.noteAmber
+        let c = NSPoint(x: markX, y: bounds.midY)
+        let small: CGFloat = 7, big: CGFloat = 12
+        func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * grown }
+        func check(at p: NSPoint, _ color: NSColor) {
+            let k = NSBezierPath()
+            k.move(to: NSPoint(x: p.x - 2.5, y: p.y - 0.1)); k.line(to: NSPoint(x: p.x - 0.8, y: p.y - 1.9)); k.line(to: NSPoint(x: p.x + 2.6, y: p.y + 2))
+            k.lineWidth = 1.3; k.lineCapStyle = .round; k.lineJoinStyle = .round
+            color.setStroke(); k.stroke()
+        }
+        func sparkle(at p: NSPoint, _ color: NSColor, size: CGFloat = 10.5) {
+            let config = NSImage.SymbolConfiguration(pointSize: size, weight: .medium).applying(.init(paletteColors: [color]))
+            guard let image = NSImage(systemSymbolName: RibbonGutterView.claudeSymbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) else { return }
+            image.draw(in: NSRect(x: p.x - image.size.width / 2, y: p.y - image.size.height / 2, width: image.size.width, height: image.size.height))
+        }
+        let fade = max(0, (grown - 0.4) / 0.6)
+
+        let grey = NSColor.white
+        let on = max(0, self.on), freshAmount = max(0, self.freshAmount)
+        if note == nil || state == .staged {
+            // One dot that morphs between its states:
+            //   new, at rest: a dot in its color (amber the first time, then blue);
+            //   new, under the pointer: an empty button in its color, a box waiting to be ticked;
+            //   accepted, at rest: a dim grey dot;
+            //   accepted, under the pointer: a see-through button with its check, ticked.
+            // A click moves `on`, and the drawing slides from one to the other.
+            let tone = accent.blended(withFraction: freshAmount, of: amber) ?? accent
+            func mix(_ a: NSColor, _ b: NSColor) -> NSColor { a.blended(withFraction: on, of: b) ?? b }
+            let d = lerp(small, big), r = NSRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)
+            let restFill = mix(tone, grey.withAlphaComponent(0.22).usingColorSpace(.sRGB) ?? grey)
+            let restAlpha = 1 + (0.22 - 1) * on
+            let hoverAlpha = 0.12 * on
+            restFill.withAlphaComponent(restAlpha + (hoverAlpha - restAlpha) * grown).setFill()
+            NSBezierPath(ovalIn: r).fill()
+            if grown > 0 {
+                mix(tone, grey).withAlphaComponent(grown * (1 + (0.4 - 1) * on)).setStroke()
+                let ring = NSBezierPath(ovalIn: r.insetBy(dx: 0.65, dy: 0.65)); ring.lineWidth = 1.3; ring.stroke()
+            }
+            if fade > 0, on > 0 { check(at: c, grey.withAlphaComponent(fade * on)) }
+            return
+        }
+        guard let note else { return }
+        if !note.fromClaude, note.waiting {
+            // Sent: Claude is on it. A dim spinner; nothing changes under the pointer.
+            let track = NSBezierPath(ovalIn: NSRect(x: c.x - 4.5, y: c.y - 4.5, width: 9, height: 9))
+            track.lineWidth = 1.6
+            grey.withAlphaComponent(0.14).setStroke(); track.stroke()
+            let turn = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : CGFloat(Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9) * 360
+            let arc = NSBezierPath()
+            arc.appendArc(withCenter: c, radius: 4.5, startAngle: 90 - turn, endAngle: 90 - turn - 100, clockwise: true)
+            arc.lineWidth = 1.6; arc.lineCapStyle = .round
+            grey.withAlphaComponent(0.6).setStroke(); arc.stroke()
+            return
+        }
+        if !note.fromClaude {
+            // Your note, not sent yet: an amber ring; under the pointer a button that opens it.
+            let d = lerp(small, big), r = NSRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)
+            if grown > 0 { amber.withAlphaComponent(0.18 * grown).setFill(); NSBezierPath(ovalIn: r).fill() }
+            amber.setStroke()
+            let ring = NSBezierPath(ovalIn: r.insetBy(dx: 0.7, dy: 0.7)); ring.lineWidth = 1.4; ring.stroke()
+            if fade > 0 {
+                amber.withAlphaComponent(fade).setFill()
+                for (i, w) in [CGFloat(5), 5, 3].enumerated() { NSRect(x: c.x - 2.5, y: c.y + 1.6 - CGFloat(i) * 2.1, width: w, height: 1).fill() }
+            }
+            return
+        }
+        // Claude's answer or note: a sparkle, amber until you open it, then blue. Under the pointer a
+        // two-part pill (accept | open the note).
+        let tone = RibbonGutterView.seenNotes.contains(note.id) ? accent : amber
+        if grown < 0.05 { sparkle(at: c, tone); return }
+        // Under the pointer: one pill, two even halves. The check accepts, the note's icon opens it.
+        let h = lerp(small + 3, 14), w = lerp(small + 3, 34), left = c.x - lerp((small + 3) / 2, 7)
+        let r = NSRect(x: left, y: c.y - h / 2, width: w, height: h)
+        tone.withAlphaComponent(0.2 * grown).setFill()
+        NSBezierPath(roundedRect: r, xRadius: h / 2, yRadius: h / 2).fill()
+        if fade > 0 {
+            tone.withAlphaComponent(0.4 * fade).setFill()
+            NSRect(x: left + 16.5, y: c.y - 3.5, width: 1, height: 7).fill()
+            check(at: NSPoint(x: left + 8.5, y: c.y), (tone.blended(withFraction: 0.35, of: .white) ?? tone).withAlphaComponent(fade))
+        }
+        sparkle(at: NSPoint(x: lerp(c.x, left + 25.5), y: c.y), tone, size: lerp(10.5, 8.5))
     }
 }
 

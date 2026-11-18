@@ -209,7 +209,7 @@ struct FindPopup: View {
                 .frame(minHeight: 160, idealHeight: 300)
             }
         }
-        .tint(Color(nsColor: DiffTheme.accent)) // the popover's own glass, like the sidebar
+        .tint(Color(nsColor: DiffTheme.accent))
         .onAppear { focused = true }
         .onKeyPress(.upArrow) { find.move(-1); return .handled }
         .onKeyPress(.downArrow) { find.move(1); return .handled }

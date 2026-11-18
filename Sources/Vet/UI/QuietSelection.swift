@@ -58,10 +58,10 @@ private struct QuietRow: ViewModifier {
             .listRowBackground(
             Group {
                 if selected != path {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(hovering || HoverDebug.shared.forced ? 0.07 : 0))
+                    RoundedRectangle(cornerRadius: Glass.rowRadius, style: .continuous).fill(hovering || HoverDebug.shared.forced ? Glass.fill : Color.clear)
                 } else if Design.shell == .native {
                     // On the sidebar's glass: a lighter fill, not more glass on glass.
-                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.085))
+                    RoundedRectangle(cornerRadius: Glass.rowRadius, style: .continuous).fill(Glass.fillStrong)
                 } else {
                     RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.09))
                 }

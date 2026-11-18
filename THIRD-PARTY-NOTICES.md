@@ -57,6 +57,15 @@ Copyright 2025 The Google Sans Code Project Authors
 (<https://github.com/googlefonts/googlesans-code>). Licensed under the SIL Open Font License,
 Version 1.1. The full text is in [Resources/Fonts/OFL.txt](Resources/Fonts/OFL.txt).
 
+## Material Icon Theme
+
+The file and folder icons, `Resources/FileIcons/material` (version 5.40.0).
+
+Copyright (c) 2025 Material Extensions (<https://github.com/material-extensions/vscode-material-icon-theme>).
+Licensed under the MIT License. The full text is in
+[Resources/FileIcons/material/LICENSE](Resources/FileIcons/material/LICENSE). Logos shown in the
+icons are trademarks of their owners.
+
 ## Language servers
 
 Vet does not include any language server. `scripts/install-language-servers.sh` downloads

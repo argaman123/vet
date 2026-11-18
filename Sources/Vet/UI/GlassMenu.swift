@@ -30,20 +30,10 @@ struct GlassMenuButton<Label: View>: View {
     @State private var hovering = false
 
     var body: some View {
-        if Design.shell == .native {
-            Button { app.ui.menu = OpenGlassMenu(anchor: frame, trailing: trailing, items: items()) } label: { label }
-                .buttonStyle(.plain)
-                .background(HoverFill(on: (hovering && !PointerState.shared.blocked) || app.ui.menu?.anchor == frame, gated: false).padding(.horizontal, -4))
-                .onHover { hovering = $0 }
-                .pointerStyle(.link)
-                .fixedSize()
-                .help(help)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
-        } else {
-            Menu { SystemMenuItems(items: items()) } label: { label }
-                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
-                .help(help)
-        }
+        // The system's own menu.
+        Menu { SystemMenuItems(items: items()) } label: { label }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
+            .help(help)
     }
 }
 
@@ -81,6 +71,7 @@ struct GlassMenuOverlay: View {
                     Color.clear.contentShape(Rectangle()).onTapGesture { close() }
                         .onContinuousHover { if case .active = $0 { NSCursor.arrow.set() } }
                     GlassMenuPanel(items: menu.items, maxHeight: max(120, geo.size.height - top - 14), close: close)
+                        .popsIn(anchor: menu.trailing ? .topTrailing : .topLeading)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { panel = $0 }
                         .offset(x: menu.trailing ? -max(8, geo.size.width - anchor.maxX) : max(8, min(anchor.minX - 6, geo.size.width - 330)),
                                 y: top)
@@ -150,7 +141,6 @@ private struct GlassMenuPanel: View {
         .fixedSize(horizontal: true, vertical: false)
         .glassPanel()
         .clipShape(RoundedRectangle(cornerRadius: Glass.panelRadius, style: .continuous))
-        .shadow(color: .black.opacity(0.4), radius: 22, y: 10)
     }
 
     @ViewBuilder private func row(_ item: GlassMenuItem, checks: Bool, index: Int?) -> some View {
@@ -159,7 +149,7 @@ private struct GlassMenuPanel: View {
             Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
                 .padding(.horizontal, 9).frame(height: 24, alignment: .bottomLeading)
         case .divider:
-            Rectangle().fill(Color.white.opacity(0.09)).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
+            Rectangle().fill(Glass.hairline).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
         case .item(let title, let checked, let disabled, let action):
             GlassMenuRow(title: title, mark: checks ? (checked ? "checkmark" : "") : nil, disabled: disabled) { close(); action() }
         case .submenu(let title, _):
@@ -195,7 +185,7 @@ private struct GlassMenuRow: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 9)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(hovering && !disabled ? 0.11 : 0)))
+            .background(RoundedRectangle(cornerRadius: Glass.panelRadius - 6, style: .continuous).fill(hovering && !disabled ? Glass.fillStrong : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

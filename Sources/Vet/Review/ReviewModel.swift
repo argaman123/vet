@@ -210,6 +210,7 @@ final class ReviewModel {
             return
         }
         root = folder
+        if let folder { RibbonGutterView.loadSeen(root: folder) }
         selectedPath = nil
         changes = []
         tree = []

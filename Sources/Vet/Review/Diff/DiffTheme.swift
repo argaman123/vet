@@ -218,7 +218,8 @@ enum DiffTheme {
         fill(block(change), hasWords: hasWords, staged: staged)
     }
     static func fill(_ base: NSColor, hasWords: Bool, staged: Bool) -> NSColor {
-        staged ? solid(base, onGlass ? 0.5 : 0.16) : base
+        // A change is filled while it needs you; once accepted it stays, at low opacity.
+        staged ? solid(base, onGlass ? 0.3 : 0.16) : base
     }
     /// Changed words inside a modified section: a brighter shade of it, so they stand out.
     static var modifiedWord: NSColor { onGlass ? modified.withAlphaComponent(0.42) : Design.direction == .monolith ? hex(0x2D4A78) : color("modifiedWord") { $0.modifiedWord } }

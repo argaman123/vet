@@ -10,7 +10,7 @@ struct VetFieldStyle: TextFieldStyle {
             .focused($focused)
             .padding(.horizontal, 9)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(focused ? 0.13 : 0.06)))
+            .background(RoundedRectangle(cornerRadius: Glass.rowRadius, style: .continuous).fill(focused ? Glass.fillStrong : Glass.fill))
     }
 }
 

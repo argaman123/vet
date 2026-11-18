@@ -3,18 +3,28 @@ import SwiftUI
 /// Vet's glass: one sheet for every piece (the sidebar, the top row's groups, the tabs, bars,
 /// menus, messages), in rounded squares.
 enum Glass {
-    /// The sidebar's sheet as one flat tone, for where the system draws the shape (a popover).
-    static let sheet = Color(red: 0.095, green: 0.095, blue: 0.105).opacity(0.95)
-    /// Panels: menus, notes.
-    static let panelRadius: CGFloat = 12
-    /// The window's corners (measured: 16 pt). Everything nested in it takes its radius from this,
-    /// less its distance from the window's edge, so the corners stay concentric (never rounder
-    /// inside than out), down to a floor for the smallest pieces.
+    /// The dark sheet as one flat tone, for where the system draws the shape (a popover).
+    /// Popovers are the system's clear glass, like every floating panel: nothing laid over it.
+    static let sheet = Color.clear
+    /// The window's own tint over its glass.
+    static let windowTint = Color(red: 0.045, green: 0.045, blue: 0.06)
+    /// The window's corners (measured: 16 pt). Nothing in the window is rounder at its edge.
     static let windowRadius: CGFloat = 16
-    /// How light a sheet of glass is over what it lies on: only a touch, its rim and shadow
-    /// make it a sheet. One strength for every piece: the sidebar, the row's groups, and the tabs
-    /// and Filter bar lying on the sidebar (a sheet on a sheet, a touch lighter again).
-    static let wash: Double = 0.025
+    /// The menu panel and everything that floats (menus, search, messages): the system popover's corner.
+    static let panelRadius: CGFloat = 16
+    /// Fields in the menu panel: the tabs, Filter.
+    static let fieldRadius: CGFloat = 10
+    /// Rows, chips and small buttons.
+    static let rowRadius: CGFloat = 7
+    /// The one hairline: around the menu panel, its fields and every floating panel.
+    static let hairline = Color.white.opacity(0.10)
+    /// The fills, lightest first: a button at rest or a row under the pointer; a selected row or
+    /// a button under the pointer; a button being pressed.
+    static let fill = Color.white.opacity(0.07)
+    static let fillStrong = Color.white.opacity(0.10)
+    static let fillPressed = Color.white.opacity(0.15)
+    /// The dark tone under everything opaque: the window's tint, the backing of floating panels.
+    static let tone = Color(red: 0.07, green: 0.07, blue: 0.08)
 }
 
 extension View {
@@ -35,7 +45,11 @@ extension View {
 
     /// A floating panel (menus, messages, search): the same sheet as the sidebar and the row's
     /// groups, backed so the code under it doesn't show.
-    func glassPanel(radius: CGFloat = Glass.panelRadius) -> some View { windowGlassOverCode(radius: radius) }
+    func glassPanel(radius: CGFloat = Glass.panelRadius) -> some View { modifier(FloatingSurface(radius: radius)) }
+
+    /// A floating panel arriving: it grows a little out of where it came from and fades in, fast.
+    /// Leaving is instant. With Reduce Motion it only fades.
+    func popsIn(anchor: UnitPoint) -> some View { modifier(PopIn(anchor: anchor)) }
 }
 
 /// Buttons in a glass panel (a note's Save, Send…): small rounded squares, filled. The main one
@@ -47,50 +61,84 @@ struct PanelButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 12, weight: prominent ? .semibold : .regular))
             .foregroundStyle(prominent ? AnyShapeStyle(Color.black.opacity(0.85)) : AnyShapeStyle(.primary))
-            .padding(.horizontal, 10)
-            .frame(height: 24)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(prominent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.white.opacity(configuration.isPressed ? 0.18 : 0.11))))
+            .padding(.horizontal, 12)
+            .frame(height: 26)
+            .background(Capsule()
+                .fill(prominent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(configuration.isPressed ? Glass.fillPressed : Glass.fillStrong)))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
             .opacity(enabled ? (configuration.isPressed && prominent ? 0.8 : 1) : 0.4)
             .contentShape(Rectangle())
             .pointerStyle(.link)
     }
 }
 
+/// Everything that floats (search, messages, the file's summary): the system's clear glass, the
+/// same as its popovers and menus. No tint, no shadow of our own.
+private struct FloatingSurface: ViewModifier {
+    let radius: CGFloat
+    func body(content: Content) -> some View {
+        content.background { Color.clear.glassEffect(.regular, in: .rect(cornerRadius: radius)) }
+    }
+}
+
+// MARK: Motion
+
+/// Vet's motion: two curves. Things that appear use `quick`; things that move or resize use `move`
+/// (a spring with no bounce, so it can be redirected mid-way).
+enum Motion {
+    static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.18)
+    static let move = Animation.spring(response: 0.3, dampingFraction: 1)
+}
+
+private struct PopIn: ViewModifier {
+    let anchor: UnitPoint
+    @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(shown || reduceMotion ? 1 : 0.96, anchor: anchor)
+            .opacity(shown ? 1 : 0)
+            .onAppear { withAnimation(Motion.quick) { shown = true } }
+    }
+}
+
 // MARK: Glass lying on the work surface
 
 extension View {
-    /// This view's bounds as a sheet of glass lying on the work surface (the sidebar, the
-    /// top row's groups). The surface runs on under it unchanged, exactly as beside it: the sheet
-    /// is lighter only by its own light (a white wash, brighter toward the top, and a lit rim),
-    /// with a shadow on the surface around it. Never by showing more of what's behind the window,
-    /// which reads as a hole cut through the surface.
-    /// `lift`: how far it floats over the surface (its shadow's spread).
-    func windowGlass(radius: CGFloat, lift: CGFloat = 4) -> some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        return background {
-            ZStack {
-                shape.fill(Color.black.opacity(0.55)).blur(radius: lift * 1.6).offset(y: lift * 0.4)
-                    .mask { Rectangle().padding(-lift * 6).overlay(shape.blendMode(.destinationOut)).compositingGroup() }
-                shape.fill(LinearGradient(colors: [Color.white.opacity(Glass.wash * 1.3), Color.white.opacity(Glass.wash)], startPoint: .top, endPoint: .bottom))
-                shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
-            }
+    /// A button's surface on the window (the top row's groups, Approve and Next): one flat fill, no edge, no shadow.
+    func windowGlass(radius: CGFloat) -> some View {
+        background { RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Glass.fill) }
+    }
+
+    /// A field in the menu panel (the tabs, Filter): outlined, barely filled.
+    func fieldGlass(radius: CGFloat = Glass.fieldRadius) -> some View {
+        background {
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            ZStack { shape.fill(Color.white.opacity(0.025)); shape.strokeBorder(Glass.hairline, lineWidth: 1) }
         }
     }
 
-    /// The same sheet floating over code (Approve and Next, menus, messages): backed by the surface's tone, so the
+    /// The menu's panel: a sheet a step lighter than the window, in the window's own dark tone
+    /// (so a bright wallpaper doesn't light it up), with the hairline.
+    func menuPanel() -> some View {
+        background {
+            let shape = RoundedRectangle(cornerRadius: Glass.panelRadius, style: .continuous)
+            ZStack { shape.fill(Color.white.opacity(0.04)); shape.strokeBorder(Glass.hairline, lineWidth: 1) }
+        }
+    }
+
+    /// A button's surface floating over code: backed by the window's tone over a blur, so the
     /// code under it doesn't show through.
     func windowGlassOverCode(radius: CGFloat) -> some View {
-        // Under the sheet: the surface's tone over a blur of what's behind, so text there is only
-        // a faint blur, never readable through the panel.
-        windowGlass(radius: radius, lift: 5)
-            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color(red: 0.07, green: 0.07, blue: 0.08).opacity(0.86)))
+        windowGlass(radius: radius)
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Glass.tone.opacity(0.86)))
             .background(Color.clear.glassEffect(.regular, in: .rect(cornerRadius: radius)))
     }
 
     /// The bar under a list in the sidebar (Filter): a sheet of the same glass, lying on the
     /// sidebar below the list.
-    func sidebarBar() -> some View { windowGlass(radius: NativeShell.capsuleRadius, lift: 2) }
+    func sidebarBar() -> some View { fieldGlass() }
 
     /// Puts `bar` under a sidebar list, which ends above it (rows would show through a bar laid
     /// over them on the panel's glass).

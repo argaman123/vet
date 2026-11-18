@@ -81,7 +81,7 @@ private struct NoteItem: View {
         let claude = note?.isClaude == true
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 5) {
-                if claude { Image(systemName: "sparkle") }
+                if claude { Image(systemName: RibbonGutterView.claudeSymbol) }
                 Text(note?.isExplanation == true ? "Claude on this change" : note?.isReply == true ? "Claude replied" : claude ? "Claude" : note == nil ? "New note" : "Your note")
                 Text("· line \(line + 1)").foregroundStyle(.tertiary)
             }
@@ -103,7 +103,7 @@ private struct NoteItem: View {
                     .focused($focused)
                     .padding(.horizontal, 4).padding(.vertical, 6)
                     .frame(height: 84)
-                    .background(Color.white.opacity(0.07), in: .rect(cornerRadius: 9))
+                    .background(Glass.fill, in: .rect(cornerRadius: Glass.rowRadius + 2))
             } else {
                 Text(note?.text ?? "")
                     .font(.body)

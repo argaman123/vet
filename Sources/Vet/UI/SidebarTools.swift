@@ -136,7 +136,11 @@ struct ProjectNodeRow: View {
             } label: {
                 // Folders recede: a thin outline and a quiet name, so the files carry the color.
                 HStack(spacing: 6) {
-                    Image(systemName: "folder").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: SidebarMetrics.icon)
+                    Group {
+                        if let i = FileIcons.packIcon("folder", folderName: item.name) { Image(nsImage: i).resizable().frame(width: 16, height: 16) }
+                        else { Image(systemName: "folder").font(.system(size: 12)).foregroundStyle(.tertiary) }
+                    }
+                    .frame(width: SidebarMetrics.icon)
                         .padding(.leading, TreeMetrics.iconLead) // air after the disclosure chevron
                     Text(item.name).foregroundStyle(.secondary).lineLimit(1)
                 }
