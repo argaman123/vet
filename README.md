@@ -35,7 +35,7 @@ Vet is built for this era. AI code isn't always right, so you still want control
 
 ![A note from the agent beside a change](docs/images/claude-note.png)
 
-**3. Approve as you go.** Every change has a dot beside it: amber when it's new to you, blue once you've seen it, grey once approved. Click it, or press `Space` to approve and move to the next. Nothing in git changes until you press `⌘K`, which asks the agent to commit what you reviewed.
+**3. Approve as you go.** Every change has a dot beside it: amber when it's new to you, white once you've seen it, dim once approved. Click it, or press `Space` to approve and move to the next. Nothing in git changes until you press `⌘K`, which asks the agent to commit what you reviewed.
 
 **4. Say what's wrong on the line.** `⌘N` writes a note, `⌘↩` sends it. The agent fixes it in the background and answers on the same line while you keep reading.
 

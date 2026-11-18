@@ -52,6 +52,7 @@ enum DiffTheme {
     }
 
     static var window: NSColor { color("window") { $0.window } }
+    /// Graphite: a near-white that reads on the dark code without shouting (no strong blue).
     static var accent: NSColor { current.systemAccent ? .controlAccentColor : color("accent") { $0.accent } }
     static var folder: NSColor { color("folder") { $0.folder } }
     static var sidebar: NSColor { color("sidebar") { $0.sidebar } }

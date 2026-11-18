@@ -27,6 +27,14 @@ struct VetApp: App {
 /// Owns the app's state and handles quitting (unsaved edits, stopping what Vet started).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Tests: the first view under `view` that matches.
+    static func descendant(of view: NSView?, where match: (NSView) -> Bool) -> NSView? {
+        guard let view else { return nil }
+        if match(view) { return view }
+        for sub in view.subviews { if let hit = descendant(of: sub, where: match) { return hit } }
+        return nil
+    }
+
     let projects = ProjectStore()
     let workspace = Workspace()
     let ui = UIState()
@@ -261,6 +269,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let out = NSApp.windows.map { "\(type(of: $0)) \($0.frame) visible=\($0.isVisible) level=\($0.level.rawValue) onActiveSpace=\($0.isOnActiveSpace)" }.joined(separator: "\n")
             try? (out + "\nhidden=\(NSApp.isHidden) active=\(NSApp.isActive)").write(toFile: dir + "/windows.txt", atomically: true, encoding: .utf8)
         }
+        SnapshotHook.on("noteedit") { args in
+            // noteedit <text…>: replace the open note popover's text as typing would
+            let report = { (s: String) in if let dir = ProcessInfo.processInfo.environment["VET_SNAPSHOT_DIR"] { try? s.write(toFile: dir + "/noteedit.txt", atomically: true, encoding: .utf8) } }
+            guard let window = NSApp.windows.first(where: { String(describing: type(of: $0)).contains("Popover") }) else { return report("no popover: \(NSApp.windows.map { String(describing: type(of: $0)) })") }
+            guard let field = Self.descendant(of: window.contentView, where: { $0 is NSTextView || $0 is NSTextField }) else { return report("no field") }
+            let took = window.makeFirstResponder(field)
+            guard let editor = window.firstResponder as? NSTextView else { return report("field \(type(of: field)) took=\(took) responder=\(String(describing: window.firstResponder))") }
+            editor.selectAll(nil); editor.insertText(args.joined(separator: " "), replacementRange: editor.selectedRange())
+            report("ok: \(editor.string)")
+        }
+        SnapshotHook.on("noteclose") { _ in NotePopover.shared.close() }
         SnapshotHook.on("hovermore") { _ in HoverPresenter.shared.expand() } // F1 on a hover
         SnapshotHook.on("command") { args in if let id = args.first { CommandRegistry.shared.run(id) } } // command <id>: as its menu item or key would
         SnapshotHook.on("panes") { [weak self] _ in

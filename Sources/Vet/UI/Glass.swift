@@ -52,7 +52,7 @@ struct PanelButtonStyle: ButtonStyle {
             .padding(.horizontal, 12)
             .frame(height: 26)
             .background(Capsule()
-                .fill(prominent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(configuration.isPressed ? Glass.fillPressed : Glass.fillStrong)))
+                .fill(prominent ? AnyShapeStyle(Color(nsColor: DiffTheme.accent)) : AnyShapeStyle(configuration.isPressed ? Glass.fillPressed : Glass.fillStrong)))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
             .opacity(enabled ? (configuration.isPressed && prominent ? 0.8 : 1) : 0.4)
@@ -61,7 +61,21 @@ struct PanelButtonStyle: ButtonStyle {
     }
 }
 
-/// A quiet round icon button in a panel (a note's Delete, Edit, Dismiss): the same fill as the
+/// A small red trash button: deleting is quiet beside the main action, and plainly destructive.
+struct DeleteButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(Color(nsColor: .systemRed))
+            .frame(width: 22, height: 22)
+            .background(Circle().fill(Color(nsColor: .systemRed).opacity(configuration.isPressed ? 0.28 : 0.16)))
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .contentShape(Circle())
+    }
+}
+
+/// A quiet round icon button in a panel (Claude's note's Dismiss): the same fill as the
 /// panel's other buttons, the size of their height.
 struct PanelIconButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
