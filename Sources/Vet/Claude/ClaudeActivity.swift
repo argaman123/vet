@@ -31,7 +31,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
             let content = UNMutableNotificationContent()
-            content.title = "Claude"
+            content.title = Agent.name
             content.body = title
             var info: [String: Any] = [:]
             if let path { info["path"] = path }

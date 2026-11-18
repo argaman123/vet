@@ -197,7 +197,7 @@ struct ModsMenu: Commands {
         CommandMenu("Mods") {
             let _ = host.revision
             if host.mods.isEmpty {
-                Text("No Mods — ask Claude for one")
+                Text("No Mods")
             }
             ForEach(host.mods, id: \.id) { mod in
                 switch mod.status {

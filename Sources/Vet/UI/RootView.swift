@@ -83,7 +83,7 @@ struct RootView: View {
         guard review.isGitRepo, app.projects.current != nil else { return "" }
         let n = review.changes.count
         let changed = n == 0 ? "no changes" : "\(review.reviewedCount) of \(n) reviewed"
-        let listening = app.workspace.claudeListening ? " · Claude listening" : ""
+        let listening = app.workspace.claudeListening ? " · \(Agent.name) listening" : ""
         return (branch.isEmpty ? changed : "\(branch) · \(changed)") + listening
     }
 }
@@ -107,7 +107,7 @@ struct ProjectMenu: View {
     var body: some View {
         if app.workspace.review.isGitRepo {
             let staged = app.workspace.review.changes.filter { app.workspace.review.stage(of: $0) == .staged }.count
-            Button(staged > 0 ? "Ask Claude to Commit \(staged) Reviewed" : "Ask Claude to Commit") { app.workspace.review.askClaudeToCommit() } // ⌘K in the menu bar
+            Button(staged > 0 ? "Ask \(Agent.name) to Commit \(staged) Reviewed" : "Ask \(Agent.name) to Commit") { app.workspace.review.askClaudeToCommit() } // ⌘K in the menu bar
             Divider()
         }
         Section("Projects") {
@@ -140,7 +140,7 @@ struct ProjectMenu: View {
         var items: [GlassMenuItem] = []
         if review.isGitRepo {
             let staged = review.changes.filter { review.stage(of: $0) == .staged }.count
-            items += [.item(title: staged > 0 ? "Ask Claude to Commit \(staged) Reviewed" : "Ask Claude to Commit") { review.askClaudeToCommit() }, .divider]
+            items += [.item(title: staged > 0 ? "Ask \(Agent.name) to Commit \(staged) Reviewed" : "Ask \(Agent.name) to Commit") { review.askClaudeToCommit() }, .divider]
         }
         items.append(.label("Projects"))
         items += app.projects.recent.map { url in

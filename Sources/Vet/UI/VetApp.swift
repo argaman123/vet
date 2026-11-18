@@ -649,7 +649,7 @@ struct VetCommands: Commands {
                 .keyboardShortcut(.downArrow, modifiers: .command)
                 .disabled(!inDiff)
             Button("Connect Claude Code…") { app.run("app.connectClaude") }
-            Button(app.workspace.review.plan == nil ? "No Review Order from Claude" : "Clear Claude's Review Order") { app.run("app.clearReviewOrder") }
+            Button(app.workspace.review.plan == nil ? "No Review Order from \(Agent.name)" : "Clear \(Agent.name)'s Review Order") { app.run("app.clearReviewOrder") }
                 .disabled(app.workspace.review.plan == nil)
             Divider()
             Button("Approve Change and Next") { app.run("app.approveAndNext") }
@@ -659,10 +659,10 @@ struct VetCommands: Commands {
             Divider()
             // Claude's note on the change you're on opens when you land there; these hide and bring it back.
             // (Only when there is one: otherwise ⌘← and ⌘→ keep their meaning in text.)
-            Button("Show Claude's Note") { app.run("app.showClaudeNote") }
+            Button("Show \(Agent.name)'s Note") { app.run("app.showClaudeNote") }
                 .keyboardShortcut(.leftArrow, modifiers: .command)
                 .disabled(!inDiff || !app.workspace.review.claudeNoteHere)
-            Button("Hide Claude's Note") { app.run("app.hideClaudeNote") }
+            Button("Hide \(Agent.name)'s Note") { app.run("app.hideClaudeNote") }
                 .keyboardShortcut(.rightArrow, modifiers: .command)
                 .disabled(!inDiff || !app.workspace.review.claudeNoteHere)
             // A note on the change you're on (or the selected line); ⌘↩ in it sends it to Claude.
@@ -670,10 +670,10 @@ struct VetCommands: Commands {
                 .keyboardShortcut("n")
                 .disabled(!inDiff)
             // Every note you haven't sent yet, in one draft (a single note sends from its popover, ⌘↩).
-            Button("Send Notes to Claude") { app.run("app.sendNotes") }
+            Button("Send Notes to \(Agent.name)") { app.run("app.sendNotes") }
                 .keyboardShortcut(.return, modifiers: [.command, .option])
                 .disabled(app.workspace.review.unsentNotes.isEmpty)
-            Button("Ask Claude to Commit Reviewed Files") { app.run("app.commit") }.keyboardShortcut("k")
+            Button("Ask \(Agent.name) to Commit Reviewed Files") { app.run("app.commit") }.keyboardShortcut("k")
             Divider()
             Button("Unimportant Files…") { app.run("app.rules") }
             Button("Refresh") { app.run("app.refresh") }.keyboardShortcut("r", modifiers: [.command, .option])

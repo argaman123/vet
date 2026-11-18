@@ -674,7 +674,7 @@ final class ReviewModel {
         noteChanged()
         let woke = onNotesSent?() ?? false
         let what = chosen.count == 1 ? "Note" : "\(chosen.count) notes"
-        link?.flash(woke ? "\(what) sent to Claude." : "\(what) waiting for Claude. No Claude chat is listening: type \u{201C}vet\u{201D} once in your Claude chat.")
+        link?.flash(woke ? "\(what) sent to \(Agent.name)." : "\(what) waiting for \(Agent.name).")
     }
 
     /// What a listening chat is told when your notes are waiting for it; nil when none are.

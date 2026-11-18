@@ -42,7 +42,7 @@ struct ChangesTool: View {
                 // The count is in the window's subtitle; here only the list's own tools.
                 Spacer()
                 if review.plan != nil {
-                    ToolButton(review.followPlan ? "list.number" : "list.bullet.indent", review.followPlan ? "Showing Claude's review order (click for the folder tree)" : "Show Claude's review order") {
+                    ToolButton(review.followPlan ? "list.number" : "list.bullet.indent", review.followPlan ? "Showing \(Agent.name)'s review order (click for the folder tree)" : "Show \(Agent.name)'s review order") {
                         review.followPlan.toggle()
                     }
                 }

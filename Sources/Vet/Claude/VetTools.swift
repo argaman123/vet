@@ -75,7 +75,7 @@ enum VetTools {
         }
         app.workspace.review.setPlan(ReviewPlan(overview: args["overview"] as? String, files: files))
         let overview = (args["overview"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        app.claudeDid(overview.isEmpty ? "Claude finished: \(files.count) file\(files.count == 1 ? "" : "s") to review, in order." : "Claude finished: \(overview)",
+        app.claudeDid(overview.isEmpty ? "\(Agent.name) finished: \(files.count) file\(files.count == 1 ? "" : "s") to review, in order." : "\(Agent.name) finished: \(overview)",
                       path: files.first?.path)
         var msg = "Vet now lists \(files.count) files in your order."
         if !unknown.isEmpty { msg += " Not among the changed files (shown anyway): \(unknown.joined(separator: ", "))." }

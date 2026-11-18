@@ -47,7 +47,7 @@ Vet is built for this era. AI code isn't always right, so you still want control
 
 ### Native glass
 
-One window, dark, in macOS's own Liquid Glass: the sidebar sits in a glass panel, the code fills the rest of the window, and menus, search and messages float in the system's clear glass. Every button, field and panel shares the same shapes and quiet motion, and the code fades out before the window's edge instead of being cut by it.
+One window, dark, in macOS's own Liquid Glass: the sidebar sits in a glass panel, the code fills the rest of the window, and menus, search and messages float in the system's clear glass. Every button, field and panel shares the same shapes and quiet motion, and the browser and run output sit in panels of their own.
 
 ### The parts of an IDE you need along the way
 
@@ -114,7 +114,7 @@ From then on:
 
 - When Claude finishes a change, Vet shows **Claude finished** and the review order.
 - You review, approve, and send notes from Vet.
-- Claude keeps a listener running in the background, so your notes reach it even while the chat is idle. If the note popover says no chat is listening, type `vet` once in your Claude chat.
+- Claude keeps a listener running in the background, so your notes reach it even while the chat is idle. If a note stays waiting, type `vet` once in your Claude chat.
 
 ### Codex, Cursor and other agents
 
@@ -127,7 +127,7 @@ url = "http://127.0.0.1:47821/mcp"
 
 In Cursor and most other clients it is one entry in the MCP settings with the same URL.
 
-The review order, notes, pointers, run output and browser work the same way. Waking an idle chat when you send a note depends on the agent being able to wait on a background command; where it can't, tell it "check Vet" and it reads your notes. The ChatGPT app itself only connects to servers on the internet, so with OpenAI use Codex.
+The review order, notes, pointers, run output and browser work the same way, and Vet calls the agent by its own name. Waking an idle chat when you send a note depends on the agent being able to wait on a background command; where it can't, tell it "check Vet" and it reads your notes. The ChatGPT app itself only connects to servers on the internet, so with OpenAI use Codex.
 
 ### What the agent can do
 
@@ -151,10 +151,10 @@ The review order, notes, pointers, run output and browser work the same way. Wak
 | `⌘↓` / `⌘↑` | Next / previous change |
 | `⌥⌘U` | Next unreviewed file |
 | `⌘N` | Add a note |
-| `⌘↩` (in a note) | Send the note to Claude |
+| `⌘↩` (in a note) | Send the note to the agent |
 | `⌥⌘↩` | Send all unsent notes |
-| `⌘←` / `⌘→` | Show / hide Claude's note on this change |
-| `⌘K` | Ask Claude to commit the reviewed files |
+| `⌘←` / `⌘→` | Show / hide the agent's note on this change |
+| `⌘K` | Ask the agent to commit the reviewed files |
 | `⇧⇧` or `⇧⌘O` | Search Everywhere |
 | `⇧⌘F` | Find in files |
 | `⌘-click` | Go to definition |

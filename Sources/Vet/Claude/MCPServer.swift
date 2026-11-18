@@ -190,6 +190,7 @@ final class MCPServer: @unchecked Sendable {
         let params = m["params"] as? [String: Any] ?? [:]
         switch method {
         case "initialize":
+            Agent.connected(clientInfo: params["clientInfo"] as? [String: Any])
             let version = params["protocolVersion"] as? String ?? "2025-06-18"
             return Self.result(id, [
                 "protocolVersion": version,

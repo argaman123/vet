@@ -306,7 +306,7 @@ private struct FilterBar: View {
             Image(systemName: "line.3.horizontal.decrease").foregroundStyle(.tertiary)
             TextField("Filter", text: $filter).textFieldStyle(.plain)
             if review.plan != nil {
-                ToolButton(review.followPlan ? "list.number" : "list.bullet", review.followPlan ? "Showing Claude's review order" : "Show Claude's review order") { review.followPlan.toggle() }
+                ToolButton(review.followPlan ? "list.number" : "list.bullet", review.followPlan ? "Showing \(Agent.name)'s review order" : "Show \(Agent.name)'s review order") { review.followPlan.toggle() }
             }
             ToolButton("eye.slash", "Unimportant Files…") { app.ui.editingRules = true }
             if tree {

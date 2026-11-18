@@ -82,7 +82,7 @@ private struct NoteItem: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 5) {
                 if claude { Image(systemName: RibbonGutterView.claudeSymbol) }
-                Text(note?.isExplanation == true ? "Claude on this change" : note?.isReply == true ? "Claude replied" : claude ? "Claude" : note == nil ? "New note" : "Your note")
+                Text(note?.isExplanation == true ? "\(Agent.name) on this change" : note?.isReply == true ? "\(Agent.name) replied" : claude ? Agent.name : note == nil ? "New note" : "Your note")
                 Text("· line \(line + 1)").foregroundStyle(.tertiary)
             }
             .font(.caption.weight(.medium))
@@ -110,41 +110,36 @@ private struct NoteItem: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // Where a sent note goes: the Claude chat that's listening, or nowhere yet.
-            if !claude, editing || note?.sent != true {
-                let listening = NotePopover.isListening()
-                Label(listening ? "Claude is listening: Send wakes it to fix this." : "No Claude chat is listening: type \u{201C}vet\u{201D} once in your Claude chat.",
-                      systemImage: listening ? "dot.radiowaves.left.and.right" : "moon.zzz")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack {
-                Spacer()
+            HStack(spacing: 6) {
                 if note?.isExplanation == true {
-                    Text("\u{2318}\u{2192} hides, \u{2318}\u{2190} shows").font(.caption).foregroundStyle(.tertiary)
                 } else if claude {
-                    Button("Dismiss") { if let note { actions.delete(note.id) }; close() }
+                    Spacer()
+                    Button { if let note { actions.delete(note.id) }; close() } label: { Image(systemName: "xmark") }
+                        .buttonStyle(PanelIconButtonStyle()).help("Dismiss").accessibilityLabel("Dismiss")
                 } else if editing {
                     let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    Button("Cancel") { if note == nil { close() } else { editing = false } }.keyboardShortcut(.cancelAction)
+                    Button { if note == nil { close() } else { editing = false } } label: { Image(systemName: "xmark") }
+                        .buttonStyle(PanelIconButtonStyle()).keyboardShortcut(.cancelAction).help("Cancel").accessibilityLabel("Cancel")
+                    Spacer()
                     Button("Save") { actions.save(note?.id, text); close() }
                         .keyboardShortcut("s", modifiers: .command)
                         .disabled(empty)
-                    // ⌘↩ saves the note and hands it to Claude to fix.
+                    // ⌘↩ saves the note and hands it to the agent to fix.
                     Button("Send") { actions.send(note?.id, text); close() }
                         .keyboardShortcut(.return, modifiers: .command)
                         .buttonStyle(PanelButtonStyle(prominent: true))
                         .disabled(empty)
-                        .help("Save and send to Claude to fix (⌘↩)")
+                        .help("Send (⌘↩)")
                 } else {
-                    if note?.sent == true { Text("Sent to Claude").font(.caption).foregroundStyle(.tertiary) }
-                    Button("Delete") { if let note { actions.delete(note.id) }; close() }
-                    Button("Edit") { text = note?.text ?? ""; editing = true; focused = true }
+                    Button { if let note { actions.delete(note.id) }; close() } label: { Image(systemName: "trash") }
+                        .buttonStyle(PanelIconButtonStyle()).help("Delete").accessibilityLabel("Delete")
+                    Button { text = note?.text ?? ""; editing = true; focused = true } label: { Image(systemName: "pencil") }
+                        .buttonStyle(PanelIconButtonStyle()).help("Edit").accessibilityLabel("Edit")
+                    Spacer()
                     Button(note?.sent == true ? "Send Again" : "Send") { if let note { actions.send(note.id, nil) }; close() }
                         .keyboardShortcut(.return, modifiers: .command)
                         .buttonStyle(PanelButtonStyle(prominent: true))
-                        .help("Send to Claude to fix (⌘↩)")
+                        .help("Send (⌘↩)")
                 }
             }
             .buttonStyle(PanelButtonStyle())

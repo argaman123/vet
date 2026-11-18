@@ -80,13 +80,13 @@ extension AppDelegate {
             review.nextUnreviewed()
             if let p = review.selectedPath { ui.show(.diff(path: p)) }
         }
-        add("commit", "Ask Claude to Commit Reviewed Files") { review.askClaudeToCommit() }
-        add("sendNotes", "Send Notes to Claude") { review.sendNotes() }
+        add("commit", "Ask \(Agent.name) to Commit Reviewed Files") { review.askClaudeToCommit() }
+        add("sendNotes", "Send Notes to \(Agent.name)") { review.sendNotes() }
         add("addNote", "Add Note") { if review.diff != nil { review.diffView.writeNoteHere() } }
-        add("showClaudeNote", "Show Claude's Note on This Change") { review.diffView.showClaudeNoteHere() }
-        add("hideClaudeNote", "Hide Claude's Note") { review.diffView.hideClaudeNote() }
+        add("showClaudeNote", "Show \(Agent.name)'s Note on This Change") { review.diffView.showClaudeNoteHere() }
+        add("hideClaudeNote", "Hide \(Agent.name)'s Note") { review.diffView.hideClaudeNote() }
         add("connectClaude", "Connect Claude Code…") { [unowned self] in connectClaudeCode() }
-        add("clearReviewOrder", "Clear Claude's Review Order") { review.setPlan(nil) }
+        add("clearReviewOrder", "Clear \(Agent.name)'s Review Order") { review.setPlan(nil) }
         add("rules", "Unimportant Files…") { [unowned self] in ui.editingRules = true }
         add("refresh", "Refresh") { Task { await review.refresh() } }
         add("runConfigs", "Edit Run Configurations…") { [unowned self] in ui.editingRunConfigs = true }

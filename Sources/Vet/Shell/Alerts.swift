@@ -23,7 +23,7 @@ enum Alerts {
     static func changedOnDisk(_ what: String) -> Bool {
         let alert = NSAlert()
         alert.messageText = "\(what) changed on disk while you were editing it."
-        alert.informativeText = "It was changed, moved or deleted (probably by Claude). Saving now writes your version over that."
+        alert.informativeText = "It was changed, moved or deleted (probably by \(Agent.name)). Saving now writes your version over that."
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Save Anyway")
         alert.alertStyle = .warning

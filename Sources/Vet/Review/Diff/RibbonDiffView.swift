@@ -574,7 +574,7 @@ final class RibbonDiffNSView: NSView, NSTextViewDelegate {
             var rows = note.left ? seg.left : seg.right
             if unifiedRows != nil, let start = unifiedOfRight[seg.right.lowerBound] { rows = start..<(start + seg.right.count) }
             let editing = id == editingNoteID
-            let card = NoteCardView(title: note.isClaude ? "Claude · line \(note.line + 1)" : "Note on line \(note.line + 1)",
+            let card = NoteCardView(title: note.isClaude ? "\(Agent.name) · line \(note.line + 1)" : "Note on line \(note.line + 1)",
                                     text: note.text, editing: editing && !note.isClaude, sent: note.sent, fromClaude: note.isClaude)
             card.onSave = { [weak self] text in self?.noteActions?.save(id, text) }
             card.onCancel = { [weak self] in self?.noteActions?.cancel(id) }

@@ -28,18 +28,6 @@ enum Glass {
 }
 
 extension View {
-    /// The code itself fades to nothing before the window's edge, so long lines aren't cut by
-    /// it. Only the text thins out: nothing is laid over it, so the surface and whatever floats
-    /// on it stay as they are.
-    func fadesAtWindowEdge() -> some View {
-        mask {
-            HStack(spacing: 0) {
-                Color.black
-                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing).frame(width: 56)
-            }
-        }
-    }
-
     /// A control group's surface in the top row: a sheet of the window's glass.
     func groupGlass() -> some View { windowGlass(radius: NativeShell.capsuleRadius) }
 
@@ -69,6 +57,24 @@ struct PanelButtonStyle: ButtonStyle {
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
             .opacity(enabled ? (configuration.isPressed && prominent ? 0.8 : 1) : 0.4)
             .contentShape(Rectangle())
+            .pointerStyle(.link)
+    }
+}
+
+/// A quiet round icon button in a panel (a note's Delete, Edit, Dismiss): the same fill as the
+/// panel's other buttons, the size of their height.
+struct PanelIconButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(.primary.opacity(0.85))
+            .frame(width: 26, height: 26)
+            .background(Circle().fill(configuration.isPressed ? Glass.fillPressed : Glass.fillStrong))
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .opacity(enabled ? 1 : 0.4)
+            .contentShape(Circle())
             .pointerStyle(.link)
     }
 }
