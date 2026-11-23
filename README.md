@@ -4,69 +4,51 @@
 
 # Vet
 
-**Your usual IDE was built for typing code. Vet is built for the AI era.**
+**An IDE for not writing code.**
 
-You don't write the code anymore, your agent does. Vet is the IDE for guiding it and staying in control of what it writes.
+You stopped writing code months ago, but you're still using that one IDE.<br>
+Vet is made for how you now work, and your agent communicates with it directly. Dig into the results and note what needs fixing, without ever needing to leave the code.
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple)
 ![Swift 6.2](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-any%20agent-D97757)
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)
 
-![Vet reviewing a change](docs/images/0.2.0/review.png)
-
 </div>
 
-## Why
+![Vet reviewing a change, with numbered callouts](docs/images/0.2.1/review.png)
 
-Every IDE you know was built to make writing code better. They are huge, packed with features for typing faster, and they were great at it.
+1. **Review order.** Your agent sets the files to read, in the order that makes sense.
+2. **File summary.** What changed in the open file, in a line.
+3. **Agent's notes.** Waiting beside the changes you shouldn't miss.
+4. **Change dot.** Amber when new, white once seen, dim once approved. Click it to approve.
+5. **Approve and Next.** `Space` approves and jumps to the next change. `⌘K` asks the agent to commit what you approved.
 
-But you no longer write the code. Your agent does, and you are still using an IDE made for a job you stopped doing.
+- **It talks to your agent.** Over [MCP](https://modelcontextprotocol.io): the agent hands you its work in order, explains it, and answers your notes on the line.
+- **It's made for reading changes.** Every change is a diff you read and approve, one at a time.
+- **It's native and light.** SwiftUI and AppKit. No Electron, no dependencies.
 
-Vet is built for this era. AI code isn't always right, so you still want control over every line of it, without the weight of an editor made for writing. Everything in Vet is there for one thing: guiding your agent, and making that as seamless as possible. It talks to the agent directly over [MCP](https://modelcontextprotocol.io), and it is small, fast and native: SwiftUI and AppKit, no Electron, no dependencies.
+## Answer on the line
 
-## How a session goes
-
-**1. Ask your agent for something.** When it is done, it gives Vet the files to read, in order.
-
-![The review order](docs/images/0.2.0/review-order.png)
-
-**2. Read its notes on the code.** Each file comes with a short description in the sidebar, and the agent's notes wait beside the changes that matter.
-
-![A note from the agent beside a change](docs/images/0.2.0/claude-note.png)
-
-**3. Approve as you go.** Every change has a dot beside it: amber when it's new to you, white once you've seen it, dim once approved. Click it, or press `Space` to approve and move to the next. Nothing in git changes until you press `⌘K`, which asks the agent to commit what you reviewed.
-
-**4. Say what's wrong on the line.** `⌘N` writes a note, `⌘↩` sends it. The agent fixes it in the background and answers on the same line while you keep reading.
+`⌘N` writes a note, `⌘↩` sends it. Your agent fixes it while you keep reading, and replies in the same place.
 
 | | |
 |---|---|
-| ![Writing a note](docs/images/0.2.0/your-note.png) | ![The agent's reply](docs/images/0.2.0/note-reply.png) |
+| ![Your note on a line](docs/images/0.2.1/your-note.png) | ![The agent's reply on the same line](docs/images/0.2.1/note-reply.png) |
 
 ## Also in Vet
 
-### Native glass
-
-One window, dark, in macOS's own Liquid Glass: the sidebar sits in a glass panel, the code fills the rest of the window, and menus, search and messages float in the system's clear glass. Every button, field and panel shares the same shapes and quiet motion, and the browser and run output sit in panels of their own.
-
-### The parts of an IDE you need along the way
-
-| | |
-|---|---|
-| ![Search Everywhere](docs/images/0.2.0/search-everywhere.png) | ![Find usages](docs/images/0.2.0/find-usages.png) |
-| **Search Everywhere** (`⇧⇧`): files, symbols, actions and text in one panel. | **Code navigation**: go to definition, find usages with a preview, hover docs, inlay types and usage counts, for TypeScript, JavaScript, Python and Kotlin. |
-
-![Run output and the built-in browser](docs/images/0.2.0/run-and-browser.png)
-
-**Run and browser**: start your app, see its output, and open it in a built-in browser. The agent can read the output, the page and its console.
-
-And: side-by-side or unified diff, an editor with autosave, find in files, branch switching and 11 themes.
+- **Search Everywhere** (`⇧⇧`): files, symbols, actions and text in one panel.
+- **Code navigation**: go to definition, find usages, hover docs and inlay types for TypeScript, JavaScript, Python and Kotlin.
+- **Run and browser**: start your app, see its output, and open it in a built-in browser. The agent reads the output, the page and its console.
+- **[Mods](#mods)**: ask your agent to change Vet itself: keys, commands, themes, panels.
+- Side-by-side or unified diff, an editor with autosave, find in files, branches, and macOS's own Liquid Glass.
 
 ## Install
 
 ### Download
 
-1. Get `Vet-0.2.0.dmg` from the [latest release](../../releases/latest) and drag **Vet** to **Applications**.
+1. Get `Vet-0.2.1.dmg` from the [latest release](../../releases/latest) and drag **Vet** to **Applications**.
 2. Open it. Vet is not notarized by Apple, so macOS blocks the first launch: go to **System Settings → Privacy & Security** and click **Open Anyway**. Or run:
 
    ```bash
@@ -176,7 +158,7 @@ Vet can be changed from the inside, and you don't write anything to do it. Ask y
 
 It builds the mod and installs it, and Vet picks it up without a restart. Mods can bind keys, add commands and themes, edit text, and show their own panels.
 
-## How it works
+## Project layout
 
 - **`Sources/VetCore`**: the diff engine, change fingerprints, fuzzy matching and search. No UI.
 - **`Sources/Vet`**: the app. The diff and editor views are AppKit text views; the window, sidebar and panels are SwiftUI.
