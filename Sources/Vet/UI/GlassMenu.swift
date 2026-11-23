@@ -26,14 +26,54 @@ struct GlassMenuButton<Label: View>: View {
     var help = ""
     let items: () -> [GlassMenuItem]
     @ViewBuilder let label: Label
-    @State private var frame: CGRect = .zero
-    @State private var hovering = false
+    @State private var id = UUID().uuidString
 
     var body: some View {
         // The system's own menu.
         Menu { SystemMenuItems(items: items()) } label: { label }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().pointerStyle(.link)
             .help(help)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { MenuClickThrough.shared.buttons[id] = $0 }
+            .onDisappear { MenuClickThrough.shared.buttons[id] = nil }
+    }
+}
+
+/// A click outside an open menu closes it and, unlike AppKit's default, also reaches what it was
+/// on: going from one menu or button in the top row to the next takes one click, not two. A click
+/// on the menu's own button only closes it, as before.
+@MainActor final class MenuClickThrough {
+    static let shared = MenuClickThrough()
+    /// Every menu button's frame in its window (points from the top-left).
+    var buttons: [String: CGRect] = [:]
+    private var opener: CGRect?
+
+    func install() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { _ in MainActor.assumeIsolated { self.began() } }
+        center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { _ in MainActor.assumeIsolated { self.ended() } }
+    }
+
+    private func pointer(in window: NSWindow) -> CGPoint? {
+        guard let content = window.contentView else { return nil }
+        let p = window.mouseLocationOutsideOfEventStream
+        let flipped = CGPoint(x: p.x, y: content.bounds.height - p.y)
+        return content.bounds.contains(p) ? flipped : nil
+    }
+
+    private func began() {
+        guard let window = NSApp.keyWindow, let p = pointer(in: window) else { opener = nil; return }
+        opener = buttons.values.first { $0.contains(p) }
+    }
+
+    private func ended() {
+        // Still pressed: the menu closed on a mouse-down outside it (a chosen item closes on mouse-up).
+        guard NSEvent.pressedMouseButtons & 1 != 0, let window = NSApp.keyWindow, let p = pointer(in: window),
+              !(opener?.contains(p) ?? false) else { return }
+        opener = nil
+        guard let down = NSEvent.mouseEvent(with: .leftMouseDown, location: window.mouseLocationOutsideOfEventStream, modifierFlags: [],
+                                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                            context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return }
+        NSApp.postEvent(down, atStart: true) // the real mouse-up follows
     }
 }
 

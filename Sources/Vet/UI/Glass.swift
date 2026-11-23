@@ -7,7 +7,7 @@ enum Glass {
     /// Popovers are the system's clear glass, like every floating panel: nothing laid over it.
     static let sheet = Color.clear
     /// The window's own tint over its glass.
-    static let windowTint = Color(red: 0.045, green: 0.045, blue: 0.06)
+    static let windowTint = Color(white: 0.047)
     /// The window's corners (measured: 16 pt). Nothing in the window is rounder at its edge.
     static let windowRadius: CGFloat = 16
     /// The menu panel and everything that floats (menus, search, messages): the system popover's corner.
@@ -24,7 +24,7 @@ enum Glass {
     static let fillStrong = Color.white.opacity(0.10)
     static let fillPressed = Color.white.opacity(0.15)
     /// The dark tone under everything opaque: the window's tint, the backing of floating panels.
-    static let tone = Color(red: 0.07, green: 0.07, blue: 0.08)
+    static let tone = Color(white: 0.073)
 }
 
 extension View {

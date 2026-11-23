@@ -535,7 +535,7 @@ struct BrowserScreen: View {
         // starts under it: a web page's colors under glass read as a grey box.
         VStack(spacing: 0) {
             if !inRow { BrowserHeader(app: app) }
-            let noPage = browser.loadError != nil || browser.address.isEmpty
+            let noPage = browser.loadError != nil || browser.address.isEmpty || browser.address == "about:blank"
             WebViewHost(webView: browser.webView)
                 .opacity(noPage ? 0 : 1) // its empty page would show through the card's see-through ground
                 .overlay {
@@ -561,7 +561,7 @@ struct BrowserHeader: View {
                 Button { browser.reload() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise").frame(width: 24, height: 24).contentShape(Rectangle()) }.help(browser.isLoading ? "Stop Loading" : "Reload")
             }
             RowGroup {
-                TextField("Address, e.g. localhost:4200", text: Bindable(browser).address)
+                TextField("Address", text: Bindable(browser).address)
                     .textFieldStyle(.plain)
                     .foregroundStyle(.primary)
                     .focused($editing)
@@ -581,8 +581,9 @@ private struct BrowserPlaceholder: View {
         let host = URL(string: browser.address).map { u in u.host.map { h in u.port.map { "\(h):\($0)" } ?? h } ?? browser.address } ?? browser.address
         VStack(spacing: 6) {
             Text(browser.loadError == nil ? "No Page" : "Can't Open \(host)").font(.headline)
-            Text(browser.loadError ?? "Type an address above, or run your app to open it here.")
-                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if let error = browser.loadError {
+                Text(error).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
             HStack(spacing: 10) {
                 if let config = run.selected, !run.isRunning {
                     Button("Run ‘\(config.name)’") { run.start(); run.outputVisible = true }
@@ -776,22 +777,26 @@ private struct CodeLabel: NSViewRepresentable {
 private struct BrowserCard: ViewModifier {
     let on: Bool
     let outputBelow: Bool
+    @Environment(\.sidebarShown) private var sidebarShown
+    /// The sidebar panel already leaves a gap on its right: the card adds one only when it's hidden.
+    private var leadingGap: CGFloat { sidebarShown ? 0 : NativeShell.gap }
     func body(content: Content) -> some View {
         if on {
             content
                 .clipShape(RoundedRectangle(cornerRadius: Glass.panelRadius, style: .continuous))
                 .menuPanel()
-                .padding(.leading, 4).padding(.trailing, NativeShell.gap)
+                .padding(.leading, leadingGap).padding(.trailing, NativeShell.gap)
                 .padding(.bottom, outputBelow ? NativeShell.gap - 2 : NativeShell.gap)
         } else { content }
     }
 }
 
 private struct OutputCard: ViewModifier {
+    @Environment(\.sidebarShown) private var sidebarShown
     func body(content: Content) -> some View {
         content
             .clipShape(RoundedRectangle(cornerRadius: Glass.panelRadius, style: .continuous))
             .menuPanel()
-            .padding(.leading, 4).padding([.trailing, .bottom], NativeShell.gap).padding(.top, 2)
+            .padding(.leading, sidebarShown ? 0 : NativeShell.gap).padding([.trailing, .bottom], NativeShell.gap).padding(.top, 2)
     }
 }

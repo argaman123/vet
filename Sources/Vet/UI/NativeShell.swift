@@ -5,6 +5,8 @@ import VetCore
 extension EnvironmentValues {
     /// The file's header sits in the window's top row (the native shell), not over the code.
     @Entry var headerInRow = false
+    /// The sidebar panel is showing (it leaves a gap on its right, so panels beside it add none).
+    @Entry var sidebarShown = true
 }
 
 /// The window as one glass panel: the sidebar right on it (the project in the title row, then
@@ -50,12 +52,13 @@ struct NativeShell: View {
                     .zIndex(1)
                 MainArea(app: app)
                     .environment(\.headerInRow, true)
+                    .environment(\.sidebarShown, !sidebarHidden)
             }
         }
         .animation(Motion.move, value: sidebarHidden)
         .ignoresSafeArea() // up to the window's top edge: the rows sit beside the window buttons
         // The dark work surface over the window's glass, the same under everything that lies on it.
-        .background { Color(red: 0.045, green: 0.045, blue: 0.06).opacity(0.5).ignoresSafeArea() }
+        .background { Color(white: 0.047).opacity(0.5).ignoresSafeArea() }
         .background { NativeWindowGlass().ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .overlay { GlassMenuOverlay(app: app) }
@@ -107,15 +110,16 @@ struct NativeShell: View {
     /// Where the project's name starts, sidebar shown or hidden.
     static let titleX: CGFloat = 88
     /// The work surface's color where it fills the window (what the edge fade ends in).
-    static let surface = Color(red: 0.055, green: 0.055, blue: 0.065)
+    static let surface = Color(white: 0.057)
 }
 
-/// The window's own glass: one material behind everything, the same from top to bottom.
+/// The window's own glass: one material behind everything, the same from top to bottom. The
+/// system's window material, which evens out light and dark wallpapers itself, under a neutral grey.
 struct NativeWindowGlass: View {
     var body: some View {
         ZStack {
-            BehindWindowBlur(material: .hudWindow)
-            Color(red: 0.09, green: 0.09, blue: 0.11).opacity(0.56) // the glass itself; the work surface darkens it further (NativeShell)
+            BehindWindowBlur(material: .underWindowBackground)
+            Color(white: 0.095).opacity(0.5) // the glass itself; the work surface darkens it further (NativeShell)
         }
     }
 }
@@ -125,16 +129,20 @@ struct RowIcon: View {
     let symbol: String
     let help: String
     var disabled = false
+    /// Showing what it opens (the browser): filled, like a selected segment.
+    var on = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .medium))
                 .frame(width: 28, height: 28)
+                .background { if on { Circle().fill(Glass.fillStrong) } }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.hand)
-        .foregroundStyle(.secondary)
+        .environment(\.hoverRadius, 14)
+        .foregroundStyle(on ? .primary : .secondary)
         .disabled(disabled)
         .help(help)
         .accessibilityLabel(help)
@@ -176,8 +184,6 @@ private struct NativeSidebar: View {
 /// Where you work: the changes, all files, the browser, as one segmented row filling the sidebar.
 private struct PlaceSwitcher: View {
     let app: AppDelegate
-    /// In the top row (sidebar hidden): fixed-width segments, not the sidebar's full width.
-    var compact = false
     @Namespace private var thumb
     var body: some View {
         // One piece of glass, the same as the top row's groups; the selection slides between the places.
@@ -187,9 +193,9 @@ private struct PlaceSwitcher: View {
             segment(.browser, "safari", "Browser (⌘3)")
         }
         .padding(3)
-        .frame(height: compact ? 28 : 30)
+        .frame(height: 30)
         // The tabs' track: a sheet of the same glass, lying on the sidebar's.
-        .modifier(TabsTrack(compact: compact))
+        .fieldGlass()
         .animation(Motion.move, value: app.place)
     }
 
@@ -198,17 +204,17 @@ private struct PlaceSwitcher: View {
         return Button { app.go(to: place) } label: {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
-                .frame(minWidth: compact ? 36 : nil, maxWidth: compact ? 36 : .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {
                     if on {
-                        RoundedRectangle(cornerRadius: ((compact ? NativeShell.capsuleRadius : Glass.fieldRadius) - 3), style: .continuous).fill(Glass.fillStrong)
+                        RoundedRectangle(cornerRadius: Glass.fieldRadius - 3, style: .continuous).fill(Glass.fillStrong)
                             .matchedGeometryEffect(id: "thumb", in: thumb)
                     }
                 }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.hand)
-        .environment(\.hoverRadius, ((compact ? NativeShell.capsuleRadius : Glass.fieldRadius) - 3))
+        .environment(\.hoverRadius, Glass.fieldRadius - 3)
         .foregroundStyle(on ? .primary : .secondary)
         .help(help)
         .accessibilityLabel(help)
@@ -260,7 +266,10 @@ private struct NativeTopRow: View {
                         RowIcon(symbol: "chevron.left", help: "Back (⌘[)", disabled: !app.ui.canGoBack) { app.goBack() }
                         RowIcon(symbol: "chevron.right", help: "Forward (⌘])", disabled: !app.ui.canGoForward) { app.goForward() }
                     }
-                    PlaceSwitcher(app: app, compact: true).fixedSize()
+                    // Changes and files live in the sidebar; with it hidden only the browser is a place of its own.
+                    RowIcon(symbol: "safari", help: app.place == .browser ? "Close Browser (⌘3)" : "Browser (⌘3)", on: app.place == .browser) {
+                        app.go(to: app.place == .browser ? (app.ui.tool == .project ? .files : .changes) : .browser)
+                    }
                 }
                 .padding(.trailing, 3)
                 .frame(height: NativeShell.capsuleHeight)
@@ -323,10 +332,11 @@ private struct RunCapsule: View {
                 Image(systemName: run.isRunning ? "stop.fill" : "play.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(run.isRunning ? Color(nsColor: .systemRed) : Color(nsColor: DiffTheme.added))
-                    .frame(width: 22, height: 28)
-                    .contentShape(Rectangle())
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
             }
             .buttonStyle(.hand)
+            .environment(\.hoverRadius, 14)
             .help(run.isRunning ? "Stop (⌘.)" : run.selected.map { "Run ‘\($0.name)’ (⌘R)" } ?? "Run (⌘R)")
             GlassMenuButton(app: app, trailing: true, help: "Run Configurations", items: {
                 run.configs.map { c in .item(title: c.name, checked: c.id == run.selected?.id) { run.selectedID = c.id } }
@@ -337,7 +347,7 @@ private struct RunCapsule: View {
                     .frame(height: 28).contentShape(Rectangle())
             }
         }
-        .padding(.leading, 6).padding(.trailing, 12)
+        .padding(.leading, 3).padding(.trailing, 12)
         .frame(height: NativeShell.capsuleHeight)
         .groupGlass()
     }
@@ -479,12 +489,4 @@ private struct SearchRow: View {
 }
 
 
-// STUDY (not shipped): looks picked with VET_FRAME=f1…f6 and VET_BTN=flat|line|glass|bare.
 
-/// The tabs' track: an outlined field in the menu panel; in the top row (menu hidden), one of its round buttons.
-private struct TabsTrack: ViewModifier {
-    let compact: Bool
-    func body(content: Content) -> some View {
-        if compact { content.windowGlass(radius: NativeShell.capsuleRadius) } else { content.fieldGlass() }
-    }
-}

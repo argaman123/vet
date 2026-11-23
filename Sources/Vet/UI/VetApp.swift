@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quitting = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MenuClickThrough.shared.install()
         // Vet is a dark app with its own surfaces (the theme's window, sidebar and bar colors).
         NSApp.appearance = NSAppearance(named: .darkAqua)
         CodeFont.registerBundled()
@@ -117,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHook.on("fullscreen") { _ in NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 })?.toggleFullScreen(nil) }
         SnapshotHook.on("hover") { args in
             // hover <x> <y>: the pointer moving to a point of the window (points from its top-left), no real pointer.
-            guard args.count == 2, let x = Double(args[0]), let y = Double(args[1]),
+            guard args.count >= 2, let x = Double(args[0]), let y = Double(args[1]),
                   let w = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 400 && $0.toolbar != nil }) else { return }
             w.makeKey()
             for dx in [-3.0, 0.0] {
@@ -300,7 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSApp.sendEvent(e) // through the app, as real clicks go (event monitors see it)
                 }
             }
-            w.makeKey() // key within the app only: an inactive app's window stays where it is
+            if args.count < 3 { w.makeKey() } // key within the app only ("click x y cold": as to a window that isn't key)
             send(.leftMouseDown)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { send(.leftMouseUp) }
         }

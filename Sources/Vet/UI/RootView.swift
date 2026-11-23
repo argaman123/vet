@@ -238,7 +238,18 @@ private struct WindowTint: NSViewRepresentable {
             w.styleMask.insert(.fullSizeContentView)
             w.toolbarStyle = .unified // the title row is the toolbar (NativeShell): 52 pt, buttons centered
         }
+        acceptFirstClick(w)
     }
+
+    /// A click on Vet while another app is in front does what it's on, as toolbar buttons do,
+    /// instead of only bringing the window forward (SwiftUI's views decline the first click).
+    private static func acceptFirstClick(_ w: NSWindow) {
+        guard let root = w.contentView, let cls = object_getClass(root), !patched.contains(ObjectIdentifier(cls)) else { return }
+        patched.insert(ObjectIdentifier(cls))
+        let yes: @convention(block) (NSView, NSEvent?) -> Bool = { _, _ in true }
+        class_replaceMethod(cls, #selector(NSView.acceptsFirstMouse(for:)), imp_implementationWithBlock(yes), "c@:@")
+    }
+    private static var patched: Set<ObjectIdentifier> = []
 }
 
 /// The work's surface, and what sits behind the top bar over it: the code itself running up
