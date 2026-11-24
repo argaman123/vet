@@ -37,7 +37,7 @@ enum DiffTheme {
             if p.id == current.id { current = p; resolved = [:]; NotificationCenter.default.post(name: .vetThemeChanged, object: nil) } // its colors may have changed
             else { setTheme(saved) }
         } else if !Palette.all.contains(where: { $0.id == current.id }) {
-            current = .tide
+            current = .graphite
             resolved = [:]
             NotificationCenter.default.post(name: .vetThemeChanged, object: nil)
         }

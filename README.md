@@ -7,7 +7,7 @@
 **An IDE for not writing code.**
 
 You stopped writing code months ago, but you're still using that one IDE.<br>
-Vet is made for how you now work, and your agent communicates with it directly. Dig into the results and note what needs fixing, without ever needing to leave the code.
+Vet is made for how you now work, and your current agent is right there with you. It orders the changes list for you, points at the lines that matter and follows along as you go, while you keep the same subscription you already have.
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple)
 ![Swift 6.2](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)
@@ -16,39 +16,29 @@ Vet is made for how you now work, and your agent communicates with it directly. 
 
 </div>
 
-![Vet reviewing a change, with numbered callouts](docs/images/0.2.1/review.png)
+![Vet reviewing a change, with numbered callouts](docs/images/0.2.2/review.png)
 
-1. **Review order.** Your agent sets the files to read, in the order that makes sense.
-2. **File summary.** What changed in the open file, in a line.
-3. **Agent's notes.** Waiting beside the changes you shouldn't miss.
-4. **Change dot.** Amber when new, white once seen, dim once approved. Click it to approve.
-5. **Approve and Next.** `Space` approves and jumps to the next change. `⌘K` asks the agent to commit what you approved.
+Ask your agent for something, as you always do.<br>
+① When it's done, Vet opens its work in the order you should read it.<br>
+② Each file comes with a short description of what it changes, and the agent's notes wait beside the changes you shouldn't miss.<br>
+③ Want something changed? Just leave a note on the line, and your agent works on it in the background while you keep reading.<br>
+④ `Space` approves a change and takes you to the next.<br>
+When you're done, `⌘K` commits what you approved.
 
-- **It talks to your agent.** Over [MCP](https://modelcontextprotocol.io): the agent hands you its work in order, explains it, and answers your notes on the line.
-- **It's made for reading changes.** Every change is a diff you read and approve, one at a time.
-- **It's native and light.** SwiftUI and AppKit. No Electron, no dependencies.
+## Why it's different
 
-## Answer on the line
-
-`⌘N` writes a note, `⌘↩` sends it. Your agent fixes it while you keep reading, and replies in the same place.
-
-| | |
-|---|---|
-| ![Your note on a line](docs/images/0.2.1/your-note.png) | ![The agent's reply on the same line](docs/images/0.2.1/note-reply.png) |
-
-## Also in Vet
-
-- **Search Everywhere** (`⇧⇧`): files, symbols, actions and text in one panel.
-- **Code navigation**: go to definition, find usages, hover docs and inlay types for TypeScript, JavaScript, Python and Kotlin.
-- **Run and browser**: start your app, see its output, and open it in a built-in browser. The agent reads the output, the page and its console.
-- **[Mods](#mods)**: ask your agent to change Vet itself: keys, commands, themes, panels.
-- Side-by-side or unified diff, an editor with autosave, find in files, branches, and macOS's own Liquid Glass.
+- **Your agent knows Vet.** It talks to Vet directly over [MCP](https://modelcontextprotocol.io): it orders the files, leaves notes on the exact lines, and sees what you're looking at and how far you've got.
+- **Keep the agent you already use.** Whether it's Claude Code, Codex or any other subscription you have, it stays in its own app. Vet needs no API key and spends no tokens of its own.
+- **Your agent can change Vet.** Ask it for new keys, commands, themes or panels, and it builds them as [mods](#mods).
+- **Made for reviewing your agent's code.** Compact, with only what you need now that your agent writes the code.
+- **Native and light.** SwiftUI and AppKit. No Electron, no dependencies.
+- **Everything else you might need.** A built-in browser your agent can read, Search Everywhere (`⇧⇧`), go to definition and find usages, side-by-side or unified diffs, an editor, find in files, branches and a few themes.
 
 ## Install
 
 ### Download
 
-1. Get `Vet-0.2.1.dmg` from the [latest release](../../releases/latest) and drag **Vet** to **Applications**.
+1. Get `Vet-0.2.2.dmg` from the [latest release](../../releases/latest) and drag **Vet** to **Applications**.
 2. Open it. Vet is not notarized by Apple, so macOS blocks the first launch: go to **System Settings → Privacy & Security** and click **Open Anyway**. Or run:
 
    ```bash

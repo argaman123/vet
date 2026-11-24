@@ -43,21 +43,6 @@ extension Palette {
         function: 0xFFD166, property: 0xF48FB1, parameter: 0xC3A6FF, classType: 0x4FD1C5, constant: 0xFF6B8B, namespace: 0x4FD1C5,
         fileModified: 0x58A6FF, fileAdded: 0x3FB950, fileDeleted: 0xF85149, fileConflict: 0xD29922)
 
-    /// High contrast and loud: true black, neon accents.
-    static let neon = Palette(
-        id: "neon", name: "Neon",
-        window: 0x050506, sidebar: 0x08080A, header: 0x0B0B0E,
-        background: 0x0C0C0F, text: 0xE8E8EE, lineNumber: 0x44444F, lineNumberCurrent: 0xC8C8D2, selection: 0x343456,
-        foldPill: 0x16161C, foldPillHover: 0x22222B, foldPillBorder: 0x2C2C36, foldLabel: 0x9090A0, foldWave: 0x24242C,
-        inlayBackground: 0x1A1A22, inlayText: 0x9A9AB0, lensText: 0x767688, searchMatch: 0x5E2E5A,
-        inserted: 0x10351C, modified: 0x1A2550, deleted: 0x44121C,
-        insertedWord: 0x1E6334, modifiedWord: 0x2B3F8A, deletedWord: 0x7A1F33,
-        addedMark: 0x3FB950, modifiedMark: 0x58A6FF, removedMark: 0xF85149,
-        keyword: 0xFF5FA2, string: 0xB8F35F, comment: 0x6E6E80, number: 0xFFB347, type: 0x9D7CFF,
-        decorator: 0xFF5FA2, tag: 0x4CC9F0, attribute: 0xFFD23F,
-        function: 0x4CC9F0, property: 0xFFD23F, parameter: 0xFF8F70, classType: 0x9D7CFF, constant: 0xFF5F5F, namespace: 0x4CC9F0,
-        fileModified: 0x58A6FF, fileAdded: 0x3FB950, fileDeleted: 0xF85149, fileConflict: 0xD29922)
-
     /// Light mode (only when the system insists): IntelliJ Light's code colors.
     static let light = Palette(
         id: "light", name: "Light",
@@ -88,21 +73,6 @@ extension Palette {
         function: 0x7CC4FF, property: 0xFF9DB0, parameter: 0xE6B8FF, classType: 0xC5A8FF, constant: 0xFF8B7B, namespace: 0x7CDCD0,
         fileModified: 0x64A8FF, fileAdded: 0x32D74B, fileDeleted: 0xFF6961, fileConflict: 0xFFD60A)
 
-    /// Warm charcoal with an amber accent.
-    static let ember = Palette(
-        id: "ember", name: "Ember",
-        window: 0x110E0D, sidebar: 0x141110, header: 0x171312, accent: 0xFF9E5E, folder: 0xFFB86B,
-        background: 0x1A1614, text: 0xEAE0D8, lineNumber: 0x4E443E, lineNumberCurrent: 0xC4B6AC, selection: 0x4A3628,
-        foldPill: 0x221C19, foldPillHover: 0x2E2622, foldPillBorder: 0x352C27, foldLabel: 0x9A8C82, foldWave: 0x302824,
-        inlayBackground: 0x261F1C, inlayText: 0xA0928A, lensText: 0x7E7068, searchMatch: 0x5C3E14,
-        inserted: 0x22331E, modified: 0x3B2E1A, deleted: 0x3E1E1C,
-        insertedWord: 0x37562E, modifiedWord: 0x664A22, deletedWord: 0x6A2C28,
-        addedMark: 0x8CCF5A, modifiedMark: 0xFFB454, removedMark: 0xFF6B5B,
-        keyword: 0xFF9E5E, string: 0xC3E88D, comment: 0x7A6C62, number: 0xF78C6C, type: 0x8FD3C7,
-        decorator: 0xF0A3B5, tag: 0xFF9E5E, attribute: 0xFFD27A,
-        function: 0xFFD27A, property: 0xF0A3B5, parameter: 0xD7B6FF, classType: 0x8FD3C7, constant: 0xFF7B6B, namespace: 0x8FD3C7,
-        fileModified: 0xFFB454, fileAdded: 0x8CCF5A, fileDeleted: 0xFF6B5B, fileConflict: 0xFF6B5B)
-
     /// Near-black greys with no tint (like your VS Code's Monokai Black), Vet's code colors.
     static let carbon: Palette = {
         var p = Palette.vet
@@ -121,36 +91,18 @@ extension Palette {
         return p
     }()
 
-    /// Deeper: almost black, the chrome nearly vanishes, code at full strength.
+    /// High contrast: almost black, the chrome nearly vanishes, text and code at full strength.
     static let obsidian: Palette = {
         var p = Palette.carbon
-        p = Palette(id: "obsidian", name: "Obsidian",
+        p = Palette(id: "obsidian", name: "High Contrast",
             window: 0x070707, sidebar: 0x090909, header: 0x0B0B0B, accent: 0xDCDCE1, folder: 0x7D8796,
-            background: 0x0D0D0D, text: 0xE4E4E4, lineNumber: 0x383838, lineNumberCurrent: 0xBDBDBD, selection: 0x333539,
+            background: 0x0D0D0D, text: 0xF2F2F2, lineNumber: 0x555555, lineNumberCurrent: 0xBDBDBD, selection: 0x333539,
             foldPill: 0x161616, foldPillHover: 0x212121, foldPillBorder: 0x262626, foldLabel: 0x878787, foldWave: 0x232323,
             inlayBackground: 0x191919, inlayText: 0x8A8A8A, lensText: 0x666666, searchMatch: 0x5A4416,
             inserted: 0x14301E, modified: 0x172842, deleted: 0x381419,
             insertedWord: 0x245C36, modifiedWord: 0x26487E, deletedWord: 0x6A1F2C,
             addedMark: 0x3FB950, modifiedMark: 0x58A6FF, removedMark: 0xF85149,
-            keyword: p.keyword, string: p.string, comment: 0x5A5A5A, number: p.number, type: p.type,
-            decorator: p.decorator, tag: p.tag, attribute: p.attribute,
-            function: p.function, property: p.property, parameter: p.parameter, classType: p.classType, constant: p.constant, namespace: p.namespace,
-            fileModified: 0x58A6FF, fileAdded: 0x3FB950, fileDeleted: 0xF85149, fileConflict: 0xD29922)
-        return p
-    }()
-
-    /// A step lighter: dark charcoal grey, softer contrast, still neutral.
-    static let charcoal: Palette = {
-        var p = Palette.carbon
-        p = Palette(id: "charcoal", name: "Charcoal",
-            window: 0x151515, sidebar: 0x181818, header: 0x1B1B1B, accent: 0xDCDCE1, folder: 0x7D8796,
-            background: 0x1E1E1E, text: 0xD4D4D4, lineNumber: 0x4A4A4A, lineNumberCurrent: 0xB4B4B4, selection: 0x3A3D41,
-            foldPill: 0x252525, foldPillHover: 0x2F2F2F, foldPillBorder: 0x353535, foldLabel: 0x8E8E8E, foldWave: 0x313131,
-            inlayBackground: 0x2A2A2A, inlayText: 0x939393, lensText: 0x737373, searchMatch: 0x5A4416,
-            inserted: 0x213626, modified: 0x223249, deleted: 0x3D2226,
-            insertedWord: 0x305B3D, modifiedWord: 0x304D7C, deletedWord: 0x672C35,
-            addedMark: 0x3FB950, modifiedMark: 0x58A6FF, removedMark: 0xF85149,
-            keyword: p.keyword, string: p.string, comment: 0x6A6A6A, number: p.number, type: p.type,
+            keyword: p.keyword, string: p.string, comment: 0x7C7C7C, number: p.number, type: p.type,
             decorator: p.decorator, tag: p.tag, attribute: p.attribute,
             function: p.function, property: p.property, parameter: p.parameter, classType: p.classType, constant: p.constant, namespace: p.namespace,
             fileModified: 0x58A6FF, fileAdded: 0x3FB950, fileDeleted: 0xF85149, fileConflict: 0xD29922)
@@ -190,28 +142,10 @@ extension Palette {
         p.tag = 0x9CC3FF; p.attribute = 0xC6C6CE
     }
 
-    /// Tide: structure cool (keywords, calls, types in blue → cyan → aqua), data warm (strings
-    /// sand, numbers coral). Two temperatures, each a small family.
-    static let tide = carbon("tide", "Tide") { p in
-        p.text = 0xD6DBE6; p.keyword = 0x8FA8FF; p.function = 0x6FD3F0; p.classType = 0x7FE0C8; p.type = 0x7FE0C8
-        p.namespace = 0x7FE0C8; p.property = 0xB7C4E8; p.parameter = 0xD4C3F7; p.string = 0xF2C28B
-        p.number = 0xF59E8B; p.constant = 0xF59E8B; p.decorator = 0xF2C28B; p.comment = 0x5C6675
-        p.tag = 0x8FA8FF; p.attribute = 0x7FE0C8
-    }
-
-    /// Spectral: the logo's gradient (blue → cyan → mint → green) across code roles, one amber.
-    static let spectral = carbon("spectral", "Spectral") { p in
-        let a = Palette.aurora
-        p.text = a.text; p.keyword = a.keyword; p.function = a.function; p.classType = a.classType; p.type = a.type
-        p.namespace = a.namespace; p.property = a.property; p.parameter = a.parameter; p.string = a.string
-        p.number = a.number; p.constant = a.constant; p.decorator = a.decorator; p.comment = a.comment
-        p.tag = a.tag; p.attribute = a.attribute
-    }
-
     /// Themes from mods (ModHost), after Vet's own.
     nonisolated(unsafe) static var modThemes: [Palette] = []
     static var available: [Palette] { all + modThemes }
-    static let all: [Palette] = [.ink, .tide, .spectral, .aurora, .vet, .carbon, .obsidian, .charcoal, .graphite, .ember, .neon]
+    static let all: [Palette] = [.graphite, .obsidian, .ink, .aurora]
 }
 
 /// Design variants being tried (Settings-free switches read from defaults; mockups for now).
